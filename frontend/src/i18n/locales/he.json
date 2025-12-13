@@ -1,0 +1,143 @@
+{
+  "app": {
+    "name": "ניהול מלאי דיו",
+    "title": "מערכת ניהול מלאי"
+  },
+  "nav": {
+    "dashboard": "לוח בקרה",
+    "inventory": "מלאי",
+    "items": "פריטים",
+    "batches": "אצוות",
+    "receiving": "קבלת סחורה",
+    "picking": "ליקוט",
+    "deliveryNotes": "תעודות משלוח",
+    "customers": "לקוחות",
+    "alerts": "התראות",
+    "settings": "הגדרות",
+    "logout": "התנתק"
+  },
+  "auth": {
+    "login": "התחברות",
+    "username": "שם משתמש",
+    "password": "סיסמה",
+    "loginButton": "התחבר",
+    "loggingIn": "מתחבר...",
+    "error": "שגיאה בהתחברות"
+  },
+  "dashboard": {
+    "title": "לוח בקרה",
+    "inventoryValue": "שווי מלאי",
+    "itemsInStock": "פריטים במלאי",
+    "atRisk": "בסיכון",
+    "lowStock": "מלאי נמוך",
+    "criticalItems": "פריטים קריטיים",
+    "unreadAlerts": "התראות שלא נקראו",
+    "recentReceipts": "קבלות לאחרונה",
+    "recentDispatches": "משלוחים לאחרונה",
+    "expirationRisk": "מפת סיכון תפוגה",
+    "inventoryDistribution": "התפלגות מלאי"
+  },
+  "items": {
+    "title": "פריטים",
+    "add": "הוסף פריט",
+    "edit": "ערוך פריט",
+    "delete": "מחק פריט",
+    "sku": "מק\"ט",
+    "name": "שם",
+    "description": "תיאור",
+    "supplier": "ספק",
+    "unit": "יחידת מידה",
+    "costPrice": "מחיר עלות",
+    "reorderPoint": "נקודת הזמנה",
+    "minStock": "מלאי מינימום",
+    "maxStock": "מלאי מקסימום",
+    "actions": "פעולות",
+    "search": "חיפוש פריטים..."
+  },
+  "batches": {
+    "title": "אצוות",
+    "batchNumber": "מספר אצווה",
+    "quantity": "כמות",
+    "expirationDate": "תאריך תפוגה",
+    "receiptDate": "תאריך קבלה",
+    "status": "סטטוס",
+    "daysUntilExpiration": "ימים לתפוגה",
+    "active": "פעיל",
+    "depleted": "אזל",
+    "scrap": "גריטה",
+    "expired": "פג תוקף"
+  },
+  "receiving": {
+    "title": "קבלת סחורה",
+    "scanBarcode": "סרוק ברקוד",
+    "selectItem": "בחר פריט",
+    "quantity": "כמות",
+    "expirationDate": "תאריך תפוגה",
+    "batchNumber": "מספר אצווה (אופציונלי)",
+    "notes": "הערות",
+    "receive": "קבל סחורה",
+    "success": "הסחורה נקלטה בהצלחה"
+  },
+  "picking": {
+    "title": "ליקוט",
+    "selectItem": "בחר פריט",
+    "quantity": "כמות נדרשת",
+    "suggestedBatches": "אצוות מוצעות (FEFO)",
+    "pick": "בצע ליקוט",
+    "reference": "מספר אסמכתא",
+    "success": "הליקוט בוצע בהצלחה"
+  },
+  "deliveryNotes": {
+    "title": "תעודות משלוח",
+    "create": "צור תעודה",
+    "number": "מספר תעודה",
+    "customer": "לקוח",
+    "status": "סטטוס",
+    "issueDate": "תאריך הנפקה",
+    "items": "פריטים",
+    "downloadPdf": "הורד PDF",
+    "draft": "טיוטה",
+    "issued": "הונפק",
+    "delivered": "נמסר",
+    "cancelled": "בוטל"
+  },
+  "alerts": {
+    "title": "התראות",
+    "markAllRead": "סמן הכל כנקרא",
+    "noAlerts": "אין התראות חדשות",
+    "expiring": "מתקרב לתפוגה",
+    "expired": "פג תוקף",
+    "lowStock": "מלאי נמוך",
+    "deadStock": "מלאי מת",
+    "critical": "קריטי",
+    "warning": "אזהרה",
+    "info": "מידע"
+  },
+  "common": {
+    "save": "שמור",
+    "cancel": "ביטול",
+    "delete": "מחק",
+    "edit": "ערוך",
+    "add": "הוסף",
+    "search": "חיפוש",
+    "filter": "סינון",
+    "loading": "טוען...",
+    "noData": "אין נתונים",
+    "error": "שגיאה",
+    "success": "הצלחה",
+    "confirm": "אישור",
+    "yes": "כן",
+    "no": "לא",
+    "actions": "פעולות",
+    "total": "סה\"כ",
+    "page": "עמוד",
+    "of": "מתוך"
+  },
+  "status": {
+    "safe": "בטוח",
+    "warning": "אזהרה",
+    "critical": "קריטי",
+    "expired": "פג תוקף"
+  }
+}
+

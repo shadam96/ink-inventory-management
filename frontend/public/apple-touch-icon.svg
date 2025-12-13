@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0ea5e9;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="180" height="180" rx="36" fill="url(#grad)"/>
+  <g fill="white">
+    <!-- Ink drop icon -->
+    <path d="M90 36 C90 36 54 81 54 108 C54 130 68 144 90 144 C112 144 126 130 126 108 C126 81 90 36 90 36 Z" />
+    <circle cx="90" cy="108" r="14" fill="url(#grad)"/>
+  </g>
+</svg>
