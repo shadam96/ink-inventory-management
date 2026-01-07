@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
+import { Loader2, HelpCircle } from 'lucide-react'
 
 import {
   Dialog,
@@ -16,6 +16,19 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import type { Item } from '@/lib/api'
 
 const itemSchema = z.object({
@@ -24,19 +37,51 @@ const itemSchema = z.object({
   description: z.string().optional(),
   supplier: z.string().min(1, 'ספק נדרש'),
   unit_of_measure: z.string().min(1, 'יחידת מידה נדרשת'),
-  cost_price: z.number().min(0, 'מחיר חייב להיות חיובי'),
-  reorder_point: z.number().min(0).optional(),
-  min_stock: z.number().min(0).optional(),
-  max_stock: z.number().min(0).optional(),
+  cost_price: z.preprocess(
+    (val) => {
+      if (typeof val === 'string') {
+        const num = parseFloat(val)
+        return isNaN(num) ? 0 : num
+      }
+      return typeof val === 'number' ? val : 0
+    },
+    z.number().min(0, 'מחיר חייב להיות חיובי')
+  ),
+  currency: z.enum(['ILS', 'USD', 'EUR']).default('ILS'),
+  reorder_point: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return undefined
+      if (typeof val === 'string') {
+        const num = parseInt(val, 10)
+        return isNaN(num) ? undefined : num
+      }
+      return typeof val === 'number' ? val : undefined
+    },
+    z.number().min(0).optional()
+  ),
+  min_stock: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return undefined
+      if (typeof val === 'string') {
+        const num = parseInt(val, 10)
+        return isNaN(num) ? undefined : num
+      }
+      return typeof val === 'number' ? val : undefined
+    },
+    z.number().min(0).optional()
+  ),
+  max_stock: z.preprocess(
+    (val) => {
+      if (val === '' || val === null || val === undefined) return undefined
+      if (typeof val === 'string') {
+        const num = parseInt(val, 10)
+        return isNaN(num) ? undefined : num
+      }
+      return typeof val === 'number' ? val : undefined
+    },
+    z.number().min(0).optional()
+  ),
 })
-
-const itemSchemaTransform = itemSchema.transform((data) => ({
-  ...data,
-  cost_price: Number(data.cost_price),
-  reorder_point: data.reorder_point ? Number(data.reorder_point) : undefined,
-  min_stock: data.min_stock ? Number(data.min_stock) : undefined,
-  max_stock: data.max_stock ? Number(data.max_stock) : undefined,
-}))
 
 type ItemFormData = z.infer<typeof itemSchema>
 
@@ -55,25 +100,35 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ItemFormData>({
-    resolver: zodResolver(itemSchemaTransform) as any,
-    defaultValues: item || {
-      sku: '',
-      name: '',
-      description: '',
-      supplier: '',
-      unit_of_measure: 'ליטר',
-      cost_price: 0,
-      reorder_point: 10,
-      min_stock: 5,
-      max_stock: 100,
-    },
+    resolver: zodResolver(itemSchema),
+    defaultValues: item
+      ? {
+          ...item,
+          currency: 'ILS', // Default currency, can be extracted from item if stored
+        }
+      : {
+          sku: '',
+          name: '',
+          description: '',
+          supplier: '',
+          unit_of_measure: 'ליטר',
+          cost_price: 0,
+          currency: 'ILS',
+          reorder_point: 10,
+          min_stock: 5,
+          max_stock: 100,
+        },
   })
 
   useEffect(() => {
     if (item) {
-      reset(item)
+      reset({
+        ...item,
+        currency: 'ILS', // Default currency
+      })
     } else {
       reset({
         sku: '',
@@ -82,6 +137,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         supplier: '',
         unit_of_measure: 'ליטר',
         cost_price: 0,
+        currency: 'ILS',
         reorder_point: 10,
         min_stock: 5,
         max_stock: 100,
@@ -91,7 +147,19 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
 
   const handleFormSubmit = async (data: ItemFormData) => {
     try {
-      await onSubmit(data)
+      // Extract currency - backend doesn't have currency field yet
+      // We'll store it in localStorage or handle it separately in the future
+      const { currency, ...itemData } = data
+      
+      // Ensure cost_price is a number
+      const submitData = {
+        ...itemData,
+        cost_price: typeof itemData.cost_price === 'string' 
+          ? parseFloat(itemData.cost_price) 
+          : itemData.cost_price,
+      }
+      
+      await onSubmit(submitData as any)
       onOpenChange(false)
       reset()
     } catch (error) {
@@ -100,15 +168,16 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>
-            {isEdit ? t('items.edit') : t('items.add')}
-          </DialogTitle>
-        </DialogHeader>
+    <TooltipProvider>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              {isEdit ? t('items.edit') : t('items.add')}
+            </DialogTitle>
+          </DialogHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="sku">{t('items.sku')} *</Label>
@@ -175,24 +244,57 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="cost_price">{t('items.costPrice')} *</Label>
-              <Input
-                id="cost_price"
-                type="number"
-                step="0.01"
-                {...register('cost_price')}
-                placeholder="0.00"
-              />
+              <div className="flex gap-2">
+                <Input
+                  id="cost_price"
+                  type="number"
+                  step="0.01"
+                  {...register('cost_price', { valueAsNumber: false })}
+                  placeholder="0.00"
+                  className="flex-1"
+                />
+                <Controller
+                  name="currency"
+                  control={control}
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <SelectTrigger className="w-[120px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ILS">₪ שקל</SelectItem>
+                        <SelectItem value="USD">$ דולר</SelectItem>
+                        <SelectItem value="EUR">€ אירו</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+              </div>
               {errors.cost_price && (
                 <p className="text-sm text-destructive">{errors.cost_price.message}</p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="reorder_point">{t('items.reorderPoint')}</Label>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="reorder_point">{t('items.reorderPoint')}</Label>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-xs">
+                      <p>
+                        נקודת הזמנה היא הכמות המינימלית של הפריט במלאי. כאשר המלאי יורד מתחת לנקודה זו, המערכת תציג התראה כי יש להזמין עוד מהפריט.
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
               <Input
                 id="reorder_point"
                 type="number"
-                {...register('reorder_point')}
+                {...register('reorder_point', { valueAsNumber: false })}
                 placeholder="10"
               />
             </div>
@@ -243,6 +345,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         </form>
       </DialogContent>
     </Dialog>
+    </TooltipProvider>
   )
 }
 

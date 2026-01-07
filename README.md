@@ -34,78 +34,70 @@ A comprehensive inventory management system for ink products with FEFO (First Ex
 
 ## Quick Start
 
-### Prerequisites
+### 🚀 For Non-Technical Users (Easiest Method)
+
+1. **Install Docker Desktop** from https://www.docker.com/products/docker-desktop
+2. **Double-click `start.bat`** in the project folder
+3. Wait 2-5 minutes for setup to complete
+4. Browser opens automatically → Login with `admin` / `admin123456`
+
+📖 **See `QUICK_START_GUIDE.md` for detailed instructions**
+
+### 🔧 For Developers
+
+#### Prerequisites
 - Docker & Docker Compose
 - Python 3.11+ (for local development)
 - Node.js 18+ (for frontend development)
 
-### 1. Clone and Setup
+#### Option 1: Automated Setup (Recommended)
 
-```bash
-# Clone the repository
-cd inventory-management
+```powershell
+# Windows
+.\start.bat
 
-# Copy environment file
-cp env.example .env
-# Edit .env with your settings
+# Or run PowerShell script directly
+.\setup.ps1
 ```
 
-### 2. Start with Docker
+#### Option 2: Manual Setup
 
 ```bash
-# Start all services
+# 1. Start all services
 docker-compose up -d
 
-# View logs
-docker-compose logs -f backend
-```
-
-### 3. Initialize Database
-
-```bash
-# Run migrations
+# 2. Initialize database
 docker-compose exec backend alembic upgrade head
 
-# Or for local development:
-cd backend
-alembic upgrade head
-```
-
-### 4. Create Admin User
-
-```bash
-# Via API (after starting the server)
+# 3. Create admin user
 curl -X POST http://localhost:8000/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
     "email": "admin@linoprint.com",
     "full_name": "מנהל מערכת",
-    "password": "securepassword123",
+    "password": "admin123456",
     "role": "admin"
   }'
+
+# 4. Access the application
+# Frontend: http://localhost:5173
+# API Docs: http://localhost:8000/docs
 ```
 
-### 5. Access the Application
+### 📋 Access Information
 
 - **Frontend UI**: http://localhost:5173
 - **API Documentation**: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-- Health Check: http://localhost:8000/health
+- **ReDoc**: http://localhost:8000/redoc
+- **Health Check**: http://localhost:8000/health
 
-### 6. Create Test Users
+### 👤 Default Credentials
 
-```powershell
-# Admin user
-$json = '{"username":"admin","email":"admin@lino.com","full_name":"Admin User","password":"admin123456","role":"admin"}'
-Invoke-RestMethod -Uri "http://localhost:8000/api/v1/auth/register" -Method Post -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) -ContentType "application/json; charset=utf-8"
-```
+- **Username**: `admin`
+- **Password**: `admin123456`
 
-Available test credentials:
-- **admin** / admin123456 (full access)
-- **manager** / manager123 (inventory management)
-- **warehouse** / warehouse123 (operations)
-- **viewer** / viewer123 (read-only)
+⚠️ **Change password after first login!**
 
 ## Local Development
 
