@@ -25,6 +25,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Header } from '@/components/layout/Header'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { dashboardApi, type DashboardKPIs } from '@/lib/api'
+import { useUIStore } from '@/store/ui'
 
 interface KPICardProps {
   title: string
@@ -76,6 +77,7 @@ const RISK_COLORS = {
 
 export function DashboardPage() {
   const { t } = useTranslation()
+  const { currency } = useUIStore()
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
   const [riskData, setRiskData] = useState<any>(null)
   const [distribution, setDistribution] = useState<any[]>([])
@@ -132,13 +134,13 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-16">
         <KPICard
           title={t('dashboard.inventoryValue')}
-          value={formatCurrency(kpis?.inventory_value || 0)}
+          value={formatCurrency(kpis?.inventory_value || 0, currency)}
           subtitle={`${kpis?.items_in_stock || 0} פריטים`}
           icon={<Package className="w-6 h-6" />}
         />
         <KPICard
           title={t('dashboard.atRisk')}
-          value={formatCurrency(kpis?.at_risk_value || 0)}
+          value={formatCurrency(kpis?.at_risk_value || 0, currency)}
           subtitle={`${kpis?.at_risk_percentage?.toFixed(1) || 0}% מהמלאי`}
           icon={<AlertTriangle className="w-6 h-6" />}
           variant={kpis?.at_risk_percentage && kpis.at_risk_percentage > 20 ? 'danger' : 'warning'}
@@ -184,7 +186,7 @@ export function DashboardPage() {
                       ))}
                     </Pie>
                     <Tooltip
-                      formatter={(value: number) => formatCurrency(value)}
+                      formatter={(value: number) => formatCurrency(value, currency)}
                       contentStyle={{ direction: 'rtl' }}
                     />
                   </PieChart>
@@ -220,10 +222,10 @@ export function DashboardPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={distributionChartData} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                    <XAxis type="number" tickFormatter={(value) => formatCurrency(value)} />
+                    <XAxis type="number" tickFormatter={(value) => formatCurrency(value, currency)} />
                     <YAxis type="category" dataKey="name" width={80} />
                     <Tooltip
-                      formatter={(value: number) => formatCurrency(value)}
+                      formatter={(value: number) => formatCurrency(value, currency)}
                       contentStyle={{ direction: 'rtl' }}
                     />
                     <Bar dataKey="value" fill="#00A0B0" radius={[0, 4, 4, 0]} />

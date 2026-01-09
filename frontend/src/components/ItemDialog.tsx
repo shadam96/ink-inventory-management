@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useTranslation } from 'react-i18next'
 import { Loader2, HelpCircle } from 'lucide-react'
+import { useUIStore } from '@/store/ui'
 
 import {
   Dialog,
@@ -29,7 +30,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import type { Item } from '@/lib/api'
+import type { Item, CreateItemData } from '@/lib/api'
 
 const itemSchema = z.object({
   sku: z.string().min(1, 'מק"ט נדרש'),
@@ -37,50 +38,11 @@ const itemSchema = z.object({
   description: z.string().optional(),
   supplier: z.string().min(1, 'ספק נדרש'),
   unit_of_measure: z.string().min(1, 'יחידת מידה נדרשת'),
-  cost_price: z.preprocess(
-    (val) => {
-      if (typeof val === 'string') {
-        const num = parseFloat(val)
-        return isNaN(num) ? 0 : num
-      }
-      return typeof val === 'number' ? val : 0
-    },
-    z.number().min(0, 'מחיר חייב להיות חיובי')
-  ),
-  currency: z.enum(['ILS', 'USD', 'EUR']).default('ILS'),
-  reorder_point: z.preprocess(
-    (val) => {
-      if (val === '' || val === null || val === undefined) return undefined
-      if (typeof val === 'string') {
-        const num = parseInt(val, 10)
-        return isNaN(num) ? undefined : num
-      }
-      return typeof val === 'number' ? val : undefined
-    },
-    z.number().min(0).optional()
-  ),
-  min_stock: z.preprocess(
-    (val) => {
-      if (val === '' || val === null || val === undefined) return undefined
-      if (typeof val === 'string') {
-        const num = parseInt(val, 10)
-        return isNaN(num) ? undefined : num
-      }
-      return typeof val === 'number' ? val : undefined
-    },
-    z.number().min(0).optional()
-  ),
-  max_stock: z.preprocess(
-    (val) => {
-      if (val === '' || val === null || val === undefined) return undefined
-      if (typeof val === 'string') {
-        const num = parseInt(val, 10)
-        return isNaN(num) ? undefined : num
-      }
-      return typeof val === 'number' ? val : undefined
-    },
-    z.number().min(0).optional()
-  ),
+  cost_price: z.number().min(0, 'מחיר חייב להיות חיובי'),
+  currency: z.enum(['ILS', 'USD', 'EUR']),
+  reorder_point: z.number().min(0).optional(),
+  min_stock: z.number().min(0).optional(),
+  max_stock: z.number().min(0).optional(),
 })
 
 type ItemFormData = z.infer<typeof itemSchema>
@@ -89,12 +51,13 @@ interface ItemDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   item?: Item | null
-  onSubmit: (data: ItemFormData) => Promise<void>
+  onSubmit: (data: CreateItemData) => Promise<void>
 }
 
 export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogProps) {
   const { t } = useTranslation()
   const isEdit = !!item
+  const { currency: defaultCurrency, setCurrency } = useUIStore()
 
   const {
     register,
@@ -107,7 +70,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     defaultValues: item
       ? {
           ...item,
-          currency: 'ILS', // Default currency, can be extracted from item if stored
+          currency: item.currency || defaultCurrency,
         }
       : {
           sku: '',
@@ -116,7 +79,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           supplier: '',
           unit_of_measure: 'ליטר',
           cost_price: 0,
-          currency: 'ILS',
+          currency: defaultCurrency,
           reorder_point: 10,
           min_stock: 5,
           max_stock: 100,
@@ -127,7 +90,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     if (item) {
       reset({
         ...item,
-        currency: 'ILS', // Default currency
+        currency: item.currency || defaultCurrency,
       })
     } else {
       reset({
@@ -137,29 +100,32 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         supplier: '',
         unit_of_measure: 'ליטר',
         cost_price: 0,
-        currency: 'ILS',
+        currency: defaultCurrency,
         reorder_point: 10,
         min_stock: 5,
         max_stock: 100,
       })
     }
-  }, [item, reset])
+  }, [item, reset, defaultCurrency])
 
   const handleFormSubmit = async (data: ItemFormData) => {
     try {
-      // Extract currency - backend doesn't have currency field yet
-      // We'll store it in localStorage or handle it separately in the future
-      const { currency, ...itemData } = data
-      
-      // Ensure cost_price is a number
-      const submitData = {
-        ...itemData,
-        cost_price: typeof itemData.cost_price === 'string' 
-          ? parseFloat(itemData.cost_price) 
-          : itemData.cost_price,
+      // Preprocess functions should have already converted strings to numbers,
+      // but ensure type safety for CreateItemData
+      const submitData: CreateItemData = {
+        sku: data.sku,
+        name: data.name,
+        description: data.description,
+        supplier: data.supplier,
+        unit_of_measure: data.unit_of_measure,
+        cost_price: data.cost_price,
+        currency: data.currency,
+        reorder_point: data.reorder_point,
+        min_stock: data.min_stock,
+        max_stock: data.max_stock,
       }
       
-      await onSubmit(submitData as any)
+      await onSubmit(submitData)
       onOpenChange(false)
       reset()
     } catch (error) {
@@ -249,7 +215,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                   id="cost_price"
                   type="number"
                   step="0.01"
-                  {...register('cost_price', { valueAsNumber: false })}
+                  {...register('cost_price', { valueAsNumber: true })}
                   placeholder="0.00"
                   className="flex-1"
                 />
@@ -257,7 +223,13 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                   name="currency"
                   control={control}
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select 
+                      value={field.value} 
+                      onValueChange={(value) => {
+                        field.onChange(value)
+                        setCurrency(value as 'ILS' | 'USD' | 'EUR')
+                      }}
+                    >
                       <SelectTrigger className="w-[120px]">
                         <SelectValue />
                       </SelectTrigger>
@@ -294,7 +266,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="reorder_point"
                 type="number"
-                {...register('reorder_point', { valueAsNumber: false })}
+                {...register('reorder_point', { valueAsNumber: true })}
                 placeholder="10"
               />
             </div>
@@ -306,7 +278,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="min_stock"
                 type="number"
-                {...register('min_stock')}
+                {...register('min_stock', { valueAsNumber: true })}
                 placeholder="5"
               />
             </div>
@@ -316,7 +288,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="max_stock"
                 type="number"
-                {...register('max_stock')}
+                {...register('max_stock', { valueAsNumber: true })}
                 placeholder="100"
               />
             </div>

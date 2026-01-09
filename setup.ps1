@@ -41,10 +41,13 @@ function Start-Services {
     
     try {
         # Start services in detached mode
-        docker-compose up -d 2>&1 | Out-Null
+        $ErrorActionPreference = 'Continue'
+        $output = docker-compose up -d 2>&1 | Out-String
+        $ErrorActionPreference = 'Stop'
         
         if ($LASTEXITCODE -ne 0) {
             Write-Log "Failed to start Docker services. Check docker-compose.yml and Docker Desktop." "ERROR"
+            Write-Log "Output: $output" "ERROR"
             return $false
         }
         
@@ -175,7 +178,7 @@ function Create-AdminUser {
         full_name = "System Administrator"
         password = "admin123456"
         role = "admin"
-    } | ConvertTo-Json -Encoding UTF8
+    } | ConvertTo-Json
     
     try {
         # Check if user already exists by trying to login

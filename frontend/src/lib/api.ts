@@ -280,6 +280,7 @@ export interface Item {
   supplier: string
   unit_of_measure: string
   cost_price: number
+  currency: 'ILS' | 'USD' | 'EUR'
   reorder_point: number
   min_stock: number
   max_stock: number
@@ -294,6 +295,7 @@ export interface CreateItemData {
   supplier: string
   unit_of_measure: string
   cost_price: number
+  currency: 'ILS' | 'USD' | 'EUR'
   reorder_point?: number
   min_stock?: number
   max_stock?: number

@@ -1,11 +1,13 @@
 """Item schemas for inventory management"""
 from decimal import Decimal
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import Field
 
 from app.schemas.common import BaseSchema, TimestampSchema
+
+Currency = Literal["ILS", "USD", "EUR"]
 
 
 class ItemBase(BaseSchema):
@@ -22,6 +24,7 @@ class ItemCreate(ItemBase):
     
     description: Optional[str] = None
     cost_price: Decimal = Field(default=Decimal("0.00"), ge=0)
+    currency: Currency = Field(default="ILS")
     reorder_point: int = Field(default=10, ge=0)
     min_stock: int = Field(default=5, ge=0)
     max_stock: int = Field(default=100, ge=0)
@@ -36,6 +39,7 @@ class ItemUpdate(BaseSchema):
     supplier: Optional[str] = Field(None, min_length=1, max_length=200)
     unit_of_measure: Optional[str] = Field(None, max_length=20)
     cost_price: Optional[Decimal] = Field(None, ge=0)
+    currency: Optional[Currency] = None
     reorder_point: Optional[int] = Field(None, ge=0)
     min_stock: Optional[int] = Field(None, ge=0)
     max_stock: Optional[int] = Field(None, ge=0)
@@ -47,6 +51,7 @@ class ItemResponse(ItemBase, TimestampSchema):
     id: UUID
     description: Optional[str]
     cost_price: Decimal
+    currency: Currency
     reorder_point: int
     min_stock: int
     max_stock: int

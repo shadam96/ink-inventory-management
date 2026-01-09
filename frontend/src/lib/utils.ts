@@ -16,12 +16,12 @@ export function formatNumber(value: number, decimals = 0): string {
 }
 
 /**
- * Format currency in ILS
+ * Format currency with the specified currency code
  */
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number, currency: 'ILS' | 'USD' | 'EUR' = 'ILS'): string {
   return new Intl.NumberFormat('he-IL', {
     style: 'currency',
-    currency: 'ILS',
+    currency,
   }).format(value)
 }
 

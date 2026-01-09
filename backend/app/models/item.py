@@ -45,6 +45,11 @@ class Item(BaseModel):
         nullable=False,
         default=Decimal("0.00")
     )
+    currency: Mapped[str] = mapped_column(
+        String(3),
+        nullable=False,
+        default="ILS"
+    )
     reorder_point: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
