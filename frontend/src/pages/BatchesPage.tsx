@@ -245,7 +245,7 @@ export function BatchesPage() {
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold">
-              {batches.reduce((sum, b) => sum + b.quantity_available, 0).toFixed(2)}
+              {batches.reduce((sum, b) => sum + Number(b.quantity_available || 0), 0).toFixed(2)}
             </p>
             <p className="text-sm text-muted-foreground">סה"כ כמות זמינה</p>
           </CardContent>
