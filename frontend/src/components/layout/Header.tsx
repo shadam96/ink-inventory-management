@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next'
+import { useNavigate } from 'react-router-dom'
 import { Bell, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 export function Header({ title, alertCount = 0 }: HeaderProps) {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const { sidebarOpen } = useUIStore()
 
   return (
@@ -36,7 +38,12 @@ export function Header({ title, alertCount = 0 }: HeaderProps) {
           </div>
 
           {/* Alerts */}
-          <Button variant="ghost" size="icon" className="relative">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="relative"
+            onClick={() => navigate('/alerts')}
+          >
             <Bell className="w-5 h-5" />
             {alertCount > 0 && (
               <Badge
