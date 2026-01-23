@@ -131,7 +131,7 @@ export function DashboardPage() {
       <Header title={t('dashboard.title')} alertCount={kpis?.unread_alerts || 0} />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-16">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2 mt-16">
         <KPICard
           title={t('dashboard.inventoryValue')}
           value={formatCurrency(kpis?.inventory_value || 0, currency)}
@@ -242,7 +242,7 @@ export function DashboardPage() {
       </div>
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         <Card className="bg-status-safe/10 border-status-safe/30">
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold text-status-safe">

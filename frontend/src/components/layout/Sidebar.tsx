@@ -19,6 +19,8 @@ import {
   LogOut,
   ChevronRight,
   Droplets,
+  Boxes,
+  Warehouse,
 } from 'lucide-react'
 
 const navItems = [
@@ -32,10 +34,19 @@ const navItems = [
   { path: '/alerts', icon: Bell, label: 'nav.alerts' },
 ]
 
+const iconMap = {
+  droplets: Droplets,
+  package: Package,
+  boxes: Boxes,
+  warehouse: Warehouse,
+}
+
 export function Sidebar() {
   const { t } = useTranslation()
   const { user, logout } = useAuthStore()
-  const { sidebarOpen, toggleSidebar } = useUIStore()
+  const { sidebarOpen, toggleSidebar, appName, appIcon } = useUIStore()
+  
+  const IconComponent = iconMap[appIcon] || Droplets
 
   return (
     <aside
@@ -48,11 +59,11 @@ export function Sidebar() {
         {/* Logo */}
         <div className="flex items-center gap-3 p-4 border-b">
           <div className="flex items-center justify-center w-10 h-10 rounded-lg gradient-ink">
-            <Droplets className="w-6 h-6 text-white" />
+            <IconComponent className="w-6 h-6 text-white" />
           </div>
           {sidebarOpen && (
             <div className="flex-1 animate-fade-in">
-              <h1 className="font-bold text-lg">{t('app.name')}</h1>
+              <h1 className="font-bold text-lg">{appName}</h1>
             </div>
           )}
           <Button
@@ -72,7 +83,7 @@ export function Sidebar() {
 
         {/* Navigation */}
         <ScrollArea className="flex-1 py-4">
-          <nav className="space-y-1 px-2">
+          <nav className="space-y-4 px-2">
             {navItems.map((item) => (
               <NavLink
                 key={item.path}
@@ -98,7 +109,7 @@ export function Sidebar() {
         <Separator />
 
         {/* User & Settings */}
-        <div className="p-2 space-y-1">
+        <div className="p-2 space-y-4">
           <NavLink
             to="/settings"
             className={({ isActive }) =>
