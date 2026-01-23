@@ -40,9 +40,9 @@ const itemSchema = z.object({
   unit_of_measure: z.string().min(1, 'יחידת מידה נדרשת'),
   cost_price: z.number().min(0, 'מחיר חייב להיות חיובי'),
   currency: z.enum(['ILS', 'USD', 'EUR']),
-  reorder_point: z.number().min(0).optional(),
-  min_stock: z.number().min(0).optional(),
-  max_stock: z.number().min(0).optional(),
+  reorder_point: z.number().int('נקודת הזמנה חייבת להיות מספר שלם').min(0).optional(),
+  min_stock: z.number().int('מלאי מינימלי חייב להיות מספר שלם').min(0).optional(),
+  max_stock: z.number().int('מלאי מקסימלי חייב להיות מספר שלם').min(0).optional(),
 })
 
 type ItemFormData = z.infer<typeof itemSchema>
@@ -266,6 +266,8 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="reorder_point"
                 type="number"
+                step="1"
+                inputMode="numeric"
                 {...register('reorder_point', { valueAsNumber: true })}
                 placeholder="10"
               />
@@ -278,6 +280,8 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="min_stock"
                 type="number"
+                step="1"
+                inputMode="numeric"
                 {...register('min_stock', { valueAsNumber: true })}
                 placeholder="5"
               />
@@ -288,6 +292,8 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="max_stock"
                 type="number"
+                step="1"
+                inputMode="numeric"
                 {...register('max_stock', { valueAsNumber: true })}
                 placeholder="100"
               />

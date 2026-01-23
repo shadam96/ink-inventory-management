@@ -19,16 +19,11 @@ import { addPendingOperation, isOnline } from '@/lib/offline'
 
 const pickSchema = z.object({
   item_id: z.string().min(1, 'פריט נדרש'),
-  quantity: z.number().min(0.01, 'כמות חייבת להיות חיובית'),
+  quantity: z.number().int('כמות חייבת להיות מספר שלם').min(1, 'כמות חייבת להיות חיובית'),
   customer_id: z.string().min(1, 'לקוח נדרש'),
   reference_number: z.string().optional(),
   notes: z.string().optional(),
 })
-
-const pickSchemaTransform = pickSchema.transform((data) => ({
-  ...data,
-  quantity: Number(data.quantity),
-}))
 
 type PickFormData = z.infer<typeof pickSchema>
 
@@ -63,7 +58,7 @@ export function PickingPage() {
     setValue,
     formState: { errors },
   } = useForm<PickFormData>({
-    resolver: zodResolver(pickSchemaTransform) as any,
+    resolver: zodResolver(pickSchema),
   })
 
   const selectedItemId = watch('item_id')
@@ -242,14 +237,14 @@ export function PickingPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="quantity">{t('picking.quantity')} *</Label>
-                <Input
-                  id="quantity"
-                  type="number"
-                  step="0.01"
-                  inputMode="decimal"
-                  {...register('quantity')}
-                  placeholder="0"
-                />
+                  <Input
+                    id="quantity"
+                    type="number"
+                    step="1"
+                    inputMode="numeric"
+                    {...register('quantity', { valueAsNumber: true })}
+                    placeholder="0"
+                  />
                 {errors.quantity && (
                   <p className="text-sm text-destructive">{errors.quantity.message}</p>
                 )}

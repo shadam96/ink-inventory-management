@@ -18,16 +18,11 @@ import { addPendingOperation, isOnline } from '@/lib/offline'
 
 const receiveSchema = z.object({
   item_id: z.string().min(1, 'פריט נדרש'),
-  quantity: z.number().min(0.01, 'כמות חייבת להיות חיובית'),
+  quantity: z.number().int('כמות חייבת להיות מספר שלם').min(1, 'כמות חייבת להיות חיובית'),
   expiration_date: z.string().min(1, 'תאריך תפוגה נדרש'),
   batch_number: z.string().optional(),
   notes: z.string().optional(),
 })
-
-const receiveSchemaTransform = receiveSchema.transform((data) => ({
-  ...data,
-  quantity: Number(data.quantity),
-}))
 
 type ReceiveFormData = z.infer<typeof receiveSchema>
 
@@ -53,7 +48,7 @@ export function ReceivingPage() {
     watch,
     formState: { errors },
   } = useForm<ReceiveFormData>({
-    resolver: zodResolver(receiveSchemaTransform) as any,
+    resolver: zodResolver(receiveSchema),
     defaultValues: {
       quantity: 1,
       expiration_date: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
@@ -282,9 +277,9 @@ export function ReceivingPage() {
                   <Input
                     id="quantity"
                     type="number"
-                    step="0.01"
-                    inputMode="decimal"
-                    {...register('quantity')}
+                    step="1"
+                    inputMode="numeric"
+                    {...register('quantity', { valueAsNumber: true })}
                   />
                   {errors.quantity && (
                     <p className="text-sm text-destructive">{errors.quantity.message}</p>
