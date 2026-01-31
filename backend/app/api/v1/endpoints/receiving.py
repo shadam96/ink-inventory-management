@@ -179,7 +179,7 @@ async def receive_multiple_items(
 
 @router.post("/validate-barcode")
 async def validate_barcode(
-    sku: str,
+    barcode: str,
     db: DbSession,
     current_user: WarehouseUser,
 ) -> dict:
@@ -191,23 +191,26 @@ async def validate_barcode(
     from app.models.item import Item
     
     result = await db.execute(
-        select(Item).where(Item.sku == sku)
+        select(Item).where(Item.sku == barcode)
     )
     item = result.scalar_one_or_none()
     
     if not item:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"מק\"ט {sku} לא נמצא במערכת",  # SKU not found
-        )
+        return {
+            "valid": False,
+            "item": None
+        }
     
     return {
-        "item_id": str(item.id),
-        "sku": item.sku,
-        "name": item.name,
-        "supplier": item.supplier,
-        "unit_of_measure": item.unit_of_measure,
-        "cost_price": float(item.cost_price),
+        "valid": True,
+        "item": {
+            "id": str(item.id),
+            "sku": item.sku,
+            "name": item.name,
+            "supplier": item.supplier,
+            "unit_of_measure": item.unit_of_measure,
+            "cost_price": float(item.cost_price),
+        }
     }
 
 

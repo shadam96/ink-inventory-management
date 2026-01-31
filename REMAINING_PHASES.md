@@ -170,6 +170,14 @@
   - Notification bell animation
   - "Someone else edited" warning
 
+- [ ] **Notification Bell Dropdown**
+  - Clickable bell icon in header
+  - Popover showing recent alerts (5-10 most recent)
+  - Mark as read directly from dropdown
+  - "View All" link to alerts page
+  - Real-time update when new alert arrives
+  - Unread count badge
+
 **Technical:**
 ```python
 # Backend WebSocket endpoint

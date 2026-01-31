@@ -228,13 +228,14 @@ async def test_validate_barcode(
     response = await client.post(
         "/api/v1/receiving/validate-barcode",
         headers=auth_headers,
-        params={"sku": test_item.sku},
+        params={"barcode": test_item.sku},
     )
     
     assert response.status_code == 200
     data = response.json()
-    assert data["sku"] == test_item.sku
-    assert data["name"] == test_item.name
+    assert data["valid"] is True
+    assert data["item"]["sku"] == test_item.sku
+    assert data["item"]["name"] == test_item.name
 
 
 @pytest.mark.asyncio
@@ -246,10 +247,13 @@ async def test_validate_barcode_not_found(
     response = await client.post(
         "/api/v1/receiving/validate-barcode",
         headers=auth_headers,
-        params={"sku": "NON-EXISTENT-SKU"},
+        params={"barcode": "NON-EXISTENT-SKU"},
     )
     
-    assert response.status_code == 404
+    assert response.status_code == 200
+    data = response.json()
+    assert data["valid"] is False
+    assert data["item"] is None
 
 
 @pytest.mark.asyncio
