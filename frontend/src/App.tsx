@@ -11,24 +11,14 @@ import { PickingPage } from '@/pages/PickingPage'
 import { DeliveryNotesPage } from '@/pages/DeliveryNotesPage'
 import { CustomersPage } from '@/pages/CustomersPage'
 import { AlertsPage } from '@/pages/AlertsPage'
+import { SettingsPage } from '@/pages/SettingsPage'
 import { useAuthStore } from '@/store/auth'
+import { useUIStore } from '@/store/ui'
 import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
 import { initDB } from '@/lib/offline'
 
 // Initialize IndexedDB on app load
 initDB().catch(console.error)
-
-// Placeholder for Settings page
-function SettingsPage() {
-  return (
-    <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
-      <div className="text-center">
-        <h1 className="text-2xl font-bold mb-2">הגדרות</h1>
-        <p className="text-muted-foreground">עמוד זה בפיתוח</p>
-      </div>
-    </div>
-  )
-}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, fetchUser } = useAuthStore()
@@ -48,6 +38,32 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
+  const { theme } = useUIStore()
+
+  // Apply theme on mount and when it changes
+  useEffect(() => {
+    const applyTheme = () => {
+      const root = document.documentElement
+      
+      if (theme === 'system') {
+        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        root.classList.toggle('dark', systemTheme === 'dark')
+      } else {
+        root.classList.toggle('dark', theme === 'dark')
+      }
+    }
+
+    applyTheme()
+
+    // Listen for system theme changes when in system mode
+    if (theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+      const handleChange = () => applyTheme()
+      mediaQuery.addEventListener('change', handleChange)
+      return () => mediaQuery.removeEventListener('change', handleChange)
+    }
+  }, [theme])
+
   return (
     <BrowserRouter>
       <Routes>

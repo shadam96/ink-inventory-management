@@ -115,6 +115,27 @@
     "warning": "אזהרה",
     "info": "מידע"
   },
+  "settings": {
+    "title": "הגדרות",
+    "general": "כללי",
+    "appearance": "תצוגה",
+    "appName": "שם האפליקציה",
+    "appNamePlaceholder": "הכנס שם אפליקציה",
+    "appIcon": "סמל האפליקציה",
+    "theme": "ערכת נושא",
+    "themeLight": "בהיר",
+    "themeDark": "כהה",
+    "themeSystem": "אוטומטי",
+    "currency": "מטבע",
+    "currencyILS": "שקל ישראלי (₪)",
+    "currencyUSD": "דולר אמריקאי ($)",
+    "currencyEUR": "יורו (€)",
+    "iconDroplets": "טיפות",
+    "iconPackage": "חבילה",
+    "iconBoxes": "קופסאות",
+    "iconWarehouse": "מחסן",
+    "saved": "ההגדרות נשמרו בהצלחה"
+  },
   "common": {
     "save": "שמור",
     "cancel": "ביטול",
