@@ -44,7 +44,7 @@ export function CustomersPage() {
     <div className="space-y-6">
       <Header title={t('nav.customers')} />
 
-      <div className="flex items-center justify-between mt-16">
+      <div className="flex items-center justify-between relative z-10 -mt-2">
         <div className="flex items-center gap-2">
           <Users className="w-5 h-5 text-muted-foreground" />
           <span className="text-muted-foreground">

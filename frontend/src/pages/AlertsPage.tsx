@@ -109,7 +109,7 @@ export function AlertsPage() {
       <Header title={t('alerts.title')} alertCount={summary.total_unread} />
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-16">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="border-l-4 border-l-muted-foreground">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
@@ -157,7 +157,7 @@ export function AlertsPage() {
       </div>
 
       {/* Filters & Actions */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between relative z-10 -mt-2">
         <div className="flex gap-2">
           <Button
             variant={filter === 'unread' ? 'default' : 'outline'}

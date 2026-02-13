@@ -120,7 +120,7 @@ export const itemsApi = {
 
 // Batches API
 export const batchesApi = {
-  list: async (params?: { item_id?: string; status?: string }) => {
+  list: async (params?: { item_id?: string; status_filter?: string }) => {
     const response = await api.get('/batches', { params })
     return response.data
   },

@@ -46,7 +46,7 @@ export function BatchesPage() {
     try {
       setLoading(true)
       const response = await batchesApi.list({
-        status: statusFilter === 'all' ? undefined : statusFilter,
+        status_filter: statusFilter === 'all' ? undefined : statusFilter,
       })
       
       // Filter by search locally
@@ -99,7 +99,7 @@ export function BatchesPage() {
     <div className="space-y-6">
       <Header title={t('batches.title')} />
 
-      <div className="flex items-center justify-between mt-16 gap-4">
+      <div className="flex items-center justify-between gap-4 relative z-10 -mt-2">
         <div className="relative flex-1 max-w-md">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input

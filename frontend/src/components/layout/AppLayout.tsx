@@ -31,7 +31,7 @@ export function AppLayout() {
           'pb-20 md:pb-0'
         )}
       >
-        <div className="p-4 md:p-6 pt-18 md:pt-20">
+        <div className="p-4 md:p-6 pt-20 md:pt-[5.5rem]">
           <Outlet />
         </div>
       </main>

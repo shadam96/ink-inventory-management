@@ -103,7 +103,7 @@ export function ItemsPage() {
     <div className="space-y-6">
       <Header title={t('items.title')} />
 
-      <div className="flex items-center justify-between mt-16">
+      <div className="flex items-center justify-between relative z-10 -mt-2">
         <div className="relative w-80">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
