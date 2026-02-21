@@ -58,3 +58,6 @@ coverage/
 .agents/
 .claude/
 .cursor/
+
+# Temporary debug scripts
+backend/check_db.py
