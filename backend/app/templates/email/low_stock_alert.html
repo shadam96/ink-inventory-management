@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}התראת מלאי נמוך - {{ item_name }}{% endblock %}
+
+{% block header %}📦 התראת מלאי נמוך{% endblock %}
+
+{% block content %}
+<div class="alert-box warning">
+    <h2 style="margin-top: 0;">מלאי נמוך - נדרשת הזמנה</h2>
+</div>
+
+<p>המלאי של המוצר הבא ירד מתחת לנקודת ההזמנה:</p>
+
+<div style="margin: 20px 0;">
+    <div class="detail-row">
+        <span class="detail-label">מוצר:</span>
+        <span class="detail-value"><strong>{{ item_name }}</strong></span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">מק"ט:</span>
+        <span class="detail-value">{{ sku }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">כמות נוכחית:</span>
+        <span class="detail-value">
+            <span class="badge critical">{{ current_quantity }}</span>
+        </span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">נקודת הזמנה:</span>
+        <span class="detail-value">{{ reorder_point }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">מלאי מינימום:</span>
+        <span class="detail-value">{{ min_stock }}</span>
+    </div>
+</div>
+
+<h3>פעולות מומלצות:</h3>
+<ul>
+    <li>צור הזמנת רכש אצל הספק</li>
+    <li>בדוק תקופת אספקה צפויה</li>
+    <li>עדכן צוות מכירות על מגבלת מלאי</li>
+    <li>שקול להגדיל נקודת הזמנה אם המצב חוזר</li>
+</ul>
+
+<a href="http://localhost:5173/items" class="button">צפה במוצר במערכת</a>
+{% endblock %}

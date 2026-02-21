@@ -13,6 +13,8 @@ from app.api.v1.endpoints import (
     delivery_notes,
     alerts,
     dashboard,
+    settings,
+    websocket,
 )
 
 api_router = APIRouter()
@@ -89,6 +91,19 @@ api_router.include_router(
     dashboard.router,
     prefix="/dashboard",
     tags=["Dashboard"]
+)
+
+# Settings
+api_router.include_router(
+    settings.router,
+    prefix="/settings",
+    tags=["Settings"]
+)
+
+# WebSocket (no prefix for websocket)
+api_router.include_router(
+    websocket.router,
+    tags=["WebSocket"]
 )
 
 

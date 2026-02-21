@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}דוח מלאי שבועי{% endblock %}
+
+{% block header %}📊 דוח מלאי שבועי{% endblock %}
+
+{% block content %}
+<p>דוח מלאי עבור התקופה: <strong>{{ start_date }}</strong> עד <strong>{{ end_date }}</strong></p>
+
+<h3>סיכום כללי</h3>
+
+<div style="margin: 20px 0;">
+    <div class="detail-row">
+        <span class="detail-label">שווי מלאי כולל:</span>
+        <span class="detail-value"><strong>₪{{ "%.2f"|format(total_value) }}</strong></span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">אחוז מלאי בסיכון:</span>
+        <span class="detail-value">
+            <span class="badge {% if at_risk_percentage > 20 %}critical{% elif at_risk_percentage > 10 %}warning{% else %}safe{% endif %}">
+                {{ "%.1f"|format(at_risk_percentage) }}%
+            </span>
+        </span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">מוצרים במלאי נמוך:</span>
+        <span class="detail-value">{{ low_stock_count }}</span>
+    </div>
+</div>
+
+<h3>פעילות שבועית</h3>
+
+<div style="margin: 20px 0;">
+    <div class="detail-row">
+        <span class="detail-label">תנועות מלאי:</span>
+        <span class="detail-value">{{ movements_count }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">התראות חדשות:</span>
+        <span class="detail-value">
+            <span class="badge {% if new_alerts_count > 10 %}warning{% else %}info{% endif %}">
+                {{ new_alerts_count }}
+            </span>
+        </span>
+    </div>
+</div>
+
+<div class="alert-box info">
+    <p><strong>המלצות לשבוע הבא:</strong></p>
+    <ul>
+        {% if low_stock_count > 0 %}
+            <li>טפל ב-{{ low_stock_count }} מוצרים במלאי נמוך</li>
+        {% endif %}
+        {% if at_risk_percentage > 15 %}
+            <li>תעדף הוצאת מוצרים קרובי תפוגה</li>
+        {% endif %}
+        {% if new_alerts_count > 10 %}
+            <li>בדוק והתייחס להתראות שטרם טופלו</li>
+        {% endif %}
+        <li>עדכן תחזיות צריכה לפי נתוני השבוע</li>
+    </ul>
+</div>
+
+<a href="http://localhost:5173/dashboard" class="button">צפה בדשבורד</a>
+{% endblock %}

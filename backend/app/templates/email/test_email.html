@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}בדיקת חיבור{% endblock %}
+
+{% block header %}✅ בדיקת חיבור{% endblock %}
+
+{% block content %}
+<div class="alert-box info">
+    <h2 style="margin-top: 0;">החיבור למערכת הדוא"ל תקין!</h2>
+</div>
+
+<p>זוהי הודעת בדיקה ממערכת ניהול מלאי דיו.</p>
+
+<p>אם קיבלת הודעה זו, משמעות הדבר שהגדרות הדוא"ל במערכת מוגדרות כראוי ומערכת התראות מוכנה לפעולה.</p>
+
+<h3>הגדרות אימייל:</h3>
+<ul>
+    <li>✅ חיבור לשרת SMTP תקין</li>
+    <li>✅ אימות משתמש עבר בהצלחה</li>
+    <li>✅ שליחת הודעות פעילה</li>
+</ul>
+
+<a href="http://localhost:5173/settings" class="button">הגדרות מערכת</a>
+{% endblock %}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Pencil, Trash2 } from 'lucide-react'
+import { Plus, Search, Pencil, Trash2, Download, FileSpreadsheet } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -99,6 +100,33 @@ export function ItemsPage() {
 
   const totalPages = Math.ceil(total / pageSize)
 
+  const handleExport = async (format: 'excel' | 'csv') => {
+    try {
+      const response = await fetch(`http://localhost:8000/api/v1/items/export/${format}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      })
+      
+      if (!response.ok) throw new Error('Export failed')
+      
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `items_export.${format === 'excel' ? 'xlsx' : 'csv'}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      
+      toast.success(`יצוא ${format === 'excel' ? 'Excel' : 'CSV'} הושלם בהצלחה`)
+    } catch (error) {
+      console.error('Export failed:', error)
+      toast.error('היצוא נכשל')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <Header title={t('items.title')} />
@@ -113,10 +141,20 @@ export function ItemsPage() {
             className="pr-10"
           />
         </div>
-        <Button onClick={handleAdd}>
-          <Plus className="w-4 h-4 ml-2" />
-          {t('items.add')}
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => handleExport('excel')}>
+            <FileSpreadsheet className="w-4 h-4 ml-2" />
+            Excel
+          </Button>
+          <Button variant="outline" onClick={() => handleExport('csv')}>
+            <Download className="w-4 h-4 ml-2" />
+            CSV
+          </Button>
+          <Button onClick={handleAdd}>
+            <Plus className="w-4 h-4 ml-2" />
+            {t('items.add')}
+          </Button>
+        </div>
       </div>
 
       <Card>

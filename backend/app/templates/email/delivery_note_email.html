@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}תעודת משלוח {{ delivery_note_number }}{% endblock %}
+
+{% block header %}📄 תעודת משלוח{% endblock %}
+
+{% block content %}
+<p>שלום {{ customer_name }},</p>
+
+<p>מצורפת תעודת משלוח עבור הזמנתכם.</p>
+
+<div style="margin: 20px 0;">
+    <div class="detail-row">
+        <span class="detail-label">מספר תעודת משלוח:</span>
+        <span class="detail-value"><strong>{{ delivery_note_number }}</strong></span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">תאריך הפקה:</span>
+        <span class="detail-value">{{ issue_date }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">מספר פריטים:</span>
+        <span class="detail-value">{{ items_count }}</span>
+    </div>
+</div>
+
+<div class="alert-box info">
+    <p><strong>הערה חשובה:</strong></p>
+    <p>אנא שמרו את מספרי האצוות המופיעים בתעודת המשלוח לצורך אחריות ומעקב.</p>
+</div>
+
+<a href="http://localhost:5173/delivery-notes" class="button">צפה בתעודות משלוח</a>
+
+<p style="margin-top: 30px;">בברכה,<br>צוות LinoPrint</p>
+{% endblock %}

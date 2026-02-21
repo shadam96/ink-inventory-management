@@ -1,19 +1,14 @@
 import { useTranslation } from 'react-i18next'
-import { useNavigate } from 'react-router-dom'
-import { Bell } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import { NotificationBell } from '@/components/NotificationBell'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 
 interface HeaderProps {
   title: string
-  alertCount?: number
 }
 
-export function Header({ title, alertCount = 0 }: HeaderProps) {
+export function Header({ title }: HeaderProps) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const { sidebarOpen } = useUIStore()
 
   return (
@@ -27,23 +22,7 @@ export function Header({ title, alertCount = 0 }: HeaderProps) {
         <h1 className="text-xl font-semibold">{title}</h1>
 
         <div className="flex items-center gap-4">
-          {/* Alerts */}
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            className="relative"
-            onClick={() => navigate('/alerts')}
-          >
-            <Bell className="w-5 h-5" />
-            {alertCount > 0 && (
-              <Badge
-                variant="destructive"
-                className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
-              >
-                {alertCount > 9 ? '9+' : alertCount}
-              </Badge>
-            )}
-          </Button>
+          <NotificationBell />
         </div>
       </div>
     </header>
