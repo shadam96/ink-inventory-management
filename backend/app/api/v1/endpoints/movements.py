@@ -4,11 +4,16 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession
-from app.models.movement import MovementType
+from app.models.movement import MovementType, Movement
+from app.models.batch import Batch
 from app.services.inventory_service import InventoryService
+from app.services.export_service import export_service
 from app.schemas.movement import MovementResponse
 
 router = APIRouter()
@@ -165,4 +170,46 @@ async def get_item_movements(
         "movements": movements_data,
         "total": len(movements_data),
     }
+
+
+@router.get("/export/excel")
+async def export_movements_excel(
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Export all movements to Excel"""
+    query = (
+        select(Movement)
+        .options(
+            selectinload(Movement.batch).selectinload(Batch.item),
+            selectinload(Movement.user)
+        )
+        .order_by(Movement.timestamp.desc())
+        .limit(1000)  # Limit to prevent huge exports
+    )
+    result = await db.execute(query)
+    movements = result.scalars().all()
+    
+    return export_service.export_movements_excel(list(movements))
+
+
+@router.get("/export/csv")
+async def export_movements_csv(
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Export all movements to CSV"""
+    query = (
+        select(Movement)
+        .options(
+            selectinload(Movement.batch).selectinload(Batch.item),
+            selectinload(Movement.user)
+        )
+        .order_by(Movement.timestamp.desc())
+        .limit(1000)  # Limit to prevent huge exports
+    )
+    result = await db.execute(query)
+    movements = result.scalars().all()
+    
+    return export_service.export_movements_csv(list(movements))
 

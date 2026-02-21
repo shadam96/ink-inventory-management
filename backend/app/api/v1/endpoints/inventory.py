@@ -3,6 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
@@ -11,6 +12,7 @@ from app.models.item import Item
 from app.models.batch import Batch, BatchStatus
 from app.schemas.item import ItemCreate, ItemResponse, ItemUpdate
 from app.schemas.common import PaginatedResponse, MessageResponse
+from app.services.export_service import export_service
 
 router = APIRouter()
 
@@ -223,5 +225,31 @@ async def delete_item(
         message=f"פריט {item.sku} נמחק בהצלחה",  # Item deleted successfully
         success=True,
     )
+
+
+@router.get("/export/excel")
+async def export_items_excel(
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Export all items to Excel"""
+    query = select(Item).order_by(Item.sku)
+    result = await db.execute(query)
+    items = result.scalars().all()
+    
+    return export_service.export_items_excel(list(items))
+
+
+@router.get("/export/csv")
+async def export_items_csv(
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Export all items to CSV"""
+    query = select(Item).order_by(Item.sku)
+    result = await db.execute(query)
+    items = result.scalars().all()
+    
+    return export_service.export_items_csv(list(items))
 
 

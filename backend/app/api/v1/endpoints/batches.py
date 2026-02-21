@@ -4,6 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
@@ -13,6 +14,7 @@ from app.models.item import Item
 from app.models.location import Location
 from app.schemas.batch import BatchCreate, BatchResponse, BatchUpdate
 from app.schemas.common import PaginatedResponse, MessageResponse
+from app.services.export_service import export_service
 
 router = APIRouter()
 
@@ -251,5 +253,39 @@ async def update_batch(
     response.location_code = batch.location.location_code if batch.location else None
     
     return response
+
+
+@router.get("/export/excel")
+async def export_batches_excel(
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Export all batches to Excel"""
+    query = (
+        select(Batch)
+        .options(selectinload(Batch.item), selectinload(Batch.location))
+        .order_by(Batch.expiration_date)
+    )
+    result = await db.execute(query)
+    batches = result.scalars().all()
+    
+    return export_service.export_batches_excel(list(batches))
+
+
+@router.get("/export/csv")
+async def export_batches_csv(
+    db: DbSession,
+    current_user: CurrentUser,
+) -> StreamingResponse:
+    """Export all batches to CSV"""
+    query = (
+        select(Batch)
+        .options(selectinload(Batch.item), selectinload(Batch.location))
+        .order_by(Batch.expiration_date)
+    )
+    result = await db.execute(query)
+    batches = result.scalars().all()
+    
+    return export_service.export_batches_csv(list(batches))
 
 

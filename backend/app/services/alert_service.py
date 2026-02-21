@@ -12,6 +12,7 @@ from app.models.alert import Alert, AlertType, AlertSeverity
 from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.movement import Movement
+from app.models.user import User
 from app.core.config import settings
 
 
@@ -20,6 +21,7 @@ class AlertService:
     
     def __init__(self, db: AsyncSession):
         self.db = db
+        self._email_enabled = bool(settings.smtp_user and settings.smtp_password)
     
     async def create_alert(
         self,
@@ -43,6 +45,21 @@ class AlertService:
         )
         self.db.add(alert)
         await self.db.flush()
+        
+        # Broadcast alert via WebSocket
+        try:
+            from app.core.websocket import manager
+            await manager.send_alert({
+                "id": str(alert.id),
+                "type": alert.alert_type.value,
+                "severity": alert.severity.value,
+                "title": alert.title,
+                "message": alert.message,
+                "created_at": alert.created_at.isoformat() if alert.created_at else None
+            })
+        except Exception as e:
+            print(f">> Failed to broadcast alert: {e}")
+        
         return alert
     
     async def get_unread_alerts(
@@ -170,6 +187,10 @@ class AlertService:
                     item_id=batch.item_id,
                 )
                 alerts_created.append(alert)
+                
+                # Send email notification for critical alerts
+                if self._email_enabled and severity in [AlertSeverity.CRITICAL, AlertSeverity.WARNING]:
+                    await self._send_expiration_email(batch, days_left, severity)
         
         return alerts_created
     
@@ -264,6 +285,10 @@ class AlertService:
                     item_id=item.id,
                 )
                 alerts_created.append(alert)
+                
+                # Send email notification for low stock
+                if self._email_enabled and severity == AlertSeverity.CRITICAL:
+                    await self._send_low_stock_email(item, available)
         
         return alerts_created
     
@@ -344,3 +369,52 @@ class AlertService:
             "dead_stock_alerts": len(dead_stock),
             "total_new_alerts": len(expiring) + len(expired) + len(low_stock) + len(dead_stock),
         }
+    
+    async def _send_expiration_email(self, batch: Batch, days_left: int, severity: AlertSeverity):
+        """Send expiration alert email to admin users"""
+        try:
+            from app.services.email_service import email_service
+            
+            # Get admin/manager emails
+            result = await self.db.execute(
+                select(User).where(User.is_active == True)
+            )
+            users = result.scalars().all()
+            
+            for user in users:
+                if user.role.value in ['ADMIN', 'MANAGER']:
+                    await email_service.send_expiration_alert(
+                        to=user.email,
+                        batch_number=batch.batch_number,
+                        item_name=batch.item.name if batch.item else "Unknown",
+                        expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
+                        days_until_expiry=days_left,
+                        quantity_available=float(batch.quantity_available),
+                        severity=severity.value
+                    )
+        except Exception as e:
+            print(f">> Failed to send expiration email: {e}")
+    
+    async def _send_low_stock_email(self, item: Item, current_quantity: float):
+        """Send low stock alert email to admin users"""
+        try:
+            from app.services.email_service import email_service
+            
+            # Get admin/manager emails
+            result = await self.db.execute(
+                select(User).where(User.is_active == True)
+            )
+            users = result.scalars().all()
+            
+            for user in users:
+                if user.role.value in ['ADMIN', 'MANAGER']:
+                    await email_service.send_low_stock_alert(
+                        to=user.email,
+                        item_name=item.name,
+                        sku=item.sku,
+                        current_quantity=current_quantity,
+                        reorder_point=item.reorder_point,
+                        min_stock=item.min_stock
+                    )
+        except Exception as e:
+            print(f">> Failed to send low stock email: {e}")

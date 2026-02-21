@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useUIStore } from '@/store/ui'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -6,8 +6,9 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Droplets, Package, Boxes, Warehouse } from 'lucide-react'
+import { Droplets, Package, Boxes, Warehouse, Mail, Send } from 'lucide-react'
 import { toast } from 'sonner'
+import { api } from '@/lib/api'
 
 const iconMap = {
   droplets: Droplets,
@@ -33,6 +34,44 @@ export function SettingsPage() {
   const [localAppIcon, setLocalAppIcon] = useState(appIcon)
   const [localTheme, setLocalTheme] = useState(theme)
   const [localCurrency, setLocalCurrency] = useState(currency)
+  
+  // Email settings
+  const [emailConfigured, setEmailConfigured] = useState(false)
+  const [testEmail, setTestEmail] = useState('')
+  const [sendingTest, setSendingTest] = useState(false)
+  const [loadingEmail, setLoadingEmail] = useState(true)
+
+  useEffect(() => {
+    fetchEmailSettings()
+  }, [])
+
+  const fetchEmailSettings = async () => {
+    try {
+      const response = await api.get('/settings/email')
+      setEmailConfigured(response.data.email_configured)
+    } catch (error) {
+      console.error('Failed to fetch email settings:', error)
+    } finally {
+      setLoadingEmail(false)
+    }
+  }
+
+  const sendTestEmail = async () => {
+    if (!testEmail) {
+      toast.error('אנא הזן כתובת אימייל')
+      return
+    }
+
+    setSendingTest(true)
+    try {
+      await api.post('/settings/email/test', { email: testEmail })
+      toast.success('אימייל נשלח בהצלחה! בדוק את תיבת הדואר שלך')
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'שליחת האימייל נכשלה')
+    } finally {
+      setSendingTest(false)
+    }
+  }
 
   const handleSave = () => {
     setAppName(localAppName)
@@ -180,6 +219,74 @@ export function SettingsPage() {
               </div>
             </RadioGroup>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Email Settings */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Mail className="w-5 h-5" />
+            הגדרות דוא"ל
+          </CardTitle>
+          <CardDescription>
+            בדיקת חיבור ושליחת אימייל בדיקה
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {loadingEmail ? (
+            <div className="text-center py-4">טוען...</div>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 p-4 rounded-lg bg-muted">
+                <div className={`w-3 h-3 rounded-full ${emailConfigured ? 'bg-green-500' : 'bg-red-500'}`} />
+                <span className="text-sm">
+                  {emailConfigured 
+                    ? '✅ שרת דוא"ל מוגדר ופעיל' 
+                    : '⚠️ שרת דוא"ל לא מוגדר - עדכן משתני סביבה'}
+                </span>
+              </div>
+
+              {emailConfigured && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="testEmail">שלח אימייל בדיקה</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="testEmail"
+                        type="email"
+                        placeholder="your@email.com"
+                        value={testEmail}
+                        onChange={(e) => setTestEmail(e.target.value)}
+                        disabled={sendingTest}
+                      />
+                      <Button 
+                        onClick={sendTestEmail} 
+                        disabled={sendingTest}
+                        className="gap-2"
+                      >
+                        <Send className="w-4 h-4" />
+                        {sendingTest ? 'שולח...' : 'שלח'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      אימייל בדיקה יישלח לכתובת שהזנת כדי לבדוק את החיבור
+                    </p>
+                  </div>
+
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="font-medium text-sm mb-2">📧 אימיילים אוטומטיים מופעלים</h4>
+                    <ul className="text-xs space-y-1 text-muted-foreground">
+                      <li>✓ התראות על תוקף מתקרב (30, 60, 90, 120 ימים)</li>
+                      <li>✓ התראות על מלאי נמוך</li>
+                      <li>✓ תעודות משלוח ללקוחות</li>
+                      <li>✓ דוחות שבועיים (בעתיד)</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

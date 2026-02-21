@@ -53,3 +53,8 @@ secrets/
 # Test coverage
 coverage/
 .nyc_output/
+
+# AI agent folders
+.agents/
+.claude/
+.cursor/

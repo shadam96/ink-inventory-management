@@ -11,30 +11,44 @@ from app.core.config import settings
 from app.core.database import close_db, init_db
 from app.core.redis import redis_client
 from app.tasks.scheduler import start_scheduler, shutdown_scheduler
+from app.services.email_service import email_service
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Application lifecycle management"""
     # Startup
-    print("🚀 Starting Ink Inventory Management System...")
+    print(">> Starting Ink Inventory Management System...")
     await init_db()
-    await redis_client.connect()
-    print("✅ Database and Redis connected")
+    
+    # Try to connect to Redis (optional)
+    try:
+        await redis_client.connect()
+        print(">> Database and Redis connected")
+    except Exception as e:
+        print(f">> Database connected (Redis unavailable: {str(e)})")
     
     # Start scheduler for background tasks
     if not settings.is_development or settings.environment != "test":
         start_scheduler()
-        print("✅ Scheduler started")
+        print(">> Scheduler started")
+    
+    # Start email worker
+    await email_service.start_worker()
+    print(">> Email worker started")
     
     yield
     
     # Shutdown
-    print("🛑 Shutting down...")
+    print(">> Shutting down...")
     shutdown_scheduler()
+    await email_service.stop_worker()
     await close_db()
-    await redis_client.disconnect()
-    print("✅ Connections closed")
+    try:
+        await redis_client.disconnect()
+    except:
+        pass
+    print(">> Connections closed")
 
 
 app = FastAPI(
