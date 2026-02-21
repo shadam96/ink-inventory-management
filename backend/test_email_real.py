@@ -10,6 +10,11 @@ from pathlib import Path
 # Add app to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+# Load .env file explicitly
+from dotenv import load_dotenv
+env_path = Path(__file__).parent / ".env"
+load_dotenv(env_path)
+
 from app.core.config import settings
 from app.services.email_service import email_service
 
@@ -18,12 +23,12 @@ async def test_real_email():
     """Test sending a real email"""
     
     print("=" * 60)
-    print("📧 Real Email Configuration Test")
+    print(">> Real Email Configuration Test")
     print("=" * 60)
     print()
     
     # Check configuration
-    print("1️⃣  Checking SMTP Configuration...")
+    print("1. Checking SMTP Configuration...")
     print(f"   SMTP Host: {settings.smtp_host}")
     print(f"   SMTP Port: {settings.smtp_port}")
     print(f"   SMTP User: {settings.smtp_user}")
@@ -31,7 +36,7 @@ async def test_real_email():
     print()
     
     if not settings.smtp_user or not settings.smtp_password:
-        print("❌ ERROR: Email not configured!")
+        print("[X] ERROR: Email not configured!")
         print()
         print("Please update backend/.env with:")
         print("  SMTP_HOST=smtp.gmail.com")
@@ -43,19 +48,19 @@ async def test_real_email():
         print("See EMAIL_SETUP_GUIDE.md for detailed instructions")
         return False
     
-    print("✅ Configuration found")
+    print("[OK] Configuration found")
     print()
     
     # Get recipient email
-    print("2️⃣  Enter recipient email address:")
+    print("2. Enter recipient email address:")
     recipient = input("   Email: ").strip()
     
     if not recipient or '@' not in recipient:
-        print("❌ Invalid email address")
+        print("[X] Invalid email address")
         return False
     
     print()
-    print(f"3️⃣  Sending test email to {recipient}...")
+    print(f"3. Sending test email to {recipient}...")
     print("   (This may take a few seconds)")
     print()
     
@@ -63,9 +68,9 @@ async def test_real_email():
         # Send test email
         await email_service.send_test_email(recipient)
         
-        print("✅ SUCCESS! Test email sent")
+        print("[OK] SUCCESS! Test email sent")
         print()
-        print(f"📬 Check your inbox at: {recipient}")
+        print(f">> Check your inbox at: {recipient}")
         print()
         print("Expected email:")
         print("  - Subject: בדיקת חיבור מערכת ניהול מלאי")
@@ -81,24 +86,24 @@ async def test_real_email():
         return True
         
     except Exception as e:
-        print("❌ FAILED to send email")
+        print("[X] FAILED to send email")
         print()
         print("Error details:")
         print(f"  {type(e).__name__}: {str(e)}")
         print()
         print("Common issues:")
         print()
-        print("📧 Gmail Users:")
+        print(">> Gmail Users:")
         print("  - Use App Password (not regular password)")
         print("  - Enable 2-Step Verification first")
         print("  - Generate at: https://myaccount.google.com/apppasswords")
         print()
-        print("🔒 Authentication Failed:")
+        print(">> Authentication Failed:")
         print("  - Verify SMTP_USER matches EMAIL_FROM")
         print("  - Check password has no extra spaces")
         print("  - Try regenerating app password")
         print()
-        print("🌐 Connection Issues:")
+        print(">> Connection Issues:")
         print("  - Check firewall settings")
         print("  - Verify port 587 is not blocked")
         print("  - Try different network (mobile hotspot)")
@@ -112,7 +117,7 @@ async def test_real_email():
 async def test_email_templates():
     """Test that email templates exist and can be rendered"""
     
-    print("4️⃣  Testing Email Templates...")
+    print("4. Testing Email Templates...")
     print()
     
     templates = [
@@ -140,17 +145,17 @@ async def test_email_templates():
                 template = env.get_template(template_name)
                 # Just verify it exists
                 
-            print(f"   ✅ {description} ({template_name})")
+            print(f"   [OK] {description} ({template_name})")
         except Exception as e:
-            print(f"   ❌ {description} ({template_name}) - {e}")
+            print(f"   [X] {description} ({template_name}) - {e}")
             all_ok = False
     
     print()
     
     if all_ok:
-        print("✅ All email templates found")
+        print("[OK] All email templates found")
     else:
-        print("⚠️  Some email templates missing")
+        print("[!] Some email templates missing")
     
     print()
     return all_ok
@@ -167,14 +172,14 @@ async def main():
         templates_ok = await test_email_templates()
         
         print("=" * 60)
-        print("📊 Test Summary")
+        print(">> Test Summary")
         print("=" * 60)
-        print(f"Email Sending: {'✅ PASS' if email_ok else '❌ FAIL'}")
-        print(f"Email Templates: {'✅ PASS' if templates_ok else '❌ FAIL'}")
+        print(f"Email Sending: {'[OK] PASS' if email_ok else '[X] FAIL'}")
+        print(f"Email Templates: {'[OK] PASS' if templates_ok else '[X] FAIL'}")
         print()
         
         if email_ok and templates_ok:
-            print("🎉 All tests passed! Email system is working.")
+            print("[OK] All tests passed! Email system is working.")
             print()
             print("Next steps:")
             print("  1. Start backend: uvicorn app.main:app --reload")
@@ -182,11 +187,11 @@ async def main():
             print("  3. Run alert checks to test automated emails")
             print()
         else:
-            print("⚠️  Some tests failed. See errors above.")
+            print("[!] Some tests failed. See errors above.")
             print()
     else:
         print("=" * 60)
-        print("❌ Email test failed - fix configuration first")
+        print("[X] Email test failed - fix configuration first")
         print("=" * 60)
         print()
 
@@ -197,5 +202,5 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print()
-        print("⚠️  Test cancelled by user")
+        print("[!] Test cancelled by user")
         print()
