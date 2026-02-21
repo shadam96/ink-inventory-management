@@ -112,3 +112,18 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenData]:
         return None
 
 
+def decode_access_token(token: str) -> Optional[dict]:
+    """Decode access token and return payload"""
+    try:
+        payload = jwt.decode(
+            token,
+            settings.secret_key,
+            algorithms=[settings.algorithm]
+        )
+        if payload.get("type") != "access":
+            return None
+        return payload
+    except JWTError:
+        return None
+
+
