@@ -42,7 +42,7 @@ function Start-Services {
     try {
         # Start services in detached mode
         $ErrorActionPreference = 'Continue'
-        $output = docker-compose up -d 2>&1 | Out-String
+        $output = docker-compose up -d --build 2>&1 | Out-String
         $ErrorActionPreference = 'Stop'
         
         if ($LASTEXITCODE -ne 0) {
