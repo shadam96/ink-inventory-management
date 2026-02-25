@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
-import { api } from '@/lib/api'
+import api from '@/lib/api'
 import { useAlertNotifications } from '@/hooks/useWebSocket'
 
 interface Alert {

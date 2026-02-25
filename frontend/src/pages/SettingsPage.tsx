@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Droplets, Package, Boxes, Warehouse, Mail, Send } from 'lucide-react'
 import { toast } from 'sonner'
-import { api } from '@/lib/api'
+import api from '@/lib/api'
 
 const iconMap = {
   droplets: Droplets,
