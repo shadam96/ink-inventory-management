@@ -40,6 +40,23 @@ class UserResponse(UserBase, TimestampSchema):
     id: UUID
     role: UserRole
     is_active: bool
+    notification_email: Optional[str] = None
+    email_notifications_enabled: bool = False
+
+
+class NotificationSettingsUpdate(BaseSchema):
+    """Schema for updating notification preferences"""
+    
+    notification_email: Optional[EmailStr] = None
+    email_notifications_enabled: bool
+
+
+class NotificationSettingsResponse(BaseSchema):
+    """Schema for notification settings response"""
+    
+    email: EmailStr
+    notification_email: Optional[str] = None
+    email_notifications_enabled: bool = False
 
 
 class UserLogin(BaseSchema):

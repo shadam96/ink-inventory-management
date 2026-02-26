@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Droplets, Package, Boxes, Warehouse, Mail, Send } from 'lucide-react'
+import { Droplets, Package, Boxes, Warehouse, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 
@@ -35,41 +35,42 @@ export function SettingsPage() {
   const [localTheme, setLocalTheme] = useState(theme)
   const [localCurrency, setLocalCurrency] = useState(currency)
   
-  // Email settings
-  const [emailConfigured, setEmailConfigured] = useState(false)
-  const [testEmail, setTestEmail] = useState('')
-  const [sendingTest, setSendingTest] = useState(false)
+  // Notification email
+  const [notificationEmail, setNotificationEmail] = useState('')
+  const [savingEmail, setSavingEmail] = useState(false)
   const [loadingEmail, setLoadingEmail] = useState(true)
 
   useEffect(() => {
-    fetchEmailSettings()
+    fetchNotificationSettings()
   }, [])
 
-  const fetchEmailSettings = async () => {
+  const fetchNotificationSettings = async () => {
     try {
-      const response = await api.get('/settings/email')
-      setEmailConfigured(response.data.email_configured)
+      const response = await api.get('/settings/notifications')
+      setNotificationEmail(response.data.notification_email || '')
     } catch (error) {
-      console.error('Failed to fetch email settings:', error)
+      console.error('Failed to fetch notification settings:', error)
     } finally {
       setLoadingEmail(false)
     }
   }
 
-  const sendTestEmail = async () => {
-    if (!testEmail) {
+  const saveNotificationEmail = async () => {
+    if (!notificationEmail) {
       toast.error('אנא הזן כתובת אימייל')
       return
     }
-
-    setSendingTest(true)
+    setSavingEmail(true)
     try {
-      await api.post('/settings/email/test', { email: testEmail })
-      toast.success('אימייל נשלח בהצלחה! בדוק את תיבת הדואר שלך')
+      await api.put('/settings/notifications', {
+        email_notifications_enabled: true,
+        notification_email: notificationEmail,
+      })
+      toast.success('כתובת האימייל נשמרה — תקבל התראות לכתובת זו')
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שליחת האימייל נכשלה')
+      toast.error(error.response?.data?.detail || 'שמירת האימייל נכשלה')
     } finally {
-      setSendingTest(false)
+      setSavingEmail(false)
     }
   }
 
@@ -222,70 +223,37 @@ export function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Email Settings */}
+      {/* Email Notifications */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Mail className="w-5 h-5" />
-            הגדרות דוא"ל
+            התראות דוא"ל
           </CardTitle>
           <CardDescription>
-            בדיקת חיבור ושליחת אימייל בדיקה
+            הזן כתובת אימייל כדי לקבל התראות על תפוגת מלאי, מלאי נמוך ועוד
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent>
           {loadingEmail ? (
             <div className="text-center py-4">טוען...</div>
           ) : (
-            <>
-              <div className="flex items-center gap-2 p-4 rounded-lg bg-muted">
-                <div className={`w-3 h-3 rounded-full ${emailConfigured ? 'bg-green-500' : 'bg-red-500'}`} />
-                <span className="text-sm">
-                  {emailConfigured 
-                    ? '✅ שרת דוא"ל מוגדר ופעיל' 
-                    : '⚠️ שרת דוא"ל לא מוגדר - עדכן משתני סביבה'}
-                </span>
-              </div>
-
-              {emailConfigured && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="testEmail">שלח אימייל בדיקה</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="testEmail"
-                        type="email"
-                        placeholder="your@email.com"
-                        value={testEmail}
-                        onChange={(e) => setTestEmail(e.target.value)}
-                        disabled={sendingTest}
-                      />
-                      <Button 
-                        onClick={sendTestEmail} 
-                        disabled={sendingTest}
-                        className="gap-2"
-                      >
-                        <Send className="w-4 h-4" />
-                        {sendingTest ? 'שולח...' : 'שלח'}
-                      </Button>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      אימייל בדיקה יישלח לכתובת שהזנת כדי לבדוק את החיבור
-                    </p>
-                  </div>
-
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                    <h4 className="font-medium text-sm mb-2">📧 אימיילים אוטומטיים מופעלים</h4>
-                    <ul className="text-xs space-y-1 text-muted-foreground">
-                      <li>✓ התראות על תוקף מתקרב (30, 60, 90, 120 ימים)</li>
-                      <li>✓ התראות על מלאי נמוך</li>
-                      <li>✓ תעודות משלוח ללקוחות</li>
-                      <li>✓ דוחות שבועיים (בעתיד)</li>
-                    </ul>
-                  </div>
-                </div>
-              )}
-            </>
+            <div className="flex gap-2">
+              <Input
+                id="notificationEmail"
+                type="email"
+                dir="ltr"
+                placeholder="your@email.com"
+                value={notificationEmail}
+                onChange={(e) => setNotificationEmail(e.target.value)}
+              />
+              <Button
+                onClick={saveNotificationEmail}
+                disabled={savingEmail || !notificationEmail}
+              >
+                {savingEmail ? 'שומר...' : 'שמור'}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

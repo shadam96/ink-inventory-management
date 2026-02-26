@@ -370,51 +370,50 @@ class AlertService:
             "total_new_alerts": len(expiring) + len(expired) + len(low_stock) + len(dead_stock),
         }
     
+    async def _get_notification_recipients(self) -> list[str]:
+        """Get email addresses of users who opted into notifications"""
+        result = await self.db.execute(
+            select(User).where(
+                User.is_active == True,
+                User.email_notifications_enabled == True,
+            )
+        )
+        users = result.scalars().all()
+        return [user.notification_email or user.email for user in users]
+
     async def _send_expiration_email(self, batch: Batch, days_left: int, severity: AlertSeverity):
-        """Send expiration alert email to admin users"""
+        """Send expiration alert email to opted-in users"""
         try:
             from app.services.email_service import email_service
             
-            # Get admin/manager emails
-            result = await self.db.execute(
-                select(User).where(User.is_active == True)
-            )
-            users = result.scalars().all()
-            
-            for user in users:
-                if user.role.value in ['ADMIN', 'MANAGER']:
-                    await email_service.send_expiration_alert(
-                        to=user.email,
-                        batch_number=batch.batch_number,
-                        item_name=batch.item.name if batch.item else "Unknown",
-                        expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
-                        days_until_expiry=days_left,
-                        quantity_available=float(batch.quantity_available),
-                        severity=severity.value
-                    )
+            recipients = await self._get_notification_recipients()
+            for email in recipients:
+                await email_service.send_expiration_alert(
+                    to=email,
+                    batch_number=batch.batch_number,
+                    item_name=batch.item.name if batch.item else "Unknown",
+                    expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
+                    days_until_expiry=days_left,
+                    quantity_available=float(batch.quantity_available),
+                    severity=severity.value
+                )
         except Exception as e:
             print(f">> Failed to send expiration email: {e}")
     
     async def _send_low_stock_email(self, item: Item, current_quantity: float):
-        """Send low stock alert email to admin users"""
+        """Send low stock alert email to opted-in users"""
         try:
             from app.services.email_service import email_service
             
-            # Get admin/manager emails
-            result = await self.db.execute(
-                select(User).where(User.is_active == True)
-            )
-            users = result.scalars().all()
-            
-            for user in users:
-                if user.role.value in ['ADMIN', 'MANAGER']:
-                    await email_service.send_low_stock_alert(
-                        to=user.email,
-                        item_name=item.name,
-                        sku=item.sku,
-                        current_quantity=current_quantity,
-                        reorder_point=item.reorder_point,
-                        min_stock=item.min_stock
-                    )
+            recipients = await self._get_notification_recipients()
+            for email in recipients:
+                await email_service.send_low_stock_alert(
+                    to=email,
+                    item_name=item.name,
+                    sku=item.sku,
+                    current_quantity=current_quantity,
+                    reorder_point=item.reorder_point,
+                    min_stock=item.min_stock
+                )
         except Exception as e:
             print(f">> Failed to send low stock email: {e}")

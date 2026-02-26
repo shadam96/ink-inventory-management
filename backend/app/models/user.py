@@ -1,6 +1,6 @@
 """User model for authentication and authorization"""
 import enum
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import Boolean, Enum, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -54,6 +54,17 @@ class User(BaseModel):
         Boolean,
         default=True,
         nullable=False
+    )
+    notification_email: Mapped[Optional[str]] = mapped_column(
+        String(255),
+        nullable=True,
+        default=None
+    )
+    email_notifications_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false"
     )
     
     # Relationships
