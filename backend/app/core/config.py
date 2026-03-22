@@ -31,17 +31,17 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
-    # CORS — override via CORS_ORIGINS env var (comma-separated)
-    cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # CORS — set via CORS_ORIGINS env var (comma-separated string)
+    cors_origins: str = "http://localhost:5173,http://localhost:3000"
+
+    @property
+    def cors_origins_list(self) -> List[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @model_validator(mode="before")
     @classmethod
-    def parse_cors_and_database(cls, values):
-        # Allow comma-separated CORS_ORIGINS env var
-        cors = values.get("cors_origins")
-        if isinstance(cors, str):
-            values["cors_origins"] = [o.strip() for o in cors.split(",") if o.strip()]
-        # Render (and most PG providers) give postgresql:// but SQLAlchemy async needs postgresql+asyncpg://
+    def parse_database_url(cls, values):
+        # Railway/Render/Neon give postgresql:// but SQLAlchemy async needs postgresql+asyncpg://
         db_url = values.get("database_url", "")
         if isinstance(db_url, str) and db_url.startswith("postgresql://"):
             values["database_url"] = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
