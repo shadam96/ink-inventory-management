@@ -27,7 +27,9 @@ class WebSocketService {
     this.token = token;
     this.isConnecting = true;
 
-    const wsUrl = `ws://localhost:8000/api/v1/ws?token=${token}`;
+    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+    const wsBase = apiUrl.replace(/^http/, 'ws');
+    const wsUrl = `${wsBase}/ws?token=${token}`;
 
     try {
       this.ws = new WebSocket(wsUrl);

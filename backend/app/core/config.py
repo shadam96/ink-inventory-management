@@ -1,40 +1,51 @@
 """Application configuration using Pydantic Settings"""
 from functools import lru_cache
 from typing import List
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables"""
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"
     )
-    
+
     # Application
     app_name: str = "Ink Inventory Management"
     environment: str = "development"
     debug: bool = True
     api_v1_prefix: str = "/api/v1"
-    
+
     # Database
     database_url: str = "postgresql+asyncpg://inventory_user:inventory_pass_2024@localhost:5432/inventory_db"
     db_echo: bool = False
-    
-    # Redis
-    redis_url: str = "redis://localhost:6379"
-    
+
     # Security
     secret_key: str = "your-super-secret-key-change-in-production-min-32-chars"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
-    
-    # CORS
+
+    # CORS — override via CORS_ORIGINS env var (comma-separated)
     cors_origins: List[str] = ["http://localhost:5173", "http://localhost:3000"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def parse_cors_and_database(cls, values):
+        # Allow comma-separated CORS_ORIGINS env var
+        cors = values.get("cors_origins")
+        if isinstance(cors, str):
+            values["cors_origins"] = [o.strip() for o in cors.split(",") if o.strip()]
+        # Render (and most PG providers) give postgresql:// but SQLAlchemy async needs postgresql+asyncpg://
+        db_url = values.get("database_url", "")
+        if isinstance(db_url, str) and db_url.startswith("postgresql://"):
+            values["database_url"] = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return values
     
     # Alert Thresholds (days before expiration)
     alert_threshold_120: int = 120

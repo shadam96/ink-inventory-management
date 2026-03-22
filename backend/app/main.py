@@ -8,8 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.core.database import close_db, init_db
-from app.core.redis import redis_client
+from app.core.database import close_db, init_db, ensure_default_users
 from app.tasks.scheduler import start_scheduler, shutdown_scheduler
 from app.services.email_service import email_service
 
@@ -20,14 +19,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     # Startup
     print(">> Starting Ink Inventory Management System...")
     await init_db()
-    
-    # Try to connect to Redis (optional)
-    try:
-        await redis_client.connect()
-        print(">> Database and Redis connected")
-    except Exception as e:
-        print(f">> Database connected (Redis unavailable: {str(e)})")
-    
+    await ensure_default_users()
+    print(">> Database connected, default users ensured")
+
     # Start scheduler for background tasks
     if not settings.is_development or settings.environment != "test":
         start_scheduler()
@@ -44,10 +38,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     shutdown_scheduler()
     await email_service.stop_worker()
     await close_db()
-    try:
-        await redis_client.disconnect()
-    except:
-        pass
     print(">> Connections closed")
 
 
@@ -92,7 +82,6 @@ async def health_check():
     return {
         "status": "healthy",
         "database": "connected",
-        "redis": "connected",
         "environment": settings.environment,
     }
 
