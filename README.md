@@ -9,37 +9,95 @@ batch management, delivery notes, and real-time alerts. Built for Lino Print.
 
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL 15+ (local install or remote — e.g. Render, Neon, Supabase)
+- **Python 3.11+** — [python.org/downloads](https://www.python.org/downloads/)
+- **Node.js 18+** — [nodejs.org](https://nodejs.org/)
+- **PostgreSQL database** — one of:
+  - [Neon](https://neon.tech) (free, serverless, recommended for dev)
+  - [Render PostgreSQL](https://render.com) (free 90 days)
+  - Local PostgreSQL install
 
-### Backend
+### 1. Clone
+
+```bash
+git clone https://github.com/shadam96/ink-inventory-management.git
+cd ink-inventory-management
+```
+
+### 2. Backend
 
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate        # Linux/Mac
-# venv\Scripts\activate         # Windows
+
+# Activate the virtual environment:
+venv\Scripts\activate         # Windows (CMD/PowerShell)
+# source venv/bin/activate    # Linux/Mac/Git Bash
 
 pip install -r requirements.txt
-cp ../env.example .env          # edit DATABASE_URL to point to your PG instance
+```
 
+Create the `.env` file:
+
+```bash
+cp ../env.example .env
+```
+
+Edit `.env` and set your `DATABASE_URL`:
+
+```
+DATABASE_URL=postgresql+asyncpg://user:password@host/dbname
+```
+
+> If your provider gives a `postgresql://` URL (most do), the app converts it
+> to `postgresql+asyncpg://` automatically — either format works.
+
+Start the server:
+
+```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-On first startup the app auto-creates tables and seeds default users:
-- `admin` / `admin123456` (Admin)
-- `user` / `user123456` (Viewer)
+On first startup the app auto-creates all tables and seeds two default users:
+- `admin` / `admin123456` (Admin role)
+- `user` / `user123456` (Viewer role)
 
-### Frontend
+Verify: open http://localhost:8000/health — should return `{"status":"healthy"}`.
+
+### 3. Frontend
+
+In a separate terminal:
 
 ```bash
 cd frontend
 npm install
-npm run dev                     # http://localhost:5173
+npm run dev
 ```
 
-### Tests
+Open http://localhost:5173 and log in.
+
+### 4. Verify
+
+| URL | What |
+|-----|------|
+| http://localhost:5173 | App UI |
+| http://localhost:8000/health | Backend health check |
+| http://localhost:8000/docs | API documentation (Swagger) |
+
+## Environment Variables
+
+Copy `env.example` to `backend/.env` and configure:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `DATABASE_URL` | Yes | PostgreSQL connection string |
+| `SECRET_KEY` | Yes (production) | JWT signing key, min 32 chars |
+| `ENVIRONMENT` | No | `development` (default) or `production` |
+| `CORS_ORIGINS` | No | Comma-separated allowed origins |
+| `SMTP_HOST/USER/PASSWORD` | No | Email notifications ([setup guide](EMAIL_SETUP_GUIDE.md)) |
+
+See [`SPEC.md`](SPEC.md) for the full list.
+
+## Tests
 
 ```bash
 # Backend
@@ -55,7 +113,7 @@ cd frontend && npm test
 |---------|----------|--------|
 | Backend | Render (free tier) | `backend/Procfile` |
 | Frontend | Vercel | `frontend/vercel.json` |
-| Database | Render PostgreSQL / Neon | `DATABASE_URL` env var |
+| Database | Neon / Render PostgreSQL | `DATABASE_URL` env var |
 
 ## Tech Stack
 
