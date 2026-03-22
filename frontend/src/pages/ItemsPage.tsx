@@ -19,11 +19,9 @@ import { Header } from '@/components/layout/Header'
 import { ItemDialog } from '@/components/ItemDialog'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { itemsApi, type Item, type CreateItemData } from '@/lib/api'
-import { useUIStore } from '@/store/ui'
 
 export function ItemsPage() {
   const { t } = useTranslation()
-  const { currency } = useUIStore()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')

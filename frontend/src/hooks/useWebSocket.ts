@@ -8,7 +8,8 @@ import { useAuthStore } from '../store/auth';
 type MessageHandler = (message: any) => void;
 
 export function useWebSocket() {
-  const token = useAuthStore((state) => state.token);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const token = isAuthenticated ? localStorage.getItem('access_token') : null;
 
   useEffect(() => {
     if (token) {

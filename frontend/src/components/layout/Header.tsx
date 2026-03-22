@@ -1,14 +1,13 @@
-import { useTranslation } from 'react-i18next'
 import { NotificationBell } from '@/components/NotificationBell'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 
-interface HeaderProps {
+export interface HeaderProps {
   title: string
+  alertCount?: number
 }
 
 export function Header({ title }: HeaderProps) {
-  const { t } = useTranslation()
   const { sidebarOpen } = useUIStore()
 
   return (
