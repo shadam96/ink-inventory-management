@@ -241,6 +241,7 @@ export function PickingPage() {
                     id="quantity"
                     type="number"
                     step="1"
+                    min={1}
                     inputMode="numeric"
                     {...register('quantity', { valueAsNumber: true })}
                     placeholder="0"

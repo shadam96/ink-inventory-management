@@ -215,6 +215,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                   id="cost_price"
                   type="number"
                   step="0.01"
+                  min={0}
                   {...register('cost_price', { valueAsNumber: true })}
                   placeholder="0.00"
                   className="flex-1"
@@ -267,6 +268,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 id="reorder_point"
                 type="number"
                 step="1"
+                min={0}
                 inputMode="numeric"
                 {...register('reorder_point', { valueAsNumber: true })}
                 placeholder="10"
@@ -281,6 +283,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 id="min_stock"
                 type="number"
                 step="1"
+                min={0}
                 inputMode="numeric"
                 {...register('min_stock', { valueAsNumber: true })}
                 placeholder="5"
@@ -293,6 +296,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 id="max_stock"
                 type="number"
                 step="1"
+                min={0}
                 inputMode="numeric"
                 {...register('max_stock', { valueAsNumber: true })}
                 placeholder="100"
