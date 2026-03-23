@@ -57,9 +57,9 @@ Start the server:
 uvicorn app.main:app --reload --port 8000
 ```
 
-On first startup the app auto-creates all tables and seeds two default users:
-- `admin` / `admin123456` (Admin role)
-- `user` / `user123456` (Viewer role)
+On first startup the app auto-creates all tables. To seed default users, set `ADMIN_SEED_PASSWORD` and `USER_SEED_PASSWORD` env vars in your `.env` file before starting. This creates:
+- `admin` (Admin role)
+- `user` (Viewer role)
 
 Verify: open http://localhost:8000/health — should return `{"status":"healthy"}`.
 
