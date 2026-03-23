@@ -113,7 +113,7 @@ npm run dev
 # Get auth token first
 TOKEN=$(curl -X POST http://localhost:8000/api/v1/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"admin123456"}' \
+  -d '{"username":"admin","password":"YOUR_PASSWORD"}' \
   | jq -r '.access_token')
 
 # Send test email
