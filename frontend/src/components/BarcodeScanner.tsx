@@ -17,9 +17,21 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   const [torch, setTorch] = useState(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const lastScannedRef = useRef<string | null>(null)
+  const initializingRef = useRef(false)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  const stopScanner = useCallback(() => {
+    try {
+      Quagga.stop()
+    } catch {
+      // Already stopped
+    }
+    setIsInitialized(false)
+  }, [])
 
   const initScanner = useCallback(async () => {
-    if (!scannerRef.current) return
+    if (!scannerRef.current || initializingRef.current) return
+    initializingRef.current = true
 
     try {
       await Quagga.init(
@@ -28,10 +40,9 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
             type: 'LiveStream',
             target: scannerRef.current,
             constraints: {
-              width: { min: 640, ideal: 1280, max: 1920 },
-              height: { min: 480, ideal: 720, max: 1080 },
               facingMode: facingMode,
-              aspectRatio: { min: 1, max: 2 },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
             },
           },
           locator: {
@@ -55,6 +66,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
           locate: true,
         },
         (err) => {
+          initializingRef.current = false
           if (err) {
             console.error('Quagga init error:', err)
             setError('לא ניתן לגשת למצלמה. אנא אשר הרשאות מצלמה.')
@@ -65,21 +77,30 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         }
       )
     } catch (err) {
+      initializingRef.current = false
       console.error('Scanner error:', err)
       setError('שגיאה בהפעלת הסורק')
     }
   }, [facingMode])
 
+  // Init on mount, cleanup on unmount
   useEffect(() => {
     initScanner()
 
-    // Cleanup on unmount
     return () => {
-      if (isInitialized) {
-        Quagga.stop()
-      }
+      stopScanner()
+      audioCtxRef.current?.close()
     }
-  }, [initScanner])
+  }, [initScanner, stopScanner])
+
+  // Prepare AudioContext on first user gesture (the tap that opens the scanner)
+  useEffect(() => {
+    try {
+      audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
+    } catch {
+      // Audio not supported
+    }
+  }, [])
 
   useEffect(() => {
     const handleDetected = (result: any) => {
@@ -95,18 +116,20 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         navigator.vibrate(100)
       }
 
-      // Play sound feedback
+      // Play sound feedback using pre-created AudioContext
       try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)()
-        const oscillator = audioCtx.createOscillator()
-        const gainNode = audioCtx.createGain()
-        oscillator.connect(gainNode)
-        gainNode.connect(audioCtx.destination)
-        oscillator.frequency.value = 800
-        oscillator.type = 'sine'
-        gainNode.gain.value = 0.1
-        oscillator.start()
-        oscillator.stop(audioCtx.currentTime + 0.1)
+        const ctx = audioCtxRef.current
+        if (ctx && ctx.state === 'running') {
+          const oscillator = ctx.createOscillator()
+          const gainNode = ctx.createGain()
+          oscillator.connect(gainNode)
+          gainNode.connect(ctx.destination)
+          oscillator.frequency.value = 800
+          oscillator.type = 'sine'
+          gainNode.gain.value = 0.1
+          oscillator.start()
+          oscillator.stop(ctx.currentTime + 0.1)
+        }
       } catch {
         // Audio not supported
       }
@@ -141,13 +164,13 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   }
 
   const switchCamera = () => {
-    Quagga.stop()
-    setIsInitialized(false)
+    stopScanner()
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'))
   }
 
+  // Re-init when facingMode changes (after switchCamera)
   useEffect(() => {
-    if (!isInitialized && !error) {
+    if (!isInitialized && !error && !initializingRef.current) {
       initScanner()
     }
   }, [facingMode, isInitialized, error, initScanner])
@@ -181,6 +204,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
               <p className="text-lg mb-2">{error}</p>
               <Button onClick={() => {
                 setError(null)
+                initializingRef.current = false
                 initScanner()
               }}>
                 נסה שוב
@@ -276,5 +300,3 @@ export function useBarcodeScanner() {
     ) : null,
   }
 }
-
-

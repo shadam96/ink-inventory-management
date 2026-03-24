@@ -177,35 +177,46 @@ async def receive_multiple_items(
         )
 
 
+class BarcodeRequest(BaseModel):
+    """Request body for barcode validation"""
+    barcode: str
+
+
 @router.post("/validate-barcode")
 async def validate_barcode(
-    barcode: str,
+    request: BarcodeRequest,
     db: DbSession,
     current_user: WarehouseUser,
 ) -> dict:
     """
     Validate a scanned barcode/SKU and return item info.
-    Used for barcode scanning during goods receipt.
+    Searches the barcode column first, then falls back to SKU.
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, or_
     from app.models.item import Item
-    
+
     result = await db.execute(
-        select(Item).where(Item.sku == barcode)
+        select(Item).where(
+            or_(
+                Item.barcode == request.barcode,
+                Item.sku == request.barcode,
+            )
+        )
     )
     item = result.scalar_one_or_none()
-    
+
     if not item:
         return {
             "valid": False,
             "item": None
         }
-    
+
     return {
         "valid": True,
         "item": {
             "id": str(item.id),
             "sku": item.sku,
+            "barcode": item.barcode,
             "name": item.name,
             "supplier": item.supplier,
             "unit_of_measure": item.unit_of_measure,

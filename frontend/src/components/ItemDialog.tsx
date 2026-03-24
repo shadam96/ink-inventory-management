@@ -34,6 +34,7 @@ import type { Item, CreateItemData } from '@/lib/api'
 
 const itemSchema = z.object({
   sku: z.string().min(1, 'מק"ט נדרש'),
+  barcode: z.string().max(50).optional().or(z.literal('')),
   name: z.string().min(1, 'שם נדרש'),
   description: z.string().optional(),
   supplier: z.string().min(1, 'ספק נדרש'),
@@ -70,10 +71,12 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     defaultValues: item
       ? {
           ...item,
+          barcode: item.barcode || '',
           currency: item.currency || defaultCurrency,
         }
       : {
           sku: '',
+          barcode: '',
           name: '',
           description: '',
           supplier: '',
@@ -90,11 +93,13 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     if (item) {
       reset({
         ...item,
+        barcode: item.barcode || '',
         currency: item.currency || defaultCurrency,
       })
     } else {
       reset({
         sku: '',
+        barcode: '',
         name: '',
         description: '',
         supplier: '',
@@ -114,6 +119,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
       // but ensure type safety for CreateItemData
       const submitData: CreateItemData = {
         sku: data.sku,
+        barcode: data.barcode || undefined,
         name: data.name,
         description: data.description,
         supplier: data.supplier,
@@ -159,16 +165,26 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="name">{t('items.name')} *</Label>
+              <Label htmlFor="barcode">ברקוד</Label>
               <Input
-                id="name"
-                {...register('name')}
-                placeholder="דיו שחור"
+                id="barcode"
+                {...register('barcode')}
+                placeholder="7290000000000"
+                className="font-mono"
               />
-              {errors.name && (
-                <p className="text-sm text-destructive">{errors.name.message}</p>
-              )}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="name">{t('items.name')} *</Label>
+            <Input
+              id="name"
+              {...register('name')}
+              placeholder="דיו שחור"
+            />
+            {errors.name && (
+              <p className="text-sm text-destructive">{errors.name.message}</p>
+            )}
           </div>
 
           <div className="space-y-2">

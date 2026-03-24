@@ -23,6 +23,12 @@ class Item(BaseModel):
         index=True,
         nullable=False
     )
+    barcode: Mapped[Optional[str]] = mapped_column(
+        String(50),
+        unique=True,
+        index=True,
+        nullable=True
+    )
     name: Mapped[str] = mapped_column(
         String(200),
         nullable=False

@@ -21,7 +21,8 @@ class ItemBase(BaseSchema):
 
 class ItemCreate(ItemBase):
     """Schema for creating an item"""
-    
+
+    barcode: Optional[str] = Field(None, max_length=50)
     description: Optional[str] = None
     cost_price: Decimal = Field(default=Decimal("0.00"), ge=0)
     currency: Currency = Field(default="ILS")
@@ -32,8 +33,9 @@ class ItemCreate(ItemBase):
 
 class ItemUpdate(BaseSchema):
     """Schema for updating an item"""
-    
+
     sku: Optional[str] = Field(None, min_length=1, max_length=50)
+    barcode: Optional[str] = Field(None, max_length=50)
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = None
     supplier: Optional[str] = Field(None, min_length=1, max_length=200)
@@ -47,8 +49,9 @@ class ItemUpdate(BaseSchema):
 
 class ItemResponse(ItemBase, TimestampSchema):
     """Schema for item response"""
-    
+
     id: UUID
+    barcode: Optional[str]
     description: Optional[str]
     cost_price: Decimal
     currency: Currency

@@ -275,6 +275,7 @@ export const customersApi = {
 export interface Item {
   id: string
   sku: string
+  barcode?: string
   name: string
   description?: string
   supplier: string
@@ -290,6 +291,7 @@ export interface Item {
 
 export interface CreateItemData {
   sku: string
+  barcode?: string
   name: string
   description?: string
   supplier: string
