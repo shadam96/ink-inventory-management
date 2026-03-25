@@ -228,7 +228,7 @@ async def test_validate_barcode(
     response = await client.post(
         "/api/v1/receiving/validate-barcode",
         headers=auth_headers,
-        params={"barcode": test_item.sku},
+        json={"barcode": test_item.sku},
     )
     
     assert response.status_code == 200
@@ -247,7 +247,7 @@ async def test_validate_barcode_not_found(
     response = await client.post(
         "/api/v1/receiving/validate-barcode",
         headers=auth_headers,
-        params={"barcode": "NON-EXISTENT-SKU"},
+        json={"barcode": "NON-EXISTENT-SKU"},
     )
     
     assert response.status_code == 200
