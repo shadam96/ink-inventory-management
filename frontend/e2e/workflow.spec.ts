@@ -1,11 +1,13 @@
 import { test, expect } from '@playwright/test'
 
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'admin123456'
+
 test.describe('Complete Inventory Workflow', () => {
   test.beforeEach(async ({ page }) => {
     // Login
     await page.goto('/login')
     await page.getByLabel(/שם משתמש/i).fill('admin')
-    await page.getByLabel(/סיסמה/i).fill('admin123456')
+    await page.getByLabel(/סיסמה/i).fill(ADMIN_PASSWORD)
     await page.getByRole('button', { name: /התחבר/i }).click()
     await expect(page).toHaveURL('/')
   })

@@ -54,10 +54,22 @@ async def init_db() -> None:
 
 
 async def ensure_default_users() -> None:
-    """Create default admin and user accounts if they don't exist"""
+    """Create default admin and user accounts if they don't exist.
+
+    Reads passwords from ADMIN_SEED_PASSWORD and USER_SEED_PASSWORD env vars.
+    Skips seeding if env vars are not set or if users already exist.
+    """
+    import os
     from sqlalchemy import select
     from app.models.user import User, UserRole
     from app.core.security import get_password_hash
+
+    admin_password = os.environ.get("ADMIN_SEED_PASSWORD")
+    user_password = os.environ.get("USER_SEED_PASSWORD")
+
+    if not admin_password or not user_password:
+        print(">> Skipping user seeding: set ADMIN_SEED_PASSWORD and USER_SEED_PASSWORD env vars to seed default users")
+        return
 
     async with async_session_maker() as session:
         # Check if any users exist
@@ -68,7 +80,7 @@ async def ensure_default_users() -> None:
         admin = User(
             username="admin",
             email="admin@linoprint.com",
-            hashed_password=get_password_hash("admin123456"),
+            hashed_password=get_password_hash(admin_password),
             full_name="System Admin",
             role=UserRole.ADMIN,
             is_active=True,
@@ -76,14 +88,14 @@ async def ensure_default_users() -> None:
         user = User(
             username="user",
             email="user@linoprint.com",
-            hashed_password=get_password_hash("user123456"),
+            hashed_password=get_password_hash(user_password),
             full_name="Default User",
             role=UserRole.VIEWER,
             is_active=True,
         )
         session.add_all([admin, user])
         await session.commit()
-        print(">> Default users created (admin / admin123456, user / user123456)")
+        print(">> Default users created (admin, user) with passwords from env vars")
 
 
 async def close_db() -> None:

@@ -22,11 +22,11 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
 
     # Database
-    database_url: str = "postgresql+asyncpg://inventory_user:inventory_pass_2024@localhost:5432/inventory_db"
+    database_url: str = ""
     db_echo: bool = False
 
     # Security
-    secret_key: str = "your-super-secret-key-change-in-production-min-32-chars"
+    secret_key: str = ""
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
@@ -85,7 +85,10 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Cached settings instance"""
-    return Settings()
+    s = Settings()
+    if not s.secret_key:
+        raise ValueError("SECRET_KEY env var is required. Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\"")
+    return s
 
 
 settings = get_settings()

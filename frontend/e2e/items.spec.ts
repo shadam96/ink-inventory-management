@@ -1,14 +1,16 @@
 import { test, expect } from '@playwright/test'
 
+const ADMIN_PASSWORD = process.env.E2E_ADMIN_PASSWORD ?? 'admin123456'
+
 test.describe('Items Management', () => {
   // Setup: Login before each test
   test.beforeEach(async ({ page }) => {
     await page.goto('/login')
     await page.getByLabel(/שם משתמש/i).fill('admin')
-    await page.getByLabel(/סיסמה/i).fill('admin123456')
+    await page.getByLabel(/סיסמה/i).fill(ADMIN_PASSWORD)
     await page.getByRole('button', { name: /התחבר/i }).click()
     await expect(page).toHaveURL('/')
-    
+
     // Navigate to items page
     await page.getByRole('link', { name: /פריטים/i }).click()
     await expect(page).toHaveURL('/items')

@@ -582,6 +582,6 @@ All routes prefixed with `/api/v1`.
 5. **Batch numbers auto-generated** if not provided: `GR-YYMMDD-XXX` (e.g., `GR-260315-001`).
 6. **Every inventory change creates a movement** — full audit trail with before/after quantities, user ID, timestamp.
 7. **Delivery notes must include batch numbers and expiry dates** — this is a legal/compliance requirement per the PDF spec.
-8. **Default users** are seeded on first startup: `admin/admin123456` (ADMIN), `user/user123456` (VIEWER). Passwords should be changed immediately.
+8. **Default users** are seeded on first startup if `ADMIN_SEED_PASSWORD` and `USER_SEED_PASSWORD` env vars are set: `admin` (ADMIN), `user` (VIEWER).
 9. **Alert thresholds** are configurable but default to 120/90/60/30 days before expiry.
 10. **Dead stock** = no outbound movement for 180+ days (configurable).
