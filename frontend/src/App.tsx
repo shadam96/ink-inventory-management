@@ -44,13 +44,19 @@ function App() {
   useEffect(() => {
     const applyTheme = () => {
       const root = document.documentElement
-      
+
+      // Add transition class for smooth theme switching
+      root.classList.add('theme-transition')
+
       if (theme === 'system') {
         const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
         root.classList.toggle('dark', systemTheme === 'dark')
       } else {
         root.classList.toggle('dark', theme === 'dark')
       }
+
+      // Remove transition class after animation completes
+      setTimeout(() => root.classList.remove('theme-transition'), 350)
     }
 
     applyTheme()

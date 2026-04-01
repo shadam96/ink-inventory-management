@@ -39,31 +39,31 @@
 
   .dark {
     --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
+    --foreground: 210 20% 93%;
 
-    --card: 222 47% 15%;
-    --card-foreground: 210 40% 98%;
+    --card: 223 44% 14%;
+    --card-foreground: 210 20% 93%;
 
-    --popover: 222 47% 15%;
-    --popover-foreground: 210 40% 98%;
+    --popover: 223 44% 14%;
+    --popover-foreground: 210 20% 93%;
 
     --primary: 199 89% 48%;
     --primary-foreground: 222 47% 11%;
 
-    --secondary: 217 33% 17%;
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 217 33% 18%;
+    --secondary-foreground: 210 20% 93%;
 
-    --muted: 217 33% 17%;
-    --muted-foreground: 215 20% 65%;
+    --muted: 217 33% 18%;
+    --muted-foreground: 215 15% 58%;
 
-    --accent: 217 33% 17%;
-    --accent-foreground: 210 40% 98%;
+    --accent: 217 33% 20%;
+    --accent-foreground: 210 20% 93%;
 
-    --destructive: 0 62% 30%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 217 33% 25%;
-    --input: 217 33% 25%;
+    --border: 217 28% 22%;
+    --input: 217 28% 22%;
     --ring: 199 89% 48%;
   }
 }
@@ -77,6 +77,14 @@
     font-feature-settings: "rlig" 1, "calt" 1;
     /* Prevent text size adjustment on iOS */
     -webkit-text-size-adjust: 100%;
+  }
+
+  /* Smooth theme transition */
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease !important;
   }
   
   /* RTL Support for Hebrew */

@@ -72,7 +72,7 @@ const RISK_COLORS = {
   caution: '#FBBF24',
   warning: '#F59E0B',
   critical: '#DC2626',
-  expired: '#000000',
+  expired: '#6B7280',
 }
 
 export function DashboardPage() {
@@ -187,7 +187,7 @@ export function DashboardPage() {
                     </Pie>
                     <Tooltip
                       formatter={(value: number) => formatCurrency(value, currency)}
-                      contentStyle={{ direction: 'rtl' }}
+                      contentStyle={{ direction: 'rtl', backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -221,14 +221,14 @@ export function DashboardPage() {
               <div className="h-64">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={distributionChartData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                    <XAxis type="number" tickFormatter={(value) => formatCurrency(value, currency)} />
-                    <YAxis type="category" dataKey="name" width={80} />
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="hsl(var(--border))" />
+                    <XAxis type="number" tickFormatter={(value) => formatCurrency(value, currency)} stroke="hsl(var(--muted-foreground))" />
+                    <YAxis type="category" dataKey="name" width={80} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip
                       formatter={(value: number) => formatCurrency(value, currency)}
-                      contentStyle={{ direction: 'rtl' }}
+                      contentStyle={{ direction: 'rtl', backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
                     />
-                    <Bar dataKey="value" fill="#00A0B0" radius={[0, 4, 4, 0]} />
+                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

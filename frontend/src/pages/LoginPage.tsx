@@ -45,7 +45,7 @@ export function LoginPage() {
   }
 
   return (
-    <div dir="rtl" className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
+    <div dir="rtl" className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted to-background dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 relative overflow-hidden">
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-ink-cyan/20 rounded-full blur-3xl animate-pulse" />
@@ -54,16 +54,16 @@ export function LoginPage() {
       </div>
 
       {/* Grid pattern overlay */}
-      <div 
+      <div
         className="absolute inset-0 opacity-5"
         style={{
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px),
-                           linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(hsl(var(--foreground) / 0.1) 1px, transparent 1px),
+                           linear-gradient(90deg, hsl(var(--foreground) / 0.1) 1px, transparent 1px)`,
           backgroundSize: '50px 50px',
         }}
       />
 
-      <Card className="w-full max-w-md mx-4 glass border-white/10 shadow-2xl relative z-10">
+      <Card className="w-full max-w-md mx-4 bg-card/80 backdrop-blur-lg border-border/50 shadow-2xl relative z-10">
         <CardHeader className="text-center pb-2">
           <div className="flex justify-center mb-4">
             <div className="w-16 h-16 rounded-2xl gradient-ink flex items-center justify-center shadow-lg">
