@@ -1,7 +1,7 @@
 """Delivery Note endpoints"""
 from datetime import date
 from decimal import Decimal
-from typing import List, Optional
+from typing import Literal, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -65,6 +65,8 @@ async def list_delivery_notes(
     status_filter: Optional[DeliveryNoteStatus] = None,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
+    sort_by: Optional[Literal["delivery_note_number", "status", "issue_date", "created_at"]] = None,
+    sort_order: Literal["asc", "desc"] = "desc",
 ) -> dict:
     """List delivery notes with filters"""
     query = (
@@ -74,8 +76,14 @@ async def list_delivery_notes(
             selectinload(DeliveryNote.created_by_user),
             selectinload(DeliveryNote.items),
         )
-        .order_by(DeliveryNote.created_at.desc())
     )
+
+    # Apply sorting — default to newest first
+    if sort_by:
+        col = getattr(DeliveryNote, sort_by)
+        query = query.order_by(col.desc() if sort_order == "desc" else col.asc())
+    else:
+        query = query.order_by(DeliveryNote.created_at.desc())
     
     if customer_id:
         query = query.where(DeliveryNote.customer_id == customer_id)

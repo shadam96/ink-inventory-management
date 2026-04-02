@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/layout/Header'
+import { SortableTableHead } from '@/components/SortableTableHead'
 import { formatDate, formatNumber, daysUntilExpiration, getExpirationStatus } from '@/lib/utils'
 import { batchesApi } from '@/lib/api'
 
@@ -37,16 +38,29 @@ export function BatchesPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('active')
+  const [sortBy, setSortBy] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
   useEffect(() => {
     fetchBatches()
-  }, [search, statusFilter])
+  }, [search, statusFilter, sortBy, sortOrder])
+
+  const handleSort = (key: string) => {
+    if (sortBy === key) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(key)
+      setSortOrder('asc')
+    }
+  }
 
   async function fetchBatches() {
     try {
       setLoading(true)
       const response = await batchesApi.list({
         status_filter: statusFilter === 'all' ? undefined : statusFilter,
+        sort_by: sortBy || undefined,
+        sort_order: sortBy ? sortOrder : undefined,
       })
       
       // Filter by search locally
@@ -147,13 +161,13 @@ export function BatchesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('batches.batchNumber')}</TableHead>
+                <SortableTableHead sortKey="batch_number" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.batchNumber')}</SortableTableHead>
                 <TableHead>{t('items.sku')}</TableHead>
                 <TableHead>{t('items.name')}</TableHead>
-                <TableHead className="text-left">{t('batches.quantity')}</TableHead>
-                <TableHead>{t('batches.receiptDate')}</TableHead>
-                <TableHead>{t('batches.expirationDate')}</TableHead>
-                <TableHead>{t('batches.status')}</TableHead>
+                <SortableTableHead sortKey="quantity_available" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">{t('batches.quantity')}</SortableTableHead>
+                <SortableTableHead sortKey="receipt_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.receiptDate')}</SortableTableHead>
+                <SortableTableHead sortKey="expiration_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.expirationDate')}</SortableTableHead>
+                <SortableTableHead sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.status')}</SortableTableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

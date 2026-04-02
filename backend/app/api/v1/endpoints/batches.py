@@ -1,6 +1,6 @@
 """Batch endpoints with FEFO support"""
 from datetime import date
-from typing import List, Optional
+from typing import Literal, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -28,32 +28,35 @@ async def list_batches(
     item_id: Optional[UUID] = None,
     status_filter: Optional[BatchStatus] = None,
     expiring_within_days: Optional[int] = None,
-    sort_by_expiration: bool = True,
+    sort_by: Optional[Literal["batch_number", "quantity_available", "receipt_date", "expiration_date", "status"]] = None,
+    sort_order: Literal["asc", "desc"] = "asc",
 ) -> PaginatedResponse[BatchResponse]:
     """List batches with FEFO sorting by default"""
     query = (
         select(Batch)
         .options(selectinload(Batch.item), selectinload(Batch.location))
     )
-    
+
     # Apply filters
     if item_id:
         query = query.where(Batch.item_id == item_id)
-    
+
     if status_filter:
         query = query.where(Batch.status == status_filter)
     else:
         # By default, show only active batches
         query = query.where(Batch.status == BatchStatus.ACTIVE)
-    
+
     if expiring_within_days:
-        expiration_threshold = date.today()
         from datetime import timedelta
         expiration_threshold = date.today() + timedelta(days=expiring_within_days)
         query = query.where(Batch.expiration_date <= expiration_threshold)
-    
-    # FEFO sorting (First Expired, First Out)
-    if sort_by_expiration:
+
+    # Apply sorting — default to FEFO (expiration asc)
+    if sort_by:
+        col = getattr(Batch, sort_by)
+        query = query.order_by(col.desc() if sort_order == "desc" else col.asc())
+    else:
         query = query.order_by(Batch.expiration_date.asc())
     
     # Count total

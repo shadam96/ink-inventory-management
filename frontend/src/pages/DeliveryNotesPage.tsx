@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/layout/Header'
+import { SortableTableHead } from '@/components/SortableTableHead'
 import { formatDate } from '@/lib/utils'
 import { deliveryNotesApi } from '@/lib/api'
 
@@ -34,16 +35,32 @@ export function DeliveryNotesPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const [sortBy, setSortBy] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
   const pageSize = 20
 
   useEffect(() => {
     fetchNotes()
-  }, [page])
+  }, [page, sortBy, sortOrder])
+
+  const handleSort = (key: string) => {
+    if (sortBy === key) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(key)
+      setSortOrder('asc')
+    }
+    setPage(1)
+  }
 
   async function fetchNotes() {
     try {
       setLoading(true)
-      const response = await deliveryNotesApi.list({ page })
+      const response = await deliveryNotesApi.list({
+        page,
+        sort_by: sortBy || undefined,
+        sort_order: sortBy ? sortOrder : undefined,
+      })
       setNotes(response.items || [])
       setTotal(response.total || 0)
     } catch (error) {
@@ -107,10 +124,10 @@ export function DeliveryNotesPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('deliveryNotes.number')}</TableHead>
+                <SortableTableHead sortKey="delivery_note_number" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('deliveryNotes.number')}</SortableTableHead>
                 <TableHead>{t('deliveryNotes.customer')}</TableHead>
-                <TableHead>{t('deliveryNotes.status')}</TableHead>
-                <TableHead>{t('deliveryNotes.issueDate')}</TableHead>
+                <SortableTableHead sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('deliveryNotes.status')}</SortableTableHead>
+                <SortableTableHead sortKey="issue_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('deliveryNotes.issueDate')}</SortableTableHead>
                 <TableHead className="text-left">{t('deliveryNotes.items')}</TableHead>
                 <TableHead className="text-left">סה"כ כמות</TableHead>
                 <TableHead className="w-12">פעולות</TableHead>

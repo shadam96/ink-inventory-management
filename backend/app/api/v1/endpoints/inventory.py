@@ -1,5 +1,5 @@
 """Item/Inventory endpoints"""
-from typing import List, Optional
+from typing import Literal, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -26,10 +26,12 @@ async def list_items(
     search: Optional[str] = None,
     supplier: Optional[str] = None,
     below_reorder: Optional[bool] = None,
+    sort_by: Optional[Literal["sku", "name", "supplier", "cost_price", "reorder_point", "created_at"]] = None,
+    sort_order: Literal["asc", "desc"] = "asc",
 ) -> PaginatedResponse[ItemResponse]:
     """List all items with pagination and filters"""
     query = select(Item).options(selectinload(Item.batches))
-    
+
     # Apply filters
     if search:
         search_filter = f"%{search}%"
@@ -37,14 +39,19 @@ async def list_items(
             (Item.sku.ilike(search_filter)) |
             (Item.name.ilike(search_filter))
         )
-    
+
     if supplier:
         query = query.where(Item.supplier.ilike(f"%{supplier}%"))
-    
+
+    # Apply sorting
+    if sort_by:
+        col = getattr(Item, sort_by)
+        query = query.order_by(col.desc() if sort_order == "desc" else col.asc())
+
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar() or 0
-    
+
     # Paginate
     query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)

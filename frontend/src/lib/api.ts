@@ -93,7 +93,7 @@ export const authApi = {
 
 // Items API
 export const itemsApi = {
-  list: async (params?: { page?: number; page_size?: number; search?: string }) => {
+  list: async (params?: { page?: number; page_size?: number; search?: string; sort_by?: string; sort_order?: 'asc' | 'desc' }) => {
     const response = await api.get('/items', { params })
     return response.data as PaginatedResponse<Item>
   },
@@ -120,7 +120,7 @@ export const itemsApi = {
 
 // Batches API
 export const batchesApi = {
-  list: async (params?: { item_id?: string; status_filter?: string }) => {
+  list: async (params?: { page?: number; page_size?: number; item_id?: string; status_filter?: string; sort_by?: string; sort_order?: 'asc' | 'desc' }) => {
     const response = await api.get('/batches', { params })
     return response.data
   },
@@ -230,7 +230,7 @@ export const alertsApi = {
 
 // Delivery Notes API
 export const deliveryNotesApi = {
-  list: async (params?: { page?: number; customer_id?: string }) => {
+  list: async (params?: { page?: number; page_size?: number; customer_id?: string; sort_by?: string; sort_order?: 'asc' | 'desc' }) => {
     const response = await api.get('/delivery-notes', { params })
     return response.data
   },

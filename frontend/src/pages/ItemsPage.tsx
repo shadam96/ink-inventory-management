@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/layout/Header'
+import { SortableTableHead } from '@/components/SortableTableHead'
 import { ItemDialog } from '@/components/ItemDialog'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { itemsApi, type Item, type CreateItemData } from '@/lib/api'
@@ -29,11 +30,23 @@ export function ItemsPage() {
   const [total, setTotal] = useState(0)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<Item | null>(null)
+  const [sortBy, setSortBy] = useState<string | null>(null)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const pageSize = 20
 
   useEffect(() => {
     fetchItems()
-  }, [page, search])
+  }, [page, search, sortBy, sortOrder])
+
+  const handleSort = (key: string) => {
+    if (sortBy === key) {
+      setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortBy(key)
+      setSortOrder('asc')
+    }
+    setPage(1)
+  }
 
   async function fetchItems() {
     try {
@@ -42,6 +55,8 @@ export function ItemsPage() {
         page,
         page_size: pageSize,
         search: search || undefined,
+        sort_by: sortBy || undefined,
+        sort_order: sortBy ? sortOrder : undefined,
       })
       setItems(response.items)
       setTotal(response.total)
@@ -161,12 +176,12 @@ export function ItemsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>{t('items.sku')}</TableHead>
-                <TableHead>{t('items.name')}</TableHead>
-                <TableHead>{t('items.supplier')}</TableHead>
+                <SortableTableHead sortKey="sku" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('items.sku')}</SortableTableHead>
+                <SortableTableHead sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('items.name')}</SortableTableHead>
+                <SortableTableHead sortKey="supplier" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('items.supplier')}</SortableTableHead>
                 <TableHead>{t('items.unit')}</TableHead>
-                <TableHead className="text-left">{t('items.costPrice')}</TableHead>
-                <TableHead className="text-left">{t('items.reorderPoint')}</TableHead>
+                <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">{t('items.costPrice')}</SortableTableHead>
+                <SortableTableHead sortKey="reorder_point" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">{t('items.reorderPoint')}</SortableTableHead>
                 <TableHead className="w-12">{t('items.actions')}</TableHead>
               </TableRow>
             </TableHeader>
