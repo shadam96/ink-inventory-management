@@ -100,9 +100,10 @@ export function ItemsPage() {
 
   const handleExport = async (format: 'excel' | 'csv') => {
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/items/export/${format}`, {
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
+      const response = await fetch(`${apiUrl}/items/export/${format}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       })
       
