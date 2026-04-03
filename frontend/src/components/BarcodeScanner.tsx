@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
-import Quagga from '@ericblade/quagga2'
-import { Camera, X, Flashlight, FlashlightOff, SwitchCamera, CheckCircle2, XCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Html5Qrcode } from 'html5-qrcode'
+import { Camera, X, SwitchCamera, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -16,210 +16,150 @@ interface BarcodeScannerProps {
   className?: string
 }
 
-const MIN_CONFIDENCE = 0.6
+const SCANNER_ID = 'barcode-scanner-viewport'
 
 export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerProps) {
-  const scannerRef = useRef<HTMLDivElement>(null)
-  const [isInitialized, setIsInitialized] = useState(false)
+  const scannerRef = useRef<Html5Qrcode | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [torch, setTorch] = useState(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const lastScannedRef = useRef<string | null>(null)
-  const initializingRef = useRef(false)
   const processingRef = useRef(false)
   const audioCtxRef = useRef<AudioContext | null>(null)
+  const mountedRef = useRef(true)
 
-  const stopScanner = useCallback(() => {
-    try {
-      Quagga.stop()
-    } catch {
-      // Already stopped
-    }
-    setIsInitialized(false)
-  }, [])
-
-  const initScanner = useCallback(async () => {
-    if (!scannerRef.current || initializingRef.current) return
-    initializingRef.current = true
-
-    try {
-      await Quagga.init(
-        {
-          inputStream: {
-            type: 'LiveStream',
-            target: scannerRef.current,
-            constraints: {
-              facingMode: facingMode,
-              width: { ideal: 1280 },
-              height: { ideal: 720 },
-            },
-          },
-          locator: {
-            patchSize: 'medium',
-            halfSample: true,
-          },
-          numOfWorkers: navigator.hardwareConcurrency || 4,
-          frequency: 10,
-          decoder: {
-            readers: [
-              'ean_reader',
-              'ean_8_reader',
-              'code_128_reader',
-              'code_39_reader',
-              'upc_reader',
-              'upc_e_reader',
-              'codabar_reader',
-              'i2of5_reader',
-            ],
-          },
-          locate: true,
-        },
-        (err) => {
-          initializingRef.current = false
-          if (err) {
-            console.error('Quagga init error:', err)
-            setError('לא ניתן לגשת למצלמה. אנא אשר הרשאות מצלמה.')
-            return
-          }
-          Quagga.start()
-          setIsInitialized(true)
-        }
-      )
-    } catch (err) {
-      initializingRef.current = false
-      console.error('Scanner error:', err)
-      setError('שגיאה בהפעלת הסורק')
-    }
-  }, [facingMode])
-
-  // Init on mount, cleanup on unmount
-  useEffect(() => {
-    initScanner()
-
-    return () => {
-      stopScanner()
-      audioCtxRef.current?.close()
-    }
-  }, [initScanner, stopScanner])
-
-  // Prepare AudioContext on component mount (within user gesture context)
+  // Prepare AudioContext
   useEffect(() => {
     try {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
     } catch {
       // Audio not supported
     }
+    return () => {
+      audioCtxRef.current?.close()
+    }
   }, [])
 
   useEffect(() => {
-    const handleDetected = (result: any) => {
-      const code = result.codeResult?.code
-      const format = result.codeResult?.format
-      if (!code) return
+    mountedRef.current = true
+    let scanner: Html5Qrcode | null = null
 
-      // Check confidence — reject low-confidence reads
-      const errors = result.codeResult?.decodedCodes
-        ?.filter((d: any) => typeof d.error === 'number')
-        ?.map((d: any) => d.error) || []
-      if (errors.length > 0) {
-        const avgError = errors.reduce((s: number, e: number) => s + e, 0) / errors.length
-        if (avgError > (1 - MIN_CONFIDENCE)) return
-      }
-
-      // Debounce — ignore same code within 2 seconds
-      if (lastScannedRef.current === code) return
-      lastScannedRef.current = code
-
-      // Don't process if already handling a scan
-      if (processingRef.current) return
-      processingRef.current = true
-
-      // Vibrate if supported
-      if (navigator.vibrate) {
-        navigator.vibrate(100)
-      }
-
-      // Play sound feedback
+    const startScanner = async () => {
       try {
-        const ctx = audioCtxRef.current
-        if (ctx && ctx.state === 'running') {
-          const oscillator = ctx.createOscillator()
-          const gainNode = ctx.createGain()
-          oscillator.connect(gainNode)
-          gainNode.connect(ctx.destination)
-          oscillator.frequency.value = 800
-          oscillator.type = 'sine'
-          gainNode.gain.value = 0.1
-          oscillator.start()
-          oscillator.stop(ctx.currentTime + 0.1)
-        }
-      } catch {
-        // Audio not supported
-      }
+        scanner = new Html5Qrcode(SCANNER_ID, { verbose: false })
+        scannerRef.current = scanner
 
-      // Show scanned code immediately, then validate async
-      setStatusMessage({ text: `סורק: ${code}`, type: 'success' })
+        await scanner.start(
+          { facingMode },
+          {
+            fps: 10,
+            qrbox: { width: 280, height: 180 },
+            aspectRatio: 1.0,
+            disableFlip: false,
+          },
+          (decodedText, decodedResult) => {
+            if (!mountedRef.current) return
 
-      Promise.resolve(onScan({ code, format }))
-        .then((shouldClose) => {
-          if (shouldClose) {
-            setStatusMessage({ text: `✓ ${code}`, type: 'success' })
-            setTimeout(() => onClose(), 600)
-          } else {
-            setStatusMessage({ text: `${code} — לא נמצא`, type: 'error' })
-            setTimeout(() => {
-              setStatusMessage(null)
-              processingRef.current = false
-            }, 1500)
+            const code = decodedText
+            const format = decodedResult?.result?.format?.formatName || 'unknown'
+
+            // Debounce — ignore same code within 2 seconds
+            if (lastScannedRef.current === code) return
+            lastScannedRef.current = code
+
+            // Don't process if already handling a scan
+            if (processingRef.current) return
+            processingRef.current = true
+
+            // Vibrate
+            if (navigator.vibrate) {
+              navigator.vibrate(100)
+            }
+
+            // Beep
+            try {
+              const ctx = audioCtxRef.current
+              if (ctx && ctx.state === 'running') {
+                const osc = ctx.createOscillator()
+                const gain = ctx.createGain()
+                osc.connect(gain)
+                gain.connect(ctx.destination)
+                osc.frequency.value = 800
+                osc.type = 'sine'
+                gain.gain.value = 0.1
+                osc.start()
+                osc.stop(ctx.currentTime + 0.1)
+              }
+            } catch {
+              // Audio not supported
+            }
+
+            setStatusMessage({ text: `סורק: ${code}`, type: 'success' })
+
+            Promise.resolve(onScan({ code, format }))
+              .then((shouldClose) => {
+                if (!mountedRef.current) return
+                if (shouldClose) {
+                  setStatusMessage({ text: `✓ ${code}`, type: 'success' })
+                  setTimeout(() => { if (mountedRef.current) onClose() }, 600)
+                } else {
+                  setStatusMessage({ text: `${code} — לא נמצא`, type: 'error' })
+                  setTimeout(() => {
+                    if (mountedRef.current) setStatusMessage(null)
+                    processingRef.current = false
+                  }, 1500)
+                }
+              })
+              .catch(() => {
+                if (!mountedRef.current) return
+                setStatusMessage({ text: 'שגיאה בבדיקת ברקוד', type: 'error' })
+                setTimeout(() => {
+                  if (mountedRef.current) setStatusMessage(null)
+                  processingRef.current = false
+                }, 1500)
+              })
+
+            // Reset debounce
+            setTimeout(() => { lastScannedRef.current = null }, 2000)
+          },
+          () => {
+            // QR/barcode not detected in this frame — ignore
           }
-        })
-        .catch(() => {
-          setStatusMessage({ text: 'שגיאה בבדיקת ברקוד', type: 'error' })
-          setTimeout(() => {
-            setStatusMessage(null)
-            processingRef.current = false
-          }, 1500)
-        })
-
-      // Reset debounce after 2 seconds
-      setTimeout(() => {
-        lastScannedRef.current = null
-      }, 2000)
+        )
+      } catch (err) {
+        console.error('Scanner start error:', err)
+        if (mountedRef.current) {
+          setError('לא ניתן לגשת למצלמה. אנא אשר הרשאות מצלמה.')
+        }
+      }
     }
 
-    Quagga.onDetected(handleDetected)
+    startScanner()
 
     return () => {
-      Quagga.offDetected(handleDetected)
+      mountedRef.current = false
+      if (scanner?.isScanning) {
+        scanner.stop().catch(() => {})
+      }
     }
-  }, [onScan, onClose])
+  }, [facingMode, onScan, onClose])
 
-  const toggleTorch = async () => {
+  const switchCamera = async () => {
     try {
-      const track = Quagga.CameraAccess.getActiveTrack()
-      if (track && 'applyConstraints' in track) {
-        await track.applyConstraints({
-          advanced: [{ torch: !torch } as any],
-        })
-        setTorch(!torch)
+      if (scannerRef.current?.isScanning) {
+        await scannerRef.current.stop()
       }
     } catch {
-      // Torch not supported
+      // Already stopped
     }
-  }
-
-  const switchCamera = () => {
-    stopScanner()
     setFacingMode((prev) => (prev === 'environment' ? 'user' : 'environment'))
   }
 
-  // Re-init when facingMode changes (after switchCamera)
-  useEffect(() => {
-    if (!isInitialized && !error && !initializingRef.current) {
-      initScanner()
-    }
-  }, [facingMode, isInitialized, error, initScanner])
+  const retryScanner = () => {
+    setError(null)
+    // Trigger re-mount by toggling facingMode
+    setFacingMode((prev) => prev)
+  }
 
   return (
     <div
@@ -228,8 +168,8 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         className
       )}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-black/70 backdrop-blur-sm safe-area-top">
+      {/* Header — pt includes safe area so background covers the notch */}
+      <div className="flex items-center justify-between px-4 pb-3 bg-black/70 backdrop-blur-sm" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
         <h2 className="text-white font-medium">סריקת ברקוד</h2>
         <Button
           variant="ghost"
@@ -242,88 +182,43 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
       </div>
 
       {/* Scanner viewport */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-hidden">
         {error ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="text-center text-white p-4">
               <Camera className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg mb-2">{error}</p>
-              <Button onClick={() => {
-                setError(null)
-                initializingRef.current = false
-                initScanner()
-              }}>
+              <Button onClick={retryScanner}>
                 נסה שוב
               </Button>
             </div>
           </div>
         ) : (
-          <>
-            <div
-              ref={scannerRef}
-              className="scanner-viewport w-full h-full overflow-hidden"
-              style={{
-                position: 'relative',
-              }}
-            />
+          <div id={SCANNER_ID} className="w-full h-full" />
+        )}
 
-            {/* Scan overlay */}
-            <div className="absolute inset-0 pointer-events-none">
-              {/* Darkened corners */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                {/* Semi-transparent dark overlay with cutout */}
-                <div className="absolute inset-0 bg-black/40" />
-                <div className="relative w-[75vw] max-w-xs aspect-[3/2] rounded-2xl" style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,0.4)' }}>
-                  {/* Corner markers */}
-                  <div className="absolute top-0 left-0 w-10 h-10 border-t-[3px] border-l-[3px] border-white rounded-tl-2xl" />
-                  <div className="absolute top-0 right-0 w-10 h-10 border-t-[3px] border-r-[3px] border-white rounded-tr-2xl" />
-                  <div className="absolute bottom-0 left-0 w-10 h-10 border-b-[3px] border-l-[3px] border-white rounded-bl-2xl" />
-                  <div className="absolute bottom-0 right-0 w-10 h-10 border-b-[3px] border-r-[3px] border-white rounded-br-2xl" />
-
-                  {/* Scan line animation */}
-                  <div className="absolute left-6 right-6 top-1/2 h-0.5 bg-primary animate-pulse rounded-full" />
-                </div>
-              </div>
-
-              {/* Status message overlay */}
-              {statusMessage && (
-                <div className="absolute bottom-24 left-0 right-0 flex justify-center">
-                  <div className={cn(
-                    'flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium shadow-lg',
-                    statusMessage.type === 'success'
-                      ? 'bg-green-600 text-white'
-                      : 'bg-red-600 text-white'
-                  )}>
-                    {statusMessage.type === 'success' ? (
-                      <CheckCircle2 className="w-4 h-4" />
-                    ) : (
-                      <XCircle className="w-4 h-4" />
-                    )}
-                    <span dir="ltr">{statusMessage.text}</span>
-                  </div>
-                </div>
+        {/* Status message overlay */}
+        {statusMessage && (
+          <div className="absolute bottom-8 left-0 right-0 flex justify-center z-10">
+            <div className={cn(
+              'flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium shadow-lg',
+              statusMessage.type === 'success'
+                ? 'bg-green-600 text-white'
+                : 'bg-red-600 text-white'
+            )}>
+              {statusMessage.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4" />
+              ) : (
+                <XCircle className="w-4 h-4" />
               )}
+              <span dir="ltr">{statusMessage.text}</span>
             </div>
-          </>
+          </div>
         )}
       </div>
 
       {/* Controls */}
       <div className="flex items-center justify-center gap-6 p-4 bg-black/70 backdrop-blur-sm">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleTorch}
-          className="text-white hover:bg-white/20 h-14 w-14 rounded-full"
-          title="פנס"
-        >
-          {torch ? (
-            <FlashlightOff className="w-6 h-6" />
-          ) : (
-            <Flashlight className="w-6 h-6" />
-          )}
-        </Button>
-
         <Button
           variant="ghost"
           size="icon"
@@ -337,7 +232,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
 
       {/* Instructions */}
       <div className="text-center pb-6 safe-area-bottom text-white/60 text-sm">
-        מקם את הברקוד בתוך המסגרת
+        מקם את הברקוד או קוד QR בתוך המסגרת
       </div>
     </div>
   )
