@@ -224,7 +224,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   return (
     <div
       className={cn(
-        'fixed inset-0 z-50 bg-black flex flex-col',
+        'fixed inset-0 z-[60] bg-black flex flex-col',
         className
       )}
     >
