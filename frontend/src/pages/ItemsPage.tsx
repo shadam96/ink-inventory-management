@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Search, Pencil, Trash2, Download, FileSpreadsheet } from 'lucide-react'
+import { Plus, Pencil, Trash2, Download, FileSpreadsheet } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/SearchInput'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -146,15 +146,12 @@ export function ItemsPage() {
       <Header title={t('items.title')} />
 
       <div className="flex items-center justify-between relative z-10 -mt-2">
-        <div className="relative w-80">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder={t('items.search')}
-            value={search}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="pr-10"
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onChange={handleSearch}
+          placeholder={t('items.search')}
+          className="w-80"
+        />
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => handleExport('excel')}>
             <FileSpreadsheet className="w-4 h-4 ml-2" />

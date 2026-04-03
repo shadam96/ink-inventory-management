@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Package, Search } from 'lucide-react'
+import { Package } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/SearchInput'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Table,
@@ -114,15 +114,12 @@ export function BatchesPage() {
       <Header title={t('batches.title')} />
 
       <div className="flex items-center justify-between gap-4 relative z-10 -mt-2">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="חיפוש אצוות..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pr-10"
-          />
-        </div>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="חיפוש אצוות..."
+          className="flex-1 max-w-md"
+        />
         
         <div className="flex gap-2">
           <Button
