@@ -229,7 +229,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 bg-black/50">
+      <div className="flex items-center justify-between p-4 bg-black/70 backdrop-blur-sm safe-area-top">
         <h2 className="text-white font-medium">סריקת ברקוד</h2>
         <Button
           variant="ghost"
@@ -261,7 +261,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
           <>
             <div
               ref={scannerRef}
-              className="w-full h-full"
+              className="scanner-viewport w-full h-full overflow-hidden"
               style={{
                 position: 'relative',
               }}
@@ -271,15 +271,17 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
             <div className="absolute inset-0 pointer-events-none">
               {/* Darkened corners */}
               <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-72 h-48 relative">
+                {/* Semi-transparent dark overlay with cutout */}
+                <div className="absolute inset-0 bg-black/40" />
+                <div className="relative w-[75vw] max-w-xs aspect-[3/2] rounded-2xl" style={{ boxShadow: '0 0 0 9999px rgba(0,0,0,0.4)' }}>
                   {/* Corner markers */}
-                  <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-lg" />
-                  <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-lg" />
-                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-lg" />
-                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-lg" />
+                  <div className="absolute top-0 left-0 w-10 h-10 border-t-[3px] border-l-[3px] border-white rounded-tl-2xl" />
+                  <div className="absolute top-0 right-0 w-10 h-10 border-t-[3px] border-r-[3px] border-white rounded-tr-2xl" />
+                  <div className="absolute bottom-0 left-0 w-10 h-10 border-b-[3px] border-l-[3px] border-white rounded-bl-2xl" />
+                  <div className="absolute bottom-0 right-0 w-10 h-10 border-b-[3px] border-r-[3px] border-white rounded-br-2xl" />
 
                   {/* Scan line animation */}
-                  <div className="absolute left-4 right-4 top-1/2 h-0.5 bg-primary/50 animate-pulse" />
+                  <div className="absolute left-6 right-6 top-1/2 h-0.5 bg-primary animate-pulse rounded-full" />
                 </div>
               </div>
 
@@ -307,7 +309,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
       </div>
 
       {/* Controls */}
-      <div className="flex items-center justify-center gap-6 p-6 bg-black/50">
+      <div className="flex items-center justify-center gap-6 p-4 bg-black/70 backdrop-blur-sm">
         <Button
           variant="ghost"
           size="icon"
@@ -334,7 +336,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
       </div>
 
       {/* Instructions */}
-      <div className="text-center pb-6 text-white/70 text-sm">
+      <div className="text-center pb-6 safe-area-bottom text-white/60 text-sm">
         מקם את הברקוד בתוך המסגרת
       </div>
     </div>

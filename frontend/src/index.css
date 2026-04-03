@@ -185,19 +185,28 @@
   }
 }
 
-/* Scanner viewport styles */
-.scanner-viewport video {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+/* Scanner viewport styles — Quagga2 injects video + canvas */
+.scanner-viewport {
+  position: relative;
 }
 
-.scanner-viewport canvas {
+.scanner-viewport video {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
+  object-fit: cover;
+}
+
+.scanner-viewport canvas,
+.scanner-viewport .drawingBuffer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 /* Animation utilities */
