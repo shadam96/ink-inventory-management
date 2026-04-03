@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { PackagePlus, Barcode, Plus, X, Loader2, Camera } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
-import { BarcodeScanner } from '@/components/BarcodeScanner'
+import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
 import { itemsApi, receivingApi, type Item } from '@/lib/api'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 
@@ -70,32 +71,49 @@ export function ReceivingPage() {
     }
   }
 
-  const handleBarcodeScanned = async (code: string) => {
-    setShowScanner(false)
-    setBarcode(code)
-    
+  const handleBarcodeScanned = async ({ code }: ScanResult): Promise<boolean> => {
     try {
       const result = await receivingApi.validateBarcode(code)
       if (result.valid && result.item) {
         setValue('item_id', result.item.id)
         setBarcode('')
-        // Vibrate on success
+        toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+        if (navigator.vibrate) {
+          navigator.vibrate([100, 50, 100])
+        }
+        return true // close scanner
+      }
+      // Not found — scanner stays open
+      return false
+    } catch (error) {
+      console.error('Failed to validate barcode:', error)
+      return false
+    }
+  }
+
+  const handleManualBarcodeScanned = async (code: string) => {
+    try {
+      const result = await receivingApi.validateBarcode(code)
+      if (result.valid && result.item) {
+        setValue('item_id', result.item.id)
+        setBarcode('')
+        toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
         if (navigator.vibrate) {
           navigator.vibrate([100, 50, 100])
         }
       } else {
-        alert('ברקוד לא נמצא')
+        toast.error(`ברקוד "${code}" לא נמצא במערכת`)
       }
     } catch (error) {
       console.error('Failed to validate barcode:', error)
-      alert('שגיאה בסריקת ברקוד')
+      toast.error('שגיאה בבדיקת ברקוד')
     }
   }
 
   const handleBarcodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!barcode.trim()) return
-    await handleBarcodeScanned(barcode)
+    await handleManualBarcodeScanned(barcode)
   }
 
   const handleAddToList = (data: ReceiveFormData) => {
@@ -155,7 +173,7 @@ export function ReceivingPage() {
           'POST',
           payload
         )
-        alert('אתה במצב אופליין. הקליטה נשמרה ותסונכרן כשתחזור לרשת.')
+        toast.info('אתה במצב אופליין. הקליטה נשמרה ותסונכרן כשתחזור לרשת.')
         setReceiveList([])
         return
       }
@@ -166,11 +184,11 @@ export function ReceivingPage() {
         await receivingApi.receiveMultiple(payload as any)
       }
 
-      alert('הסחורה נקלטה בהצלחה!')
+      toast.success('הסחורה נקלטה בהצלחה!')
       setReceiveList([])
     } catch (error: any) {
       console.error('Failed to receive items:', error)
-      alert(error.response?.data?.detail || 'שגיאה בקליטת סחורה')
+      toast.error(error.response?.data?.detail || 'שגיאה בקליטת סחורה')
     } finally {
       setSubmitting(false)
     }

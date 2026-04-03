@@ -1,14 +1,22 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Quagga from '@ericblade/quagga2'
-import { Camera, X, Flashlight, FlashlightOff, SwitchCamera } from 'lucide-react'
+import { Camera, X, Flashlight, FlashlightOff, SwitchCamera, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
+export interface ScanResult {
+  code: string
+  format: string
+}
+
 interface BarcodeScannerProps {
-  onScan: (barcode: string) => void
+  /** Called on every valid detection. Return true to close the scanner, false to keep scanning. */
+  onScan: (result: ScanResult) => Promise<boolean> | boolean
   onClose: () => void
   className?: string
 }
+
+const MIN_CONFIDENCE = 0.6
 
 export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerProps) {
   const scannerRef = useRef<HTMLDivElement>(null)
@@ -16,8 +24,10 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   const [error, setError] = useState<string | null>(null)
   const [torch, setTorch] = useState(false)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
+  const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const lastScannedRef = useRef<string | null>(null)
   const initializingRef = useRef(false)
+  const processingRef = useRef(false)
   const audioCtxRef = useRef<AudioContext | null>(null)
 
   const stopScanner = useCallback(() => {
@@ -93,7 +103,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
     }
   }, [initScanner, stopScanner])
 
-  // Prepare AudioContext on first user gesture (the tap that opens the scanner)
+  // Prepare AudioContext on component mount (within user gesture context)
   useEffect(() => {
     try {
       audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)()
@@ -103,20 +113,34 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   }, [])
 
   useEffect(() => {
-    const handleDetected = (result: any) => {
+    const handleDetected = async (result: any) => {
       const code = result.codeResult?.code
+      const format = result.codeResult?.format
       if (!code) return
 
-      // Debounce - ignore same code within 2 seconds
+      // Check confidence — reject low-confidence reads
+      const errors = result.codeResult?.decodedCodes
+        ?.filter((d: any) => d.error !== undefined)
+        ?.map((d: any) => d.error) || []
+      const avgError = errors.length > 0
+        ? errors.reduce((s: number, e: number) => s + e, 0) / errors.length
+        : 1
+      if (avgError > (1 - MIN_CONFIDENCE)) return
+
+      // Debounce — ignore same code within 2 seconds
       if (lastScannedRef.current === code) return
       lastScannedRef.current = code
+
+      // Don't process if already handling a scan
+      if (processingRef.current) return
+      processingRef.current = true
 
       // Vibrate if supported
       if (navigator.vibrate) {
         navigator.vibrate(100)
       }
 
-      // Play sound feedback using pre-created AudioContext
+      // Play sound feedback
       try {
         const ctx = audioCtxRef.current
         if (ctx && ctx.state === 'running') {
@@ -134,7 +158,27 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         // Audio not supported
       }
 
-      onScan(code)
+      try {
+        const shouldClose = await onScan({ code, format })
+        if (shouldClose) {
+          // Success — brief green flash then close
+          setStatusMessage({ text: `✓ ${code}`, type: 'success' })
+          setTimeout(() => onClose(), 600)
+        } else {
+          // Not found — show message, keep scanning
+          setStatusMessage({ text: `${code} — לא נמצא`, type: 'error' })
+          setTimeout(() => {
+            setStatusMessage(null)
+            processingRef.current = false
+          }, 1500)
+        }
+      } catch {
+        setStatusMessage({ text: 'שגיאה בבדיקת ברקוד', type: 'error' })
+        setTimeout(() => {
+          setStatusMessage(null)
+          processingRef.current = false
+        }, 1500)
+      }
 
       // Reset debounce after 2 seconds
       setTimeout(() => {
@@ -147,7 +191,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
     return () => {
       Quagga.offDetected(handleDetected)
     }
-  }, [onScan])
+  }, [onScan, onClose])
 
   const toggleTorch = async () => {
     try {
@@ -236,6 +280,25 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
                   <div className="absolute left-4 right-4 top-1/2 h-0.5 bg-primary/50 animate-pulse" />
                 </div>
               </div>
+
+              {/* Status message overlay */}
+              {statusMessage && (
+                <div className="absolute bottom-24 left-0 right-0 flex justify-center">
+                  <div className={cn(
+                    'flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium shadow-lg',
+                    statusMessage.type === 'success'
+                      ? 'bg-green-600 text-white'
+                      : 'bg-red-600 text-white'
+                  )}>
+                    {statusMessage.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4" />
+                    ) : (
+                      <XCircle className="w-4 h-4" />
+                    )}
+                    <span dir="ltr">{statusMessage.text}</span>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         )}
@@ -284,9 +347,10 @@ export function useBarcodeScanner() {
   const openScanner = () => setIsOpen(true)
   const closeScanner = () => setIsOpen(false)
 
-  const handleScan = (barcode: string) => {
-    setLastBarcode(barcode)
+  const handleScan = (result: ScanResult) => {
+    setLastBarcode(result.code)
     closeScanner()
+    return true
   }
 
   return {

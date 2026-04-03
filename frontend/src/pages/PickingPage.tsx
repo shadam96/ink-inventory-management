@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { PackageMinus, AlertCircle, CheckCircle2, Loader2, Camera } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
-import { BarcodeScanner } from '@/components/BarcodeScanner'
+import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
 import { formatDate, daysUntilExpiration, getExpirationStatus } from '@/lib/utils'
 import { itemsApi, customersApi, pickingApi, receivingApi, type Item } from '@/lib/api'
 import { addPendingOperation, isOnline } from '@/lib/offline'
@@ -110,29 +111,28 @@ export function PickingPage() {
     }
   }
 
-  const handleBarcodeScanned = async (code: string) => {
-    setShowScanner(false)
-    
+  const handleBarcodeScanned = async ({ code }: ScanResult): Promise<boolean> => {
     try {
       const result = await receivingApi.validateBarcode(code)
       if (result.valid && result.item) {
         setValue('item_id', result.item.id)
-        // Vibrate on success
+        toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
         if (navigator.vibrate) {
           navigator.vibrate([100, 50, 100])
         }
-      } else {
-        alert('ברקוד לא נמצא')
+        return true // close scanner
       }
+      // Not found — scanner stays open for retry
+      return false
     } catch (error) {
       console.error('Failed to validate barcode:', error)
-      alert('שגיאה בסריקת ברקוד')
+      return false
     }
   }
 
   const handleDispatch = async (data: PickFormData) => {
     if (suggestions.length === 0) {
-      alert('אין אצוות זמינות לליקוט')
+      toast.error('אין אצוות זמינות לליקוט')
       return
     }
 
@@ -153,7 +153,7 @@ export function PickingPage() {
       // Check if online
       if (!isOnline()) {
         await addPendingOperation('pick', '/api/v1/picking/dispatch', 'POST', payload)
-        alert('אתה במצב אופליין. הליקוט נשמר ויסונכרן כשתחזור לרשת.')
+        toast.info('אתה במצב אופליין. הליקוט נשמר ויסונכרן כשתחזור לרשת.')
         reset()
         setSuggestions([])
         return
@@ -161,12 +161,12 @@ export function PickingPage() {
 
       await pickingApi.dispatch(payload)
 
-      alert('הליקוט בוצע בהצלחה!')
+      toast.success('הליקוט בוצע בהצלחה!')
       reset()
       setSuggestions([])
     } catch (error: any) {
       console.error('Failed to dispatch:', error)
-      alert(error.response?.data?.detail || 'שגיאה בביצוע ליקוט')
+      toast.error(error.response?.data?.detail || 'שגיאה בביצוע ליקוט')
     } finally {
       setSubmitting(false)
     }
