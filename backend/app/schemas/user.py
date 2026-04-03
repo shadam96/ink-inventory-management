@@ -1,8 +1,8 @@
 """User schemas for authentication and management"""
-from typing import Optional
+from typing import List, Optional
 from uuid import UUID
 
-from pydantic import EmailStr, Field
+from pydantic import EmailStr, Field, field_validator
 
 from app.models.user import UserRole
 from app.schemas.common import BaseSchema, TimestampSchema
@@ -45,17 +45,31 @@ class UserResponse(UserBase, TimestampSchema):
 
 
 class NotificationSettingsUpdate(BaseSchema):
-    """Schema for updating notification preferences"""
-    
+    """Schema for updating notification preferences.
+
+    notification_emails accepts a list of email addresses.
+    Stored as comma-separated string in the DB.
+    Legacy field notification_email is still accepted for backwards compat.
+    """
+
+    notification_emails: Optional[List[EmailStr]] = None
     notification_email: Optional[EmailStr] = None
     email_notifications_enabled: bool
+
+    @field_validator("notification_emails", mode="before")
+    @classmethod
+    def filter_empty(cls, v: object) -> object:
+        if isinstance(v, list):
+            return [e for e in v if e and str(e).strip()] or None
+        return v
 
 
 class NotificationSettingsResponse(BaseSchema):
     """Schema for notification settings response"""
-    
+
     email: EmailStr
     notification_email: Optional[str] = None
+    notification_emails: List[str] = []
     email_notifications_enabled: bool = False
 
 

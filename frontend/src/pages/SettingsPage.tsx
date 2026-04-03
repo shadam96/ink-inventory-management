@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Droplets, Package, Boxes, Warehouse, Mail } from 'lucide-react'
+import { Droplets, Package, Boxes, Warehouse, Mail, Plus, X } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 
@@ -35,8 +35,9 @@ export function SettingsPage() {
   const [localTheme, setLocalTheme] = useState(theme)
   const [localCurrency, setLocalCurrency] = useState(currency)
   
-  // Notification email
-  const [notificationEmail, setNotificationEmail] = useState('')
+  // Notification emails
+  const [notificationEmails, setNotificationEmails] = useState<string[]>([])
+  const [newEmail, setNewEmail] = useState('')
   const [savingEmail, setSavingEmail] = useState(false)
   const [loadingEmail, setLoadingEmail] = useState(true)
 
@@ -47,7 +48,7 @@ export function SettingsPage() {
   const fetchNotificationSettings = async () => {
     try {
       const response = await api.get('/settings/notifications')
-      setNotificationEmail(response.data.notification_email || '')
+      setNotificationEmails(response.data.notification_emails || [])
     } catch (error) {
       console.error('Failed to fetch notification settings:', error)
     } finally {
@@ -55,18 +56,34 @@ export function SettingsPage() {
     }
   }
 
-  const saveNotificationEmail = async () => {
-    if (!notificationEmail) {
-      toast.error('אנא הזן כתובת אימייל')
+  const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+
+  const addEmail = () => {
+    const trimmed = newEmail.trim()
+    if (!trimmed || !isValidEmail(trimmed)) {
+      toast.error('אנא הזן כתובת אימייל תקינה')
       return
     }
+    if (notificationEmails.includes(trimmed)) {
+      toast.error('כתובת זו כבר קיימת')
+      return
+    }
+    setNotificationEmails(prev => [...prev, trimmed])
+    setNewEmail('')
+  }
+
+  const removeEmail = (email: string) => {
+    setNotificationEmails(prev => prev.filter(e => e !== email))
+  }
+
+  const saveNotificationEmails = async () => {
     setSavingEmail(true)
     try {
       await api.put('/settings/notifications', {
-        email_notifications_enabled: true,
-        notification_email: notificationEmail,
+        email_notifications_enabled: notificationEmails.length > 0,
+        notification_emails: notificationEmails,
       })
-      toast.success('כתובת האימייל נשמרה — תקבל התראות לכתובת זו')
+      toast.success('כתובות האימייל נשמרו')
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'שמירת האימייל נכשלה')
     } finally {
@@ -238,20 +255,49 @@ export function SettingsPage() {
           {loadingEmail ? (
             <div className="text-center py-4">טוען...</div>
           ) : (
-            <div className="flex gap-2">
-              <Input
-                id="notificationEmail"
-                type="email"
-                dir="ltr"
-                placeholder="your@email.com"
-                value={notificationEmail}
-                onChange={(e) => setNotificationEmail(e.target.value)}
-              />
+            <div className="space-y-3">
+              {/* Existing emails */}
+              {notificationEmails.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {notificationEmails.map((email) => (
+                    <div
+                      key={email}
+                      className="flex items-center gap-1.5 bg-muted px-3 py-1.5 rounded-full text-sm"
+                    >
+                      <span dir="ltr">{email}</span>
+                      <button
+                        onClick={() => removeEmail(email)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Add new email */}
+              <div className="flex gap-2">
+                <Input
+                  type="email"
+                  dir="ltr"
+                  placeholder="your@email.com"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addEmail())}
+                />
+                <Button variant="outline" onClick={addEmail} disabled={!newEmail.trim()}>
+                  <Plus className="w-4 h-4" />
+                </Button>
+              </div>
+
+              {/* Save */}
               <Button
-                onClick={saveNotificationEmail}
-                disabled={savingEmail || !notificationEmail}
+                onClick={saveNotificationEmails}
+                disabled={savingEmail}
+                className="w-full"
               >
-                {savingEmail ? 'שומר...' : 'שמור'}
+                {savingEmail ? 'שומר...' : 'שמור התראות'}
               </Button>
             </div>
           )}

@@ -39,14 +39,23 @@ async def get_email_settings(
     )
 
 
+def _parse_notification_emails(raw: str | None) -> list[str]:
+    """Split the comma-separated notification_email column into a list."""
+    if not raw:
+        return []
+    return [e.strip() for e in raw.split(",") if e.strip()]
+
+
 @router.get("/notifications", response_model=NotificationSettingsResponse)
 async def get_notification_settings(
     current_user: User = Depends(get_current_active_user)
 ):
     """Get current user's notification preferences"""
+    emails = _parse_notification_emails(current_user.notification_email)
     return NotificationSettingsResponse(
         email=current_user.email,
         notification_email=current_user.notification_email,
+        notification_emails=emails,
         email_notifications_enabled=current_user.email_notifications_enabled,
     )
 
@@ -59,13 +68,23 @@ async def update_notification_settings(
 ):
     """Update current user's notification preferences"""
     current_user.email_notifications_enabled = payload.email_notifications_enabled
-    current_user.notification_email = payload.notification_email
+
+    # Prefer the new list field; fall back to legacy single-email field
+    if payload.notification_emails:
+        current_user.notification_email = ",".join(payload.notification_emails)
+    elif payload.notification_email:
+        current_user.notification_email = payload.notification_email
+    else:
+        current_user.notification_email = None
+
     await db.commit()
     await db.refresh(current_user)
-    
+
+    emails = _parse_notification_emails(current_user.notification_email)
     return NotificationSettingsResponse(
         email=current_user.email,
         notification_email=current_user.notification_email,
+        notification_emails=emails,
         email_notifications_enabled=current_user.email_notifications_enabled,
     )
 

@@ -371,7 +371,10 @@ class AlertService:
         }
     
     async def _get_notification_recipients(self) -> list[str]:
-        """Get email addresses of users who opted into notifications"""
+        """Get email addresses of users who opted into notifications.
+
+        Each user may have multiple comma-separated emails in notification_email.
+        """
         result = await self.db.execute(
             select(User).where(
                 User.is_active == True,
@@ -379,7 +382,14 @@ class AlertService:
             )
         )
         users = result.scalars().all()
-        return [user.notification_email or user.email for user in users]
+        recipients: list[str] = []
+        for user in users:
+            raw = user.notification_email or user.email
+            for addr in raw.split(","):
+                addr = addr.strip()
+                if addr and addr not in recipients:
+                    recipients.append(addr)
+        return recipients
 
     async def _send_expiration_email(self, batch: Batch, days_left: int, severity: AlertSeverity):
         """Send expiration alert email to opted-in users"""
