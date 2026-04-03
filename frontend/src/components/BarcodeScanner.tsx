@@ -113,7 +113,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   }, [])
 
   useEffect(() => {
-    const handleDetected = async (result: any) => {
+    const handleDetected = (result: any) => {
       const code = result.codeResult?.code
       const format = result.codeResult?.format
       if (!code) return
@@ -158,27 +158,29 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         // Audio not supported
       }
 
-      try {
-        const shouldClose = await onScan({ code, format })
-        if (shouldClose) {
-          // Success — brief green flash then close
-          setStatusMessage({ text: `✓ ${code}`, type: 'success' })
-          setTimeout(() => onClose(), 600)
-        } else {
-          // Not found — show message, keep scanning
-          setStatusMessage({ text: `${code} — לא נמצא`, type: 'error' })
+      // Show scanned code immediately, then validate async
+      setStatusMessage({ text: `סורק: ${code}`, type: 'success' })
+
+      Promise.resolve(onScan({ code, format }))
+        .then((shouldClose) => {
+          if (shouldClose) {
+            setStatusMessage({ text: `✓ ${code}`, type: 'success' })
+            setTimeout(() => onClose(), 600)
+          } else {
+            setStatusMessage({ text: `${code} — לא נמצא`, type: 'error' })
+            setTimeout(() => {
+              setStatusMessage(null)
+              processingRef.current = false
+            }, 1500)
+          }
+        })
+        .catch(() => {
+          setStatusMessage({ text: 'שגיאה בבדיקת ברקוד', type: 'error' })
           setTimeout(() => {
             setStatusMessage(null)
             processingRef.current = false
           }, 1500)
-        }
-      } catch {
-        setStatusMessage({ text: 'שגיאה בבדיקת ברקוד', type: 'error' })
-        setTimeout(() => {
-          setStatusMessage(null)
-          processingRef.current = false
-        }, 1500)
-      }
+        })
 
       // Reset debounce after 2 seconds
       setTimeout(() => {
