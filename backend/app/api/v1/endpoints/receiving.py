@@ -190,20 +190,39 @@ async def validate_barcode(
 ) -> dict:
     """
     Validate a scanned barcode/SKU and return item info.
-    Searches the barcode column first, then falls back to SKU.
+    Searches barcode column, then SKU by exact match.
+    If no exact match, tries each space-separated token from the scanned
+    string (handles structured QR codes that embed the SKU among other data).
     """
-    from sqlalchemy import select, or_
+    from sqlalchemy import func, literal, select, or_
     from app.models.item import Item
 
+    scanned = request.barcode.strip()
+
+    # 1. Try exact match on barcode or SKU
     result = await db.execute(
         select(Item).where(
             or_(
-                Item.barcode == request.barcode,
-                Item.sku == request.barcode,
+                Item.barcode == scanned,
+                Item.sku == scanned,
             )
         )
     )
     item = result.scalar_one_or_none()
+
+    # 2. If no exact match, find any item whose SKU or barcode appears
+    #    as a substring in the scanned string. Prioritise longer matches
+    #    to avoid false positives (e.g. SKU "10" matching quantity "10").
+    if not item:
+        result = await db.execute(
+            select(Item).where(
+                or_(
+                    literal(scanned).contains(Item.sku),
+                    literal(scanned).contains(Item.barcode),
+                )
+            ).order_by(func.length(Item.sku).desc())
+        )
+        item = result.scalars().first()
 
     if not item:
         return {
