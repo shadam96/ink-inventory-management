@@ -186,37 +186,54 @@ def _parse_qr_data(scanned: str) -> dict | None:
     """
     Parse structured QR code data from Durst ink products.
 
-    Expected format (space-separated tokens):
-        0: product line (ignored)
-        1: supplier batch number
-        2: color code (ignored)
-        3: SKU (used for item lookup, not returned here)
-        4: type (ignored)
-        5: manufacturing date  YYYY/MM/DD
-        6: expiration date     YYYY/MM/DD
-        7: quantity
-        8+: unit + product name (ignored)
+    Uses pattern matching instead of fixed positions to be resilient
+    to format variations:
+    - Dates: YYYY/MM/DD or YYYY-MM-DD patterns → first is mfg, second is exp
+    - Supplier batch: token at index 1
+    - Quantity: first pure integer that follows the dates
 
     Returns a dict with parsed fields, or None if the string
-    does not look like a structured QR code (< 8 tokens).
+    does not look like a structured QR code.
     """
+    import re
+
     tokens = scanned.split()
     if len(tokens) < 8:
         return None
 
-    try:
-        mfg = tokens[5].replace("/", "-")  # YYYY/MM/DD → YYYY-MM-DD
-        exp = tokens[6].replace("/", "-")
-        qty = int(tokens[7])
-    except (ValueError, IndexError):
+    # Find all date-like tokens (YYYY/MM/DD or YYYY-MM-DD)
+    date_pattern = re.compile(r'^\d{4}[/-]\d{2}[/-]\d{2}$')
+    date_indices = [i for i, t in enumerate(tokens) if date_pattern.match(t)]
+
+    if len(date_indices) < 2:
         return None
 
-    return {
-        "supplier_batch_number": tokens[1],
-        "manufacturing_date": mfg,
-        "expiration_date": exp,
-        "quantity": qty,
-    }
+    mfg_idx = date_indices[0]
+    exp_idx = date_indices[1]
+    mfg = tokens[mfg_idx].replace("/", "-")
+    exp = tokens[exp_idx].replace("/", "-")
+
+    # Find quantity: first pure integer after the last date
+    qty = None
+    for i in range(exp_idx + 1, len(tokens)):
+        try:
+            qty = int(tokens[i])
+            break
+        except ValueError:
+            continue
+
+    # Supplier batch number is token 1
+    supplier_batch = tokens[1] if len(tokens) > 1 else None
+
+    result: dict = {}
+    if supplier_batch:
+        result["supplier_batch_number"] = supplier_batch
+    result["manufacturing_date"] = mfg
+    result["expiration_date"] = exp
+    if qty is not None:
+        result["quantity"] = qty
+
+    return result
 
 
 class BarcodeRequest(BaseModel):
