@@ -120,12 +120,12 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
 
       // Check confidence — reject low-confidence reads
       const errors = result.codeResult?.decodedCodes
-        ?.filter((d: any) => d.error !== undefined)
+        ?.filter((d: any) => typeof d.error === 'number')
         ?.map((d: any) => d.error) || []
-      const avgError = errors.length > 0
-        ? errors.reduce((s: number, e: number) => s + e, 0) / errors.length
-        : 1
-      if (avgError > (1 - MIN_CONFIDENCE)) return
+      if (errors.length > 0) {
+        const avgError = errors.reduce((s: number, e: number) => s + e, 0) / errors.length
+        if (avgError > (1 - MIN_CONFIDENCE)) return
+      }
 
       // Debounce — ignore same code within 2 seconds
       if (lastScannedRef.current === code) return
