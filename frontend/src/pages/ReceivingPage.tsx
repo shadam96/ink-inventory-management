@@ -37,7 +37,14 @@ interface ReceiveItem extends ReceiveFormData {
 export function ReceivingPage() {
   const { t } = useTranslation()
   const [items, setItems] = useState<Item[]>([])
-  const [receiveList, setReceiveList] = useState<ReceiveItem[]>([])
+  const [receiveList, setReceiveList] = useState<ReceiveItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('receiveList')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
   const [barcode, setBarcode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
@@ -67,6 +74,15 @@ export function ReceivingPage() {
   useEffect(() => {
     fetchItems()
   }, [])
+
+  // Persist receive list across page navigation
+  useEffect(() => {
+    if (receiveList.length > 0) {
+      localStorage.setItem('receiveList', JSON.stringify(receiveList))
+    } else {
+      localStorage.removeItem('receiveList')
+    }
+  }, [receiveList])
 
   async function fetchItems() {
     try {
@@ -194,7 +210,6 @@ export function ReceivingPage() {
             expiration_date: receiveList[0].expiration_date,
             manufacturing_date: receiveList[0].manufacturing_date || undefined,
             batch_number: receiveList[0].batch_number,
-            supplier_batch_number: receiveList[0].batch_number || undefined,
             notes: receiveList[0].notes,
           }
         : {
@@ -204,7 +219,6 @@ export function ReceivingPage() {
               expiration_date: item.expiration_date,
               manufacturing_date: item.manufacturing_date || undefined,
               batch_number: item.batch_number,
-              supplier_batch_number: item.batch_number || undefined,
               notes: item.notes,
             })),
           }
@@ -308,35 +322,43 @@ export function ReceivingPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(handleAddToList)} className="space-y-4">
-            {/* Item Selection */}
-            <div className="space-y-2">
-              <Label htmlFor="item_id">{t('receiving.selectItem')} *</Label>
-              <select
-                id="item_id"
-                {...register('item_id')}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">בחר פריט...</option>
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.sku} - {item.name}
-                  </option>
-                ))}
-              </select>
-              {errors.item_id && (
-                <p className="text-sm text-destructive">{errors.item_id.message}</p>
-              )}
+            {/* Item Selection + SKU */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="sm:col-span-2 space-y-2">
+                <Label htmlFor="item_id">{t('receiving.selectItem')} *</Label>
+                <select
+                  id="item_id"
+                  {...register('item_id')}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">בחר פריט...</option>
+                  {items.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+                {errors.item_id && (
+                  <p className="text-sm text-destructive">{errors.item_id.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>מק״ט</Label>
+                <Input
+                  value={selectedItem?.sku || ''}
+                  readOnly
+                  className="font-mono bg-muted"
+                  placeholder="—"
+                />
+              </div>
             </div>
 
             {/* Item info banner */}
             {selectedItem && (
-              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 text-sm space-y-1">
-                <p className="font-medium">{selectedItem.name}</p>
-                <div className="flex gap-4 text-muted-foreground">
-                  <span>מק״ט: {selectedItem.sku}</span>
-                  <span>ספק: {selectedItem.supplier}</span>
-                  <span>יח': {selectedItem.unit_of_measure}</span>
-                </div>
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 text-sm flex gap-4 text-muted-foreground">
+                <span>ספק: {selectedItem.supplier}</span>
+                <span>יח': {selectedItem.unit_of_measure}</span>
               </div>
             )}
 
