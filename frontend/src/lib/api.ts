@@ -318,7 +318,9 @@ export interface ReceiveItemData {
   item_id: string
   quantity: number
   expiration_date: string
+  manufacturing_date?: string
   batch_number?: string
+  supplier_batch_number?: string
   location_id?: string
   notes?: string
 }

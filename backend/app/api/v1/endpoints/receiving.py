@@ -20,6 +20,7 @@ class GoodsReceiptItem(BaseModel):
     item_id: UUID
     quantity: Decimal = Field(..., gt=0)
     expiration_date: date
+    manufacturing_date: Optional[date] = None
     batch_number: Optional[str] = None
     supplier_batch_number: Optional[str] = None
     location_id: Optional[UUID] = None
@@ -45,6 +46,7 @@ class SingleReceiptRequest(BaseModel):
     item_id: UUID
     quantity: Decimal = Field(..., gt=0)
     expiration_date: date
+    manufacturing_date: Optional[date] = None
     batch_number: Optional[str] = None
     supplier_batch_number: Optional[str] = None
     location_id: Optional[UUID] = None
@@ -59,6 +61,7 @@ class SingleReceiptResponse(BaseModel):
     item_id: UUID
     quantity: Decimal
     expiration_date: date
+    manufacturing_date: Optional[date] = None
     location_id: Optional[UUID]
     warning: Optional[dict] = None
 
@@ -85,6 +88,7 @@ async def receive_single_item(
             supplier_batch_number=receipt.supplier_batch_number,
             location_id=receipt.location_id,
             notes=receipt.notes,
+            manufacturing_date=receipt.manufacturing_date,
         )
         
         await db.commit()
@@ -99,6 +103,7 @@ async def receive_single_item(
             item_id=batch.item_id,
             quantity=batch.quantity_received,
             expiration_date=batch.expiration_date,
+            manufacturing_date=batch.manufacturing_date,
             location_id=batch.location_id,
             warning=warning,
         )
@@ -177,6 +182,43 @@ async def receive_multiple_items(
         )
 
 
+def _parse_qr_data(scanned: str) -> dict | None:
+    """
+    Parse structured QR code data from Durst ink products.
+
+    Expected format (space-separated tokens):
+        0: product line (ignored)
+        1: supplier batch number
+        2: color code (ignored)
+        3: SKU (used for item lookup, not returned here)
+        4: type (ignored)
+        5: manufacturing date  YYYY/MM/DD
+        6: expiration date     YYYY/MM/DD
+        7: quantity
+        8+: unit + product name (ignored)
+
+    Returns a dict with parsed fields, or None if the string
+    does not look like a structured QR code (< 8 tokens).
+    """
+    tokens = scanned.split()
+    if len(tokens) < 8:
+        return None
+
+    try:
+        mfg = tokens[5].replace("/", "-")  # YYYY/MM/DD → YYYY-MM-DD
+        exp = tokens[6].replace("/", "-")
+        qty = int(tokens[7])
+    except (ValueError, IndexError):
+        return None
+
+    return {
+        "supplier_batch_number": tokens[1],
+        "manufacturing_date": mfg,
+        "expiration_date": exp,
+        "quantity": qty,
+    }
+
+
 class BarcodeRequest(BaseModel):
     """Request body for barcode validation"""
     barcode: str
@@ -230,6 +272,9 @@ async def validate_barcode(
             "item": None
         }
 
+    # Try to parse structured QR data
+    parsed_data = _parse_qr_data(scanned)
+
     return {
         "valid": True,
         "item": {
@@ -240,7 +285,8 @@ async def validate_barcode(
             "supplier": item.supplier,
             "unit_of_measure": item.unit_of_measure,
             "cost_price": float(item.cost_price),
-        }
+        },
+        **({"parsed_data": parsed_data} if parsed_data else {}),
     }
 
 

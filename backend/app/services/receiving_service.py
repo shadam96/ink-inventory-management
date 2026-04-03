@@ -85,6 +85,7 @@ class ReceivingService:
         location_id: Optional[UUID] = None,
         receipt_date: Optional[date] = None,
         notes: Optional[str] = None,
+        manufacturing_date: Optional[date] = None,
     ) -> tuple[Batch, Movement, str]:
         """
         Receive goods into inventory
@@ -130,6 +131,7 @@ class ReceivingService:
             quantity_available=quantity,
             receipt_date=receipt_date or today,
             expiration_date=expiration_date,
+            manufacturing_date=manufacturing_date,
             location_id=location_id,
             status=BatchStatus.ACTIVE,
             notes=notes,

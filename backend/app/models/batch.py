@@ -98,7 +98,11 @@ class Batch(BaseModel):
         nullable=False,
         index=True
     )
-    
+    manufacturing_date: Mapped[Optional[date]] = mapped_column(
+        Date,
+        nullable=True
+    )
+
     # Status
     status: Mapped[BatchStatus] = mapped_column(
         Enum(BatchStatus),

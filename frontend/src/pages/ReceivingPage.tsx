@@ -21,7 +21,9 @@ const receiveSchema = z.object({
   item_id: z.string().min(1, 'פריט נדרש'),
   quantity: z.number().int('כמות חייבת להיות מספר שלם').min(1, 'כמות חייבת להיות חיובית'),
   expiration_date: z.string().min(1, 'תאריך תפוגה נדרש'),
+  manufacturing_date: z.string().optional(),
   batch_number: z.string().optional(),
+  supplier_batch_number: z.string().optional(),
   notes: z.string().optional(),
 })
 
@@ -77,7 +79,19 @@ export function ReceivingPage() {
       if (result.valid && result.item) {
         setValue('item_id', result.item.id)
         setBarcode('')
-        toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+
+        // Auto-fill from structured QR data when available
+        if (result.parsed_data) {
+          const pd = result.parsed_data
+          if (pd.expiration_date) setValue('expiration_date', pd.expiration_date)
+          if (pd.manufacturing_date) setValue('manufacturing_date', pd.manufacturing_date)
+          if (pd.quantity) setValue('quantity', pd.quantity)
+          if (pd.supplier_batch_number) setValue('supplier_batch_number', pd.supplier_batch_number)
+          toast.success(`נמצא ומולא אוטומטית: ${result.item.name} (${result.item.sku})`)
+        } else {
+          toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+        }
+
         if (navigator.vibrate) {
           navigator.vibrate([100, 50, 100])
         }
@@ -97,7 +111,19 @@ export function ReceivingPage() {
       if (result.valid && result.item) {
         setValue('item_id', result.item.id)
         setBarcode('')
-        toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+
+        // Auto-fill from structured QR data when available
+        if (result.parsed_data) {
+          const pd = result.parsed_data
+          if (pd.expiration_date) setValue('expiration_date', pd.expiration_date)
+          if (pd.manufacturing_date) setValue('manufacturing_date', pd.manufacturing_date)
+          if (pd.quantity) setValue('quantity', pd.quantity)
+          if (pd.supplier_batch_number) setValue('supplier_batch_number', pd.supplier_batch_number)
+          toast.success(`נמצא ומולא אוטומטית: ${result.item.name} (${result.item.sku})`)
+        } else {
+          toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+        }
+
         if (navigator.vibrate) {
           navigator.vibrate([100, 50, 100])
         }
@@ -132,7 +158,9 @@ export function ReceivingPage() {
       item_id: '',
       quantity: 1,
       expiration_date: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      manufacturing_date: '',
       batch_number: '',
+      supplier_batch_number: '',
       notes: '',
     })
   }
@@ -151,7 +179,9 @@ export function ReceivingPage() {
             item_id: receiveList[0].item_id,
             quantity: receiveList[0].quantity,
             expiration_date: receiveList[0].expiration_date,
+            manufacturing_date: receiveList[0].manufacturing_date || undefined,
             batch_number: receiveList[0].batch_number,
+            supplier_batch_number: receiveList[0].supplier_batch_number || undefined,
             notes: receiveList[0].notes,
           }
         : {
@@ -159,7 +189,9 @@ export function ReceivingPage() {
               item_id: item.item_id,
               quantity: item.quantity,
               expiration_date: item.expiration_date,
+              manufacturing_date: item.manufacturing_date || undefined,
               batch_number: item.batch_number,
+              supplier_batch_number: item.supplier_batch_number || undefined,
               notes: item.notes,
             })),
           }
@@ -317,6 +349,24 @@ export function ReceivingPage() {
                   )}
                 </div>
 
+                <div className="space-y-2">
+                  <Label htmlFor="manufacturing_date">תאריך ייצור</Label>
+                  <Input
+                    id="manufacturing_date"
+                    type="date"
+                    {...register('manufacturing_date')}
+                  />
+                </div>
+
+                <div className="col-span-1 sm:col-span-2 space-y-2">
+                  <Label htmlFor="supplier_batch_number">מספר אצוות ספק</Label>
+                  <Input
+                    id="supplier_batch_number"
+                    {...register('supplier_batch_number')}
+                    placeholder="מספר אצוות ספק (מהמדבקה)"
+                  />
+                </div>
+
                 <div className="col-span-1 sm:col-span-2 space-y-2">
                   <Label htmlFor="batch_number">{t('receiving.batchNumber')}</Label>
                   <Input
@@ -388,6 +438,8 @@ export function ReceivingPage() {
                     <div className="flex gap-4 flex-wrap text-sm text-muted-foreground">
                       <span>כמות: {item.quantity}</span>
                       <span>תפוגה: {new Date(item.expiration_date).toLocaleDateString('he-IL')}</span>
+                      {item.manufacturing_date && <span>ייצור: {new Date(item.manufacturing_date).toLocaleDateString('he-IL')}</span>}
+                      {item.supplier_batch_number && <span>אצוות ספק: {item.supplier_batch_number}</span>}
                       {item.batch_number && <span>אצווה: {item.batch_number}</span>}
                     </div>
                     {item.notes && (
