@@ -142,6 +142,15 @@
     padding-right: env(safe-area-inset-right);
   }
 
+  /* Hide scrollbar but keep scroll */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Prevent pull-to-refresh in PWA */
   .no-overscroll {
     overscroll-behavior: none;
