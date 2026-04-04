@@ -147,6 +147,7 @@ async def register_user(
         full_name=user_data.full_name,
         hashed_password=get_password_hash(user_data.password),
         role=user_data.role,
+        customer_id=user_data.customer_id,
         is_active=True,
     )
     
