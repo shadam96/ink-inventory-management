@@ -157,17 +157,22 @@ export const receivingApi = {
 // Picking API
 export const pickingApi = {
   suggestBatches: async (itemId: string, quantity: number) => {
-    const response = await api.post('/picking/suggest-batches', { item_id: itemId, quantity })
+    const response = await api.post('/picking/suggest-batches', { item_id: itemId, quantity_needed: quantity })
     return response.data
   },
-  
+
   executePick: async (data: ExecutePickData) => {
     const response = await api.post('/picking/execute-pick', data)
     return response.data
   },
-  
+
   dispatch: async (data: DispatchData) => {
     const response = await api.post('/picking/dispatch', data)
+    return response.data
+  },
+
+  consume: async (data: { batch_id: string; quantity: number; notes?: string }) => {
+    const response = await api.post('/picking/consume', data)
     return response.data
   },
 }
@@ -347,8 +352,8 @@ export interface ExecutePickData {
 }
 
 export interface DispatchData {
-  customer_id: string
-  picks: { batch_id: string; quantity: number }[]
+  items: { batch_id: string; quantity: number }[]
+  customer_id?: string
   reference_number?: string
   notes?: string
 }

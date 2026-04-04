@@ -18,9 +18,10 @@ class UserBase(BaseSchema):
 
 class UserCreate(UserBase):
     """Schema for creating a user"""
-    
+
     password: str = Field(..., min_length=8, max_length=100)
     role: UserRole = UserRole.VIEWER
+    customer_id: Optional[UUID] = None
 
 
 class UserUpdate(BaseSchema):
@@ -36,12 +37,13 @@ class UserUpdate(BaseSchema):
 
 class UserResponse(UserBase, TimestampSchema):
     """Schema for user response"""
-    
+
     id: UUID
     role: UserRole
     is_active: bool
     notification_email: Optional[str] = None
     email_notifications_enabled: bool = False
+    customer_id: Optional[UUID] = None
 
 
 class NotificationSettingsUpdate(BaseSchema):

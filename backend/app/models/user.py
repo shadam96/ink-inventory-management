@@ -1,13 +1,16 @@
 """User model for authentication and authorization"""
 import enum
 from typing import TYPE_CHECKING, List, Optional
+from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, String
+from sqlalchemy import Boolean, Enum, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
 
 if TYPE_CHECKING:
+    from app.models.customer import Customer
     from app.models.movement import Movement
     from app.models.delivery_note import DeliveryNote
 
@@ -18,13 +21,14 @@ class UserRole(str, enum.Enum):
     MANAGER = "manager"
     WAREHOUSE_WORKER = "warehouse_worker"
     VIEWER = "viewer"
+    CUSTOMER = "customer"
 
 
 class User(BaseModel):
     """User model for authentication and RBAC"""
-    
+
     __tablename__ = "users"
-    
+
     username: Mapped[str] = mapped_column(
         String(50),
         unique=True,
@@ -66,8 +70,19 @@ class User(BaseModel):
         nullable=False,
         server_default="false"
     )
-    
+    customer_id: Mapped[Optional[UUID]] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("customers.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+        index=True
+    )
+
     # Relationships
+    customer: Mapped[Optional["Customer"]] = relationship(
+        "Customer",
+        lazy="selectin"
+    )
     movements: Mapped[List["Movement"]] = relationship(
         "Movement",
         back_populates="user",
@@ -78,18 +93,22 @@ class User(BaseModel):
         back_populates="created_by_user",
         lazy="selectin"
     )
-    
+
     def __repr__(self) -> str:
         return f"<User {self.username}>"
-    
+
     @property
     def is_admin(self) -> bool:
         return self.role == UserRole.ADMIN
-    
+
     @property
     def is_manager(self) -> bool:
         return self.role in (UserRole.ADMIN, UserRole.MANAGER)
-    
+
+    @property
+    def is_customer(self) -> bool:
+        return self.role == UserRole.CUSTOMER
+
     @property
     def can_modify_inventory(self) -> bool:
         return self.role in (

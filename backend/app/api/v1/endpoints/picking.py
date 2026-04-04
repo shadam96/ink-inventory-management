@@ -7,10 +7,11 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import DbSession, WarehouseUser
+from app.api.deps import DbSession, PickingUser, WarehouseUser
 from app.services.fefo_engine import FEFOEngine
 from app.services.inventory_service import InventoryService
 from app.models.movement import MovementType
+from app.models.user import UserRole
 
 router = APIRouter()
 
@@ -36,7 +37,15 @@ class DispatchItem(BaseModel):
 class DispatchRequest(BaseModel):
     """Request to create a dispatch"""
     items: List[DispatchItem] = Field(..., min_length=1)
+    customer_id: Optional[UUID] = None
     reference_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class ConsumeRequest(BaseModel):
+    """Request for customer consumption — pick specific batch"""
+    batch_id: UUID
+    quantity: Decimal = Field(..., gt=0)
     notes: Optional[str] = None
 
 
@@ -53,7 +62,7 @@ class DispatchResponse(BaseModel):
 async def suggest_batches_for_picking(
     request: PickingSuggestionRequest,
     db: DbSession,
-    current_user: WarehouseUser,
+    current_user: PickingUser,
 ) -> dict:
     """
     Get FEFO-sorted batch suggestions for picking.
@@ -248,6 +257,76 @@ async def create_dispatch(
             movements=movements,
         )
         
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.post("/consume")
+async def consume_item(
+    request: ConsumeRequest,
+    db: DbSession,
+    current_user: PickingUser,
+) -> dict:
+    """
+    Record customer consumption of an item.
+
+    Any picking-authorized user can call this endpoint.  When the caller
+    has the CUSTOMER role, their linked customer_id is recorded
+    automatically.
+    """
+    fefo = FEFOEngine(db)
+    inventory = InventoryService(db)
+
+    validation = await fefo.validate_picking(
+        batch_id=request.batch_id,
+        quantity=request.quantity,
+    )
+
+    if not validation.is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "בחירה לא תקינה",
+                "errors": validation.errors,
+            },
+        )
+
+    try:
+        # Build notes with customer context
+        notes_parts = []
+        if current_user.role == UserRole.CUSTOMER and current_user.customer_id:
+            notes_parts.append(f"customer:{current_user.customer_id}")
+        if request.notes:
+            notes_parts.append(request.notes)
+
+        from app.services.receiving_service import ReceivingService
+        receiving = ReceivingService(db)
+        ref_number = await receiving.generate_batch_number(prefix="CON")
+
+        movement = await inventory.record_movement(
+            batch_id=request.batch_id,
+            movement_type=MovementType.CONSUMPTION,
+            quantity=request.quantity,
+            user_id=current_user.id,
+            reference_number=ref_number,
+            notes=" | ".join(notes_parts) if notes_parts else None,
+        )
+
+        await db.commit()
+
+        return {
+            "success": True,
+            "movement_id": str(movement.id),
+            "batch_id": str(request.batch_id),
+            "quantity": float(request.quantity),
+            "quantity_remaining": float(movement.quantity_after),
+            "reference_number": ref_number,
+            "warnings": validation.warnings,
+        }
+
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

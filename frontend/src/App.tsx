@@ -37,6 +37,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+function StaffRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuthStore()
+
+  if (user?.role === 'customer') {
+    return <Navigate to="/picking" replace />
+  }
+
+  return <>{children}</>
+}
+
 function App() {
   const { theme } = useUIStore()
 
@@ -83,14 +93,14 @@ function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<DashboardPage />} />
-          <Route path="items" element={<ItemsPage />} />
-          <Route path="batches" element={<BatchesPage />} />
-          <Route path="receiving" element={<ReceivingPage />} />
+          <Route index element={<StaffRoute><DashboardPage /></StaffRoute>} />
+          <Route path="items" element={<StaffRoute><ItemsPage /></StaffRoute>} />
+          <Route path="batches" element={<StaffRoute><BatchesPage /></StaffRoute>} />
+          <Route path="receiving" element={<StaffRoute><ReceivingPage /></StaffRoute>} />
           <Route path="picking" element={<PickingPage />} />
-          <Route path="delivery-notes" element={<DeliveryNotesPage />} />
-          <Route path="customers" element={<CustomersPage />} />
-          <Route path="alerts" element={<AlertsPage />} />
+          <Route path="delivery-notes" element={<StaffRoute><DeliveryNotesPage /></StaffRoute>} />
+          <Route path="customers" element={<StaffRoute><CustomersPage /></StaffRoute>} />
+          <Route path="alerts" element={<StaffRoute><AlertsPage /></StaffRoute>} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
 

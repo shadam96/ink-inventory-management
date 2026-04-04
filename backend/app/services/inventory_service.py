@@ -97,7 +97,7 @@ class InventoryService:
         # Calculate new quantity based on movement type
         if movement_type in (MovementType.RECEIPT,):
             quantity_after = quantity_before + quantity
-        elif movement_type in (MovementType.DISPATCH, MovementType.SCRAP):
+        elif movement_type in (MovementType.DISPATCH, MovementType.CONSUMPTION, MovementType.SCRAP):
             if quantity > quantity_before:
                 raise ValueError(
                     f"כמות לא מספיקה. זמין: {quantity_before}, נדרש: {quantity}"

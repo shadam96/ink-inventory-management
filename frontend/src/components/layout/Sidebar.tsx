@@ -23,15 +23,15 @@ import {
   Warehouse,
 } from 'lucide-react'
 
-const navItems = [
-  { path: '/', icon: LayoutDashboard, label: 'nav.dashboard' },
-  { path: '/items', icon: Package, label: 'nav.items' },
-  { path: '/batches', icon: Layers, label: 'nav.batches' },
-  { path: '/receiving', icon: PackagePlus, label: 'nav.receiving' },
-  { path: '/picking', icon: PackageMinus, label: 'nav.picking' },
-  { path: '/delivery-notes', icon: FileText, label: 'nav.deliveryNotes' },
-  { path: '/customers', icon: Users, label: 'nav.customers' },
-  { path: '/alerts', icon: Bell, label: 'nav.alerts' },
+const allNavItems = [
+  { path: '/', icon: LayoutDashboard, label: 'nav.dashboard', staffOnly: true },
+  { path: '/items', icon: Package, label: 'nav.items', staffOnly: true },
+  { path: '/batches', icon: Layers, label: 'nav.batches', staffOnly: true },
+  { path: '/receiving', icon: PackagePlus, label: 'nav.receiving', staffOnly: true },
+  { path: '/picking', icon: PackageMinus, label: 'nav.picking', staffOnly: false },
+  { path: '/delivery-notes', icon: FileText, label: 'nav.deliveryNotes', staffOnly: true },
+  { path: '/customers', icon: Users, label: 'nav.customers', staffOnly: true },
+  { path: '/alerts', icon: Bell, label: 'nav.alerts', staffOnly: true },
 ]
 
 const iconMap = {
@@ -47,6 +47,10 @@ export function Sidebar() {
   const { sidebarOpen, toggleSidebar, appName, appIcon } = useUIStore()
   
   const IconComponent = iconMap[appIcon] || Droplets
+  const isCustomer = user?.role === 'customer'
+  const navItems = isCustomer
+    ? allNavItems.filter(item => !item.staffOnly)
+    : allNavItems
 
   return (
     <aside

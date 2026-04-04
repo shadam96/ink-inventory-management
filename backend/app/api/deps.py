@@ -78,12 +78,16 @@ RequireManager = Depends(require_roles(UserRole.ADMIN, UserRole.MANAGER))
 RequireWarehouse = Depends(
     require_roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_WORKER)
 )
+RequirePickingAccess = Depends(
+    require_roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_WORKER, UserRole.CUSTOMER)
+)
 
 # Type aliases for cleaner endpoint signatures
 CurrentUser = Annotated[User, Depends(get_current_user)]
 AdminUser = Annotated[User, RequireAdmin]
 ManagerUser = Annotated[User, RequireManager]
 WarehouseUser = Annotated[User, RequireWarehouse]
+PickingUser = Annotated[User, RequirePickingAccess]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
 

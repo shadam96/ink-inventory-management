@@ -20,6 +20,7 @@ class MovementType(str, enum.Enum):
     """Types of inventory movements"""
     RECEIPT = "receipt"
     DISPATCH = "dispatch"
+    CONSUMPTION = "consumption"
     ADJUSTMENT = "adjustment"
     SCRAP = "scrap"
     TRANSFER = "transfer"
@@ -108,6 +109,7 @@ class Movement(BaseModel):
         """Check if movement removes inventory"""
         return self.movement_type in (
             MovementType.DISPATCH,
+            MovementType.CONSUMPTION,
             MovementType.SCRAP,
             MovementType.TRANSFER
         )

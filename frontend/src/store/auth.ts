@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '@/lib/api'
 
-export type UserRole = 'admin' | 'manager' | 'warehouse_worker' | 'viewer'
+export type UserRole = 'admin' | 'manager' | 'warehouse_worker' | 'viewer' | 'customer'
 
 export interface User {
   id: string
@@ -11,6 +11,7 @@ export interface User {
   full_name: string
   role: UserRole
   is_active: boolean
+  customer_id?: string
 }
 
 interface AuthState {
