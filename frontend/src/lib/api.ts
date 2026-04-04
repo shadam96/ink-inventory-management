@@ -255,18 +255,28 @@ export const deliveryNotesApi = {
 
 // Customers API
 export const customersApi = {
-  list: async () => {
-    const response = await api.get('/customers')
-    return response.data
+  list: async (params?: { page?: number; page_size?: number; search?: string; is_active?: boolean; is_vmi?: boolean }) => {
+    const response = await api.get('/customers', { params })
+    return response.data as PaginatedResponse<Customer>
   },
-  
+
   get: async (id: string) => {
     const response = await api.get(`/customers/${id}`)
-    return response.data
+    return response.data as Customer
   },
-  
+
   create: async (data: CreateCustomerData) => {
     const response = await api.post('/customers', data)
+    return response.data
+  },
+
+  update: async (id: string, data: Partial<CreateCustomerData> & { is_active?: boolean }) => {
+    const response = await api.put(`/customers/${id}`, data)
+    return response.data
+  },
+
+  delete: async (id: string) => {
+    const response = await api.delete(`/customers/${id}`)
     return response.data
   },
 }
@@ -362,12 +372,28 @@ export interface CreateDeliveryNoteData {
   notes?: string
 }
 
+export interface Customer {
+  id: string
+  name: string
+  email?: string
+  phone?: string
+  address?: string
+  contact_person?: string
+  is_active: boolean
+  is_vmi_customer: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface CreateCustomerData {
   name: string
   email?: string
   phone?: string
   address?: string
   contact_person?: string
+  is_vmi_customer?: boolean
+  notes?: string
 }
 
 export default api
