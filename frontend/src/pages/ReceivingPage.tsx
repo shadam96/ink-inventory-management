@@ -37,7 +37,7 @@ interface ReceiveItem extends ReceiveFormData {
 export function ReceivingPage() {
   const { t } = useTranslation()
   const [items, setItems] = useState<Item[]>([])
-  const [receiveList, setReceiveList] = useState<ReceiveItem[]>(() => {
+  const [receiveList, _setReceiveList] = useState<ReceiveItem[]>(() => {
     try {
       const saved = localStorage.getItem('receiveList')
       return saved ? JSON.parse(saved) : []
@@ -45,6 +45,19 @@ export function ReceivingPage() {
       return []
     }
   })
+
+  // Wrapper that syncs to localStorage on every mutation
+  const setReceiveList = (update: ReceiveItem[] | ((prev: ReceiveItem[]) => ReceiveItem[])) => {
+    _setReceiveList((prev) => {
+      const next = typeof update === 'function' ? update(prev) : update
+      if (next.length > 0) {
+        localStorage.setItem('receiveList', JSON.stringify(next))
+      } else {
+        localStorage.removeItem('receiveList')
+      }
+      return next
+    })
+  }
   const [barcode, setBarcode] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
@@ -75,14 +88,6 @@ export function ReceivingPage() {
     fetchItems()
   }, [])
 
-  // Persist receive list across page navigation
-  useEffect(() => {
-    if (receiveList.length > 0) {
-      localStorage.setItem('receiveList', JSON.stringify(receiveList))
-    } else {
-      localStorage.removeItem('receiveList')
-    }
-  }, [receiveList])
 
   async function fetchItems() {
     try {
