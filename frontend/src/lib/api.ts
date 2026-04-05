@@ -118,6 +118,14 @@ export const itemsApi = {
   },
 }
 
+// Inventory View API
+export const inventoryApi = {
+  list: async (params?: { page?: number; page_size?: number; search?: string; sort_by?: string; sort_order?: 'asc' | 'desc' }) => {
+    const response = await api.get('/inventory', { params })
+    return response.data as PaginatedResponse<InventoryRow>
+  },
+}
+
 // Batches API
 export const batchesApi = {
   list: async (params?: { page?: number; page_size?: number; item_id?: string; status_filter?: string; sort_by?: string; sort_order?: 'asc' | 'desc' }) => {
@@ -389,6 +397,22 @@ export interface Customer {
   notes?: string
   created_at: string
   updated_at: string
+}
+
+export interface InventoryRow {
+  item_id: string
+  sku: string
+  name: string
+  description?: string
+  batch_number: string
+  quantity_available: number
+  unit_of_measure: string
+  cost_price: number
+  currency: string
+  supplier: string
+  expiration_date: string
+  receipt_dates: string[]
+  status: string
 }
 
 export interface CreateCustomerData {

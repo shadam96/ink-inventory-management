@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/pages/LoginPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { InventoryPage } from '@/pages/InventoryPage'
 import { ItemsPage } from '@/pages/ItemsPage'
 import { BatchesPage } from '@/pages/BatchesPage'
 import { ReceivingPage } from '@/pages/ReceivingPage'
@@ -94,6 +95,7 @@ function App() {
           }
         >
           <Route index element={<StaffRoute><DashboardPage /></StaffRoute>} />
+          <Route path="inventory" element={<InventoryPage />} />
           <Route path="items" element={<StaffRoute><ItemsPage /></StaffRoute>} />
           <Route path="batches" element={<StaffRoute><BatchesPage /></StaffRoute>} />
           <Route path="receiving" element={<StaffRoute><ReceivingPage /></StaffRoute>} />

@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import {
   LayoutDashboard,
+  ClipboardList,
   Package,
   Layers,
   PackagePlus,
@@ -25,6 +26,7 @@ import {
 
 const allNavItems = [
   { path: '/', icon: LayoutDashboard, label: 'nav.dashboard', staffOnly: true },
+  { path: '/inventory', icon: ClipboardList, label: 'nav.inventory', staffOnly: false },
   { path: '/items', icon: Package, label: 'nav.items', staffOnly: true },
   { path: '/batches', icon: Layers, label: 'nav.batches', staffOnly: true },
   { path: '/receiving', icon: PackagePlus, label: 'nav.receiving', staffOnly: true },

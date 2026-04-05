@@ -37,6 +37,10 @@
     "expirationRisk": "מפת סיכון תפוגה",
     "inventoryDistribution": "התפלגות מלאי"
   },
+  "inventory": {
+    "title": "מלאי",
+    "search": "חיפוש במלאי..."
+  },
   "items": {
     "title": "פריטים",
     "add": "הוסף פריט",

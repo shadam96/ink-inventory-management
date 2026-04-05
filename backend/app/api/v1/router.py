@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth,
     inventory,
+    inventory_view,
     batches,
     locations,
     customers,
@@ -31,6 +32,12 @@ api_router.include_router(
     inventory.router,
     prefix="/items",
     tags=["Items"]
+)
+
+api_router.include_router(
+    inventory_view.router,
+    prefix="/inventory",
+    tags=["Inventory View"]
 )
 
 api_router.include_router(
