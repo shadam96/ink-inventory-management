@@ -17,11 +17,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Add 'customer' to userrole enum
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction.
+    # Commit the current transaction first, then add the enum values.
+    op.execute("COMMIT")
     op.execute("ALTER TYPE userrole ADD VALUE IF NOT EXISTS 'customer'")
-
-    # Add 'consumption' to movementtype enum
     op.execute("ALTER TYPE movementtype ADD VALUE IF NOT EXISTS 'consumption'")
+
+    # Re-open a transaction for the remaining DDL
+    op.execute("BEGIN")
 
     # Add customer_id FK to users table
     op.add_column(
