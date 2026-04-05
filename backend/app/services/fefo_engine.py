@@ -89,9 +89,15 @@ class FEFOEngine:
         self,
         item_id: UUID,
         exclude_expired: bool = True,
+        strategy: str = "fefo",
     ) -> List[Batch]:
         """
-        Get all available batches for an item, sorted by FEFO.
+        Get all available batches for an item, sorted by the given strategy.
+
+        Strategies:
+          fefo — First Expired, First Out (expiration_date ASC)
+          fifo — First In, First Out (receipt_date ASC)
+          lifo — Last In, First Out (receipt_date DESC)
         """
         query = (
             select(Batch)
@@ -101,12 +107,18 @@ class FEFOEngine:
                 Batch.status == BatchStatus.ACTIVE,
                 Batch.quantity_available > 0,
             )
-            .order_by(Batch.expiration_date.asc())
         )
-        
+
+        if strategy == "fifo":
+            query = query.order_by(Batch.receipt_date.asc(), Batch.expiration_date.asc())
+        elif strategy == "lifo":
+            query = query.order_by(Batch.receipt_date.desc(), Batch.expiration_date.asc())
+        else:  # fefo (default)
+            query = query.order_by(Batch.expiration_date.asc())
+
         if exclude_expired:
             query = query.where(Batch.expiration_date >= date.today())
-        
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
     
@@ -115,14 +127,15 @@ class FEFOEngine:
         item_id: UUID,
         quantity_needed: Decimal,
         exclude_expired: bool = True,
+        strategy: str = "fefo",
     ) -> List[BatchSuggestion]:
         """
-        Suggest batches to pick from using FEFO logic.
-        
-        Returns a list of BatchSuggestion objects that together
-        fulfill the requested quantity.
+        Suggest batches to pick from using the given strategy.
+
+        When *quantity_needed* is 0 every available batch is returned
+        with ``suggested_quantity = 0``.
         """
-        batches = await self.get_available_batches(item_id, exclude_expired)
+        batches = await self.get_available_batches(item_id, exclude_expired, strategy=strategy)
         
         if not batches:
             return []
@@ -130,18 +143,21 @@ class FEFOEngine:
         suggestions = []
         remaining_quantity = quantity_needed
         today = date.today()
-        
+
         for batch in batches:
-            if remaining_quantity <= 0:
-                break
-            
             days_until = (batch.expiration_date - today).days
             warning_level = self._get_warning_level(days_until)
-            
-            # Calculate how much to take from this batch
-            pick_quantity = min(batch.quantity_available, remaining_quantity)
-            remaining_quantity -= pick_quantity
-            
+
+            if quantity_needed <= 0:
+                pick_quantity = Decimal("0")
+            elif remaining_quantity > 0:
+                pick_quantity = min(batch.quantity_available, remaining_quantity)
+                remaining_quantity -= pick_quantity
+            else:
+                # Quantity already fulfilled — include remaining batches
+                # with suggested_quantity = 0 so the UI can show them.
+                pick_quantity = Decimal("0")
+
             suggestion = BatchSuggestion(
                 batch_id=batch.id,
                 batch_number=batch.batch_number,
@@ -153,7 +169,7 @@ class FEFOEngine:
                 warning_level=warning_level,
             )
             suggestions.append(suggestion)
-        
+
         return suggestions
     
     async def get_total_available(self, item_id: UUID) -> Decimal:

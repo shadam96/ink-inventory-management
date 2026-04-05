@@ -19,7 +19,7 @@ router = APIRouter()
 class PickingSuggestionRequest(BaseModel):
     """Request for picking suggestions"""
     item_id: UUID
-    quantity_needed: Decimal = Field(..., gt=0)
+    quantity_needed: Decimal = Field(default=Decimal("0"), ge=0)
 
 
 class BatchPickRequest(BaseModel):
@@ -65,33 +65,41 @@ async def suggest_batches_for_picking(
     current_user: PickingUser,
 ) -> dict:
     """
-    Get FEFO-sorted batch suggestions for picking.
-    
-    Returns batches ordered by expiration date (soonest first)
-    with suggested quantities to pick from each.
+    Get batch suggestions for picking using FEFO, FIFO, and LIFO strategies.
+
+    Never returns 400 for insufficient quantity — instead ``can_fulfill``
+    is ``false`` and the available batches are still returned so the UI
+    can show what exists.
     """
     fefo = FEFOEngine(db)
-    
-    # Check if we can fulfill the request
+
     total_available = await fefo.get_total_available(request.item_id)
-    
-    if total_available < request.quantity_needed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"כמות לא מספיקה במלאי. זמין: {total_available}, נדרש: {request.quantity_needed}",
-        )
-    
-    suggestions = await fefo.suggest_batches_for_picking(
+    can_fulfill = total_available >= request.quantity_needed if request.quantity_needed > 0 else True
+
+    fefo_suggestions = await fefo.suggest_batches_for_picking(
         item_id=request.item_id,
         quantity_needed=request.quantity_needed,
+        strategy="fefo",
     )
-    
+    fifo_suggestions = await fefo.suggest_batches_for_picking(
+        item_id=request.item_id,
+        quantity_needed=request.quantity_needed,
+        strategy="fifo",
+    )
+    lifo_suggestions = await fefo.suggest_batches_for_picking(
+        item_id=request.item_id,
+        quantity_needed=request.quantity_needed,
+        strategy="lifo",
+    )
+
     return {
         "item_id": str(request.item_id),
         "quantity_needed": float(request.quantity_needed),
         "total_available": float(total_available),
-        "suggestions": [s.to_dict() for s in suggestions],
-        "can_fulfill": True,
+        "can_fulfill": can_fulfill,
+        "suggestions": [s.to_dict() for s in fefo_suggestions],
+        "fifo_suggestions": [s.to_dict() for s in fifo_suggestions],
+        "lifo_suggestions": [s.to_dict() for s in lifo_suggestions],
     }
 
 

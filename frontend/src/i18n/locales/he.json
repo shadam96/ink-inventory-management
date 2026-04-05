@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "לוח בקרה",
-    "inventory": "מלאי",
+    "inventory": "מלאי קיים",
     "items": "פריטים",
     "batches": "אצוות",
     "receiving": "קבלת סחורה",
@@ -38,7 +38,7 @@
     "inventoryDistribution": "התפלגות מלאי"
   },
   "inventory": {
-    "title": "מלאי",
+    "title": "מלאי קיים",
     "search": "חיפוש במלאי..."
   },
   "items": {

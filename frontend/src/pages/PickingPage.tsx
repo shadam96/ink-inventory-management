@@ -62,11 +62,18 @@ interface CustomerInfo {
 }
 
 // ===== ADMIN PICKING VIEW =====
+type Strategy = 'fefo' | 'fifo' | 'lifo'
+
 function AdminPickingView() {
   const { t } = useTranslation()
   const [items, setItems] = useState<Item[]>([])
   const [customers, setCustomers] = useState<CustomerInfo[]>([])
   const [suggestions, setSuggestions] = useState<SuggestedBatch[]>([])
+  const [fifoSuggestions, setFifoSuggestions] = useState<SuggestedBatch[]>([])
+  const [lifoSuggestions, setLifoSuggestions] = useState<SuggestedBatch[]>([])
+  const [totalAvailable, setTotalAvailable] = useState<number>(0)
+  const [canFulfill, setCanFulfill] = useState(true)
+  const [activeStrategy, setActiveStrategy] = useState<Strategy>('fefo')
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
@@ -91,17 +98,21 @@ function AdminPickingView() {
   }, [])
 
   useEffect(() => {
-    if (selectedItemId && requestedQuantity > 0) {
+    if (selectedItemId) {
       fetchSuggestions()
     } else {
       setSuggestions([])
+      setFifoSuggestions([])
+      setLifoSuggestions([])
+      setTotalAvailable(0)
+      setCanFulfill(true)
     }
   }, [selectedItemId, requestedQuantity])
 
   async function fetchItems() {
     try {
       const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items)
+      setItems(response.items.filter(i => (i.total_quantity_available ?? 0) > 0))
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
@@ -117,14 +128,21 @@ function AdminPickingView() {
   }
 
   async function fetchSuggestions() {
-    if (!selectedItemId || !requestedQuantity) return
+    if (!selectedItemId) return
     setLoading(true)
     try {
-      const response = await pickingApi.suggestBatches(selectedItemId, requestedQuantity)
+      const qty = requestedQuantity || 0
+      const response = await pickingApi.suggestBatches(selectedItemId, qty)
       setSuggestions(response.suggestions || [])
+      setFifoSuggestions(response.fifo_suggestions || [])
+      setLifoSuggestions(response.lifo_suggestions || [])
+      setTotalAvailable(response.total_available ?? 0)
+      setCanFulfill(response.can_fulfill ?? true)
     } catch (error) {
       console.error('Failed to fetch suggestions:', error)
       setSuggestions([])
+      setFifoSuggestions([])
+      setLifoSuggestions([])
     } finally {
       setLoading(false)
     }
@@ -146,17 +164,19 @@ function AdminPickingView() {
   }
 
   const handleDispatch = async (data: AdminPickFormData) => {
-    if (suggestions.length === 0) {
+    if (activeSuggestions.length === 0) {
       toast.error('אין אצוות זמינות לליקוט')
       return
     }
 
     setSubmitting(true)
     try {
-      const picks = suggestions.map(s => ({
-        batch_id: s.batch_id,
-        quantity: s.suggested_quantity,
-      }))
+      const picks = activeSuggestions
+        .filter(s => s.suggested_quantity > 0)
+        .map(s => ({
+          batch_id: s.batch_id,
+          quantity: s.suggested_quantity,
+        }))
 
       const payload = {
         items: picks,
@@ -185,8 +205,11 @@ function AdminPickingView() {
   }
 
   const selectedItem = items.find(i => i.id === selectedItemId)
-  const totalPick = suggestions.reduce((sum, s) => sum + s.suggested_quantity, 0)
-  const canFulfill = totalPick >= (requestedQuantity || 0)
+
+  const activeSuggestions =
+    activeStrategy === 'fifo' ? fifoSuggestions :
+    activeStrategy === 'lifo' ? lifoSuggestions :
+    suggestions
 
   return (
     <>
@@ -299,7 +322,7 @@ function AdminPickingView() {
               <Button
                 type="submit"
                 className="w-full touch-manipulation"
-                disabled={!canFulfill || submitting || suggestions.length === 0}
+                disabled={!canFulfill || submitting || activeSuggestions.length === 0 || !requestedQuantity}
               >
                 {submitting ? (
                   <>
@@ -317,16 +340,33 @@ function AdminPickingView() {
           </CardContent>
         </Card>
 
-        {/* FEFO Suggestions */}
+        {/* Strategy Suggestions */}
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">{t('picking.suggestedBatches')} (FEFO)</CardTitle>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">אצוות מוצעות</CardTitle>
+            <div className="flex gap-1 mt-2">
+              {(['fefo', 'fifo', 'lifo'] as const).map((s) => (
+                <Button
+                  key={s}
+                  type="button"
+                  variant={activeStrategy === s ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setActiveStrategy(s)}
+                >
+                  {s.toUpperCase()}
+                </Button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
             <BatchSuggestionsList
               loading={loading}
-              suggestions={suggestions}
+              suggestions={activeSuggestions}
               requestedQuantity={requestedQuantity || 0}
+              totalAvailable={totalAvailable}
+              canFulfill={canFulfill}
+              strategyLabel={activeStrategy.toUpperCase()}
+              hasItem={!!selectedItemId}
             />
           </CardContent>
         </Card>
@@ -364,7 +404,7 @@ function CustomerPickingView() {
   }, [])
 
   useEffect(() => {
-    if (selectedItemId && requestedQuantity > 0) {
+    if (selectedItemId) {
       fetchSuggestions()
       setRecommendationIndex(0)
       setShowAllBatches(false)
@@ -376,22 +416,21 @@ function CustomerPickingView() {
   async function fetchItems() {
     try {
       const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items)
+      setItems(response.items.filter(i => (i.total_quantity_available ?? 0) > 0))
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
   }
 
   async function fetchSuggestions() {
-    if (!selectedItemId || !requestedQuantity) return
+    if (!selectedItemId) return
     setLoading(true)
     try {
-      const response = await pickingApi.suggestBatches(selectedItemId, requestedQuantity)
+      const qty = requestedQuantity || 0
+      const response = await pickingApi.suggestBatches(selectedItemId, qty)
       setSuggestions(response.suggestions || [])
     } catch (error: any) {
-      if (error.response?.status === 400) {
-        toast.error(error.response.data?.detail || 'כמות לא מספיקה במלאי')
-      }
+      console.error('Failed to fetch suggestions:', error)
       setSuggestions([])
     } finally {
       setLoading(false)
@@ -692,14 +731,19 @@ function BatchSuggestionsList({
   loading,
   suggestions,
   requestedQuantity,
+  totalAvailable,
+  canFulfill,
+  strategyLabel,
+  hasItem,
 }: {
   loading: boolean
   suggestions: SuggestedBatch[]
   requestedQuantity: number
+  totalAvailable: number
+  canFulfill: boolean
+  strategyLabel: string
+  hasItem: boolean
 }) {
-  const totalPick = suggestions.reduce((sum, s) => sum + s.suggested_quantity, 0)
-  const canFulfill = totalPick >= requestedQuantity
-
   if (loading) {
     return (
       <div className="text-center py-8 text-muted-foreground">
@@ -709,41 +753,53 @@ function BatchSuggestionsList({
     )
   }
 
+  if (!hasItem) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        <PackageMinus className="w-12 h-12 mx-auto mb-2 opacity-50" />
+        <p>בחר פריט לקבלת הצעות</p>
+      </div>
+    )
+  }
+
   if (suggestions.length === 0) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         <PackageMinus className="w-12 h-12 mx-auto mb-2 opacity-50" />
-        <p>בחר פריט וכמות לקבלת הצעות</p>
+        <p>אין אצוות זמינות לפריט זה</p>
       </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      {canFulfill ? (
-        <div className="p-4 rounded-lg bg-status-safe/10 border border-status-safe/30">
-          <div className="flex items-center gap-2 text-status-safe mb-1">
-            <CheckCircle2 className="w-5 h-5" />
-            <span className="font-medium">ניתן לספק</span>
+      {/* Fulfillment status */}
+      {requestedQuantity > 0 && (
+        canFulfill ? (
+          <div className="p-4 rounded-lg bg-status-safe/10 border border-status-safe/30">
+            <div className="flex items-center gap-2 text-status-safe mb-1">
+              <CheckCircle2 className="w-5 h-5" />
+              <span className="font-medium">ניתן לספק</span>
+            </div>
+            <p className="text-sm">
+              זמין: {totalAvailable} / מבוקש: {requestedQuantity}
+            </p>
           </div>
-          <p className="text-sm">
-            זמין: {totalPick.toFixed(2)} / מבוקש: {requestedQuantity.toFixed(2)}
-          </p>
-        </div>
-      ) : (
-        <div className="p-4 rounded-lg bg-status-critical/10 border border-status-critical/30">
-          <div className="flex items-center gap-2 text-status-critical mb-1">
-            <AlertCircle className="w-5 h-5" />
-            <span className="font-medium">מלאי לא מספיק</span>
+        ) : (
+          <div className="p-4 rounded-lg bg-status-critical/10 border border-status-critical/30">
+            <div className="flex items-center gap-2 text-status-critical mb-1">
+              <AlertCircle className="w-5 h-5" />
+              <span className="font-medium">מלאי לא מספיק</span>
+            </div>
+            <p className="text-sm text-status-critical">
+              זמין: {totalAvailable} / מבוקש: {requestedQuantity}
+            </p>
           </div>
-          <p className="text-sm">
-            זמין: {totalPick.toFixed(2)} / מבוקש: {requestedQuantity.toFixed(2)}
-          </p>
-        </div>
+        )
       )}
 
       <div className="space-y-2">
-        <p className="text-sm font-medium">אצוות מוצעות (FEFO):</p>
+        <p className="text-sm font-medium">סדר מומלץ ({strategyLabel}):</p>
         {suggestions.map((batch, index) => {
           const days = daysUntilExpiration(batch.expiration_date)
           const status = getExpirationStatus(days)
@@ -762,9 +818,14 @@ function BatchSuggestionsList({
                 <span className="text-muted-foreground">
                   תפוגה: {formatDate(batch.expiration_date)}
                 </span>
-                <span className="font-medium">
-                  כמות: {batch.suggested_quantity}
+                <span className="text-muted-foreground">
+                  זמין: {batch.quantity_available}
                 </span>
+                {batch.suggested_quantity > 0 && (
+                  <span className="font-medium">
+                    ליקוט: {batch.suggested_quantity}
+                  </span>
+                )}
               </div>
             </div>
           )

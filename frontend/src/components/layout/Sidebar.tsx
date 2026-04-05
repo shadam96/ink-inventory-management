@@ -27,12 +27,12 @@ import {
 const allNavItems = [
   { path: '/', icon: LayoutDashboard, label: 'nav.dashboard', staffOnly: true },
   { path: '/inventory', icon: ClipboardList, label: 'nav.inventory', staffOnly: false },
-  { path: '/items', icon: Package, label: 'nav.items', staffOnly: true },
   { path: '/batches', icon: Layers, label: 'nav.batches', staffOnly: true },
   { path: '/receiving', icon: PackagePlus, label: 'nav.receiving', staffOnly: true },
   { path: '/picking', icon: PackageMinus, label: 'nav.picking', staffOnly: false },
   { path: '/delivery-notes', icon: FileText, label: 'nav.deliveryNotes', staffOnly: true },
   { path: '/customers', icon: Users, label: 'nav.customers', staffOnly: true },
+  { path: '/items', icon: Package, label: 'nav.items', staffOnly: true },
   { path: '/alerts', icon: Bell, label: 'nav.alerts', staffOnly: true },
 ]
 

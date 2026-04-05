@@ -164,7 +164,7 @@ export const receivingApi = {
 
 // Picking API
 export const pickingApi = {
-  suggestBatches: async (itemId: string, quantity: number) => {
+  suggestBatches: async (itemId: string, quantity: number = 0) => {
     const response = await api.post('/picking/suggest-batches', { item_id: itemId, quantity_needed: quantity })
     return response.data
   },
@@ -308,6 +308,7 @@ export interface Item {
   reorder_point: number
   min_stock: number
   max_stock: number
+  total_quantity_available?: number
   created_at: string
   updated_at: string
 }
