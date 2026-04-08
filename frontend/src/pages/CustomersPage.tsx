@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users, Plus, Pencil, Trash2, Mail, Phone, MapPin, ChevronLeft, ChevronRight, Wrench } from 'lucide-react'
+import { Users, Plus, Pencil, Trash2, Mail, Phone, MapPin, Wrench } from 'lucide-react'
+import { ChevronStart, ChevronEnd } from '@/components/ui/DirectionalIcon'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -248,8 +249,9 @@ export function CustomersPage() {
                 size="sm"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
+                aria-label="Previous page"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronStart className="w-4 h-4" />
               </Button>
               <span className="text-sm text-muted-foreground px-2">
                 {page} / {totalPages}
@@ -259,8 +261,9 @@ export function CustomersPage() {
                 size="sm"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
+                aria-label="Next page"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronEnd className="w-4 h-4" />
               </Button>
             </div>
           )}
