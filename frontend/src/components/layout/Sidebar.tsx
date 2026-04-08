@@ -57,7 +57,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed top-0 right-0 z-40 h-screen bg-card border-l transition-all duration-300',
+        'fixed top-0 start-0 z-40 h-screen bg-card border-e transition-all duration-300',
         sidebarOpen ? 'w-64' : 'w-16'
       )}
     >

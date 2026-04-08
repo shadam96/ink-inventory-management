@@ -432,7 +432,7 @@ export function ReceivingPage() {
             </div>
 
             <Button type="submit" className="w-full">
-              <Plus className="w-4 h-4 ml-2" />
+              <Plus className="w-4 h-4 me-2" />
               הוסף לרשימה
             </Button>
           </form>
@@ -452,12 +452,12 @@ export function ReceivingPage() {
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
                     מקליט...
                   </>
                 ) : (
                   <>
-                    <PackagePlus className="w-4 h-4 ml-2" />
+                    <PackagePlus className="w-4 h-4 me-2" />
                     קלוט הכל
                   </>
                 )}

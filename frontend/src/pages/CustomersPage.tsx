@@ -111,7 +111,7 @@ export function CustomersPage() {
             className="w-full sm:w-64"
           />
           <Button onClick={handleAdd} className="shrink-0">
-            <Plus className="w-4 h-4 ml-2" />
+            <Plus className="w-4 h-4 me-2" />
             הוסף לקוח
           </Button>
         </div>

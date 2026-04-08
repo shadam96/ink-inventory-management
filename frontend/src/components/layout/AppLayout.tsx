@@ -10,23 +10,24 @@ export function AppLayout() {
   const { sidebarOpen } = useUIStore()
 
   return (
-    <div dir="rtl" className="min-h-screen bg-background">
+    // dir is set on <html> by src/i18n/applyDocumentDirection.ts.
+    <div className="min-h-screen bg-background">
       {/* Desktop sidebar */}
       <div className="hidden md:block">
         <Sidebar />
       </div>
-      
-      {/* Offline indicator */}
-      <div className="fixed top-4 left-4 z-40 hidden md:block">
+
+      {/* Offline indicator — anchored to the end side (away from the sidebar) */}
+      <div className="fixed top-4 end-4 z-40 hidden md:block">
         <OfflineIndicator />
       </div>
-      
+
       <main
         className={cn(
           'min-h-screen transition-all duration-300',
-          // Desktop: margin for sidebar
-          'md:mr-16',
-          sidebarOpen && 'md:mr-64',
+          // Desktop: margin matches the (logical) sidebar width
+          'md:ms-16',
+          sidebarOpen && 'md:ms-64',
           // Mobile: no margin, padding for bottom nav
           'pb-20 md:pb-0'
         )}

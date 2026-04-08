@@ -33,7 +33,7 @@ export function MobileNav() {
     : allNavItems
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t md:hidden safe-area-inset-bottom">
+    <nav className="fixed bottom-0 inset-x-0 z-50 bg-background/95 backdrop-blur-sm border-t md:hidden safe-area-inset-bottom">
       <div
         className="flex overflow-x-auto scrollbar-hide snap-x snap-mandatory"
         style={{ WebkitOverflowScrolling: 'touch' }}

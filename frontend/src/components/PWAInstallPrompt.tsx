@@ -84,7 +84,7 @@ export function PWAInstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 md:left-auto md:right-4 md:w-96 animate-in slide-in-from-bottom duration-300">
+    <div className="fixed bottom-4 inset-x-4 z-50 md:inset-x-auto md:end-4 md:w-96 animate-in slide-in-from-bottom duration-300">
       <Card className="bg-gradient-to-r from-primary/90 to-primary border-0 shadow-xl">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
@@ -105,7 +105,7 @@ export function PWAInstallPrompt() {
                   size="sm"
                   className="bg-white text-primary hover:bg-white/90"
                 >
-                  <Download className="w-4 h-4 ml-2" />
+                  <Download className="w-4 h-4 me-2" />
                   התקן עכשיו
                 </Button>
                 <Button

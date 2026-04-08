@@ -171,7 +171,7 @@ export function SettingsPage() {
                   return (
                     <div
                       key={iconKey}
-                      className={`flex items-center space-x-3 space-x-reverse border rounded-lg p-4 cursor-pointer transition-all ${
+                      className={`flex items-center gap-3 border rounded-lg p-4 cursor-pointer transition-all ${
                         localAppIcon === iconKey
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50'
@@ -210,19 +210,19 @@ export function SettingsPage() {
             <Label>{t('settings.theme')}</Label>
             <RadioGroup value={localTheme} onValueChange={(value: any) => setLocalTheme(value)}>
               <div className="space-y-2">
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="light" id="light" />
                   <Label htmlFor="light" className="cursor-pointer">
                     {t('settings.themeLight')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="dark" id="dark" />
                   <Label htmlFor="dark" className="cursor-pointer">
                     {t('settings.themeDark')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="system" id="system" />
                   <Label htmlFor="system" className="cursor-pointer">
                     {t('settings.themeSystem')}
@@ -237,19 +237,19 @@ export function SettingsPage() {
             <Label>{t('settings.currency')}</Label>
             <RadioGroup value={localCurrency} onValueChange={(value: any) => setLocalCurrency(value)}>
               <div className="space-y-2">
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="ILS" id="ILS" />
                   <Label htmlFor="ILS" className="cursor-pointer">
                     {t('settings.currencyILS')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="USD" id="USD" />
                   <Label htmlFor="USD" className="cursor-pointer">
                     {t('settings.currencyUSD')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="EUR" id="EUR" />
                   <Label htmlFor="EUR" className="cursor-pointer">
                     {t('settings.currencyEUR')}
@@ -341,7 +341,7 @@ export function SettingsPage() {
                     onClick={sendTestEmail}
                     disabled={sendingTest || !testEmail.trim()}
                   >
-                    <Send className="w-4 h-4 ml-2" />
+                    <Send className="w-4 h-4 me-2" />
                     {sendingTest ? 'שולח...' : 'שלח בדיקה'}
                   </Button>
                 </div>

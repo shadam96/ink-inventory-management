@@ -116,7 +116,7 @@ export function NotificationBell() {
         {unreadCount > 0 && (
           <Badge
             variant="destructive"
-            className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
+            className="absolute -top-1 -end-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
           >
             {unreadCount > 9 ? '9+' : unreadCount}
           </Badge>
@@ -129,7 +129,7 @@ export function NotificationBell() {
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          <Card className="absolute left-0 top-12 w-96 z-50 shadow-lg">
+          <Card className="absolute end-0 top-12 w-96 z-50 shadow-lg">
             <div className="p-4 flex items-center justify-between border-b">
               <h3 className="font-semibold">התראות</h3>
               <div className="flex items-center gap-2">
@@ -140,7 +140,7 @@ export function NotificationBell() {
                     onClick={markAllAsRead}
                     className="h-8 text-xs"
                   >
-                    <Check className="w-4 h-4 ml-1" />
+                    <Check className="w-4 h-4 me-1" />
                     סמן הכל כנקרא
                   </Button>
                 )}

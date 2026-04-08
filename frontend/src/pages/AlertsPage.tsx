@@ -110,7 +110,7 @@ export function AlertsPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-l-4 border-l-muted-foreground">
+        <Card className="border-s-4 border-s-muted-foreground">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -121,7 +121,7 @@ export function AlertsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-status-critical">
+        <Card className="border-s-4 border-s-status-critical">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -132,7 +132,7 @@ export function AlertsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-status-warning">
+        <Card className="border-s-4 border-s-status-warning">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -143,7 +143,7 @@ export function AlertsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-primary">
+        <Card className="border-s-4 border-s-primary">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -175,7 +175,7 @@ export function AlertsPage() {
           </Button>
         </div>
         <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
-          <CheckCheck className="w-4 h-4 ml-2" />
+          <CheckCheck className="w-4 h-4 me-2" />
           {t('alerts.markAllRead')}
         </Button>
       </div>

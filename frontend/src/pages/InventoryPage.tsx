@@ -135,7 +135,7 @@ export function InventoryPage() {
                   <SortableTableHead sortKey="batch_number" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>
                     {t('batches.batchNumber')}
                   </SortableTableHead>
-                  <SortableTableHead sortKey="quantity_available" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">
+                  <SortableTableHead sortKey="quantity_available" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">
                     {t('batches.quantity')}
                   </SortableTableHead>
                   <TableHead>{t('items.unit')}</TableHead>
@@ -145,7 +145,7 @@ export function InventoryPage() {
                   <SortableTableHead sortKey="receipt_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>
                     {t('batches.receiptDate')}
                   </SortableTableHead>
-                  <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">
+                  <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">
                     {t('items.costPrice')}
                   </SortableTableHead>
                   <TableHead className="text-left">{t('inventory.totalCost')}</TableHead>
@@ -185,7 +185,7 @@ export function InventoryPage() {
                         <TableCell className="font-mono text-muted-foreground">
                           {row.batch_number}
                         </TableCell>
-                        <TableCell className="text-left font-mono">
+                        <TableCell className="text-start font-mono">
                           {formatNumber(row.quantity_available, 1)}
                         </TableCell>
                         <TableCell>
@@ -199,7 +199,7 @@ export function InventoryPage() {
                         <TableCell>
                           <ReceiptDateCell dates={row.receipt_dates} />
                         </TableCell>
-                        <TableCell className="text-left font-mono">
+                        <TableCell className="text-start font-mono">
                           {formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR')}
                         </TableCell>
                         <TableCell className="text-left font-mono font-medium">
@@ -303,7 +303,7 @@ function ReceiptDateCell({ dates }: { dates: string[] }) {
         <TooltipTrigger asChild>
           <span className="underline decoration-dotted cursor-help">
             {formatted[0]}
-            <span className="text-muted-foreground text-xs mr-1">
+            <span className="text-muted-foreground text-xs me-1">
               (+{dates.length - 1})
             </span>
           </span>

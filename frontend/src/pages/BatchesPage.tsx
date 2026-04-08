@@ -161,7 +161,7 @@ export function BatchesPage() {
                 <SortableTableHead sortKey="batch_number" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.batchNumber')}</SortableTableHead>
                 <TableHead>{t('items.sku')}</TableHead>
                 <TableHead>{t('items.name')}</TableHead>
-                <SortableTableHead sortKey="quantity_available" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">{t('batches.quantity')}</SortableTableHead>
+                <SortableTableHead sortKey="quantity_available" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">{t('batches.quantity')}</SortableTableHead>
                 <SortableTableHead sortKey="receipt_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.receiptDate')}</SortableTableHead>
                 <SortableTableHead sortKey="expiration_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.expirationDate')}</SortableTableHead>
                 <SortableTableHead sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('batches.status')}</SortableTableHead>
@@ -191,7 +191,7 @@ export function BatchesPage() {
                       {batch.item_sku || '-'}
                     </TableCell>
                     <TableCell>{batch.item_name || '-'}</TableCell>
-                    <TableCell className="text-left">
+                    <TableCell className="text-start">
                       <div className="flex flex-col">
                         <span className="font-medium">
                           {formatNumber(batch.quantity_available)}

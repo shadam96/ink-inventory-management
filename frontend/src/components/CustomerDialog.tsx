@@ -174,7 +174,6 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                 {...register('phone_secondary')}
                 placeholder="050-0000000"
                 dir="ltr"
-                className="text-right"
               />
             </div>
           </div>
@@ -187,7 +186,6 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
               {...register('email')}
               placeholder="email@example.com"
               dir="ltr"
-              className="text-right"
             />
             {errors.email && (
               <p className="text-sm text-destructive">{errors.email.message}</p>
@@ -321,7 +319,7 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   {t('common.loading')}
                 </>
               ) : (

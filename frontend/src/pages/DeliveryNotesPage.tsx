@@ -114,7 +114,7 @@ export function DeliveryNotesPage() {
           </span>
         </div>
         <Button>
-          <Plus className="w-4 h-4 ml-2" />
+          <Plus className="w-4 h-4 me-2" />
           {t('deliveryNotes.create')}
         </Button>
       </div>
@@ -128,8 +128,8 @@ export function DeliveryNotesPage() {
                 <TableHead>{t('deliveryNotes.customer')}</TableHead>
                 <SortableTableHead sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('deliveryNotes.status')}</SortableTableHead>
                 <SortableTableHead sortKey="issue_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('deliveryNotes.issueDate')}</SortableTableHead>
-                <TableHead className="text-left">{t('deliveryNotes.items')}</TableHead>
-                <TableHead className="text-left">סה"כ כמות</TableHead>
+                <TableHead className="text-start">{t('deliveryNotes.items')}</TableHead>
+                <TableHead className="text-start">סה"כ כמות</TableHead>
                 <TableHead className="w-12">פעולות</TableHead>
               </TableRow>
             </TableHeader>
@@ -158,10 +158,10 @@ export function DeliveryNotesPage() {
                     <TableCell>
                       {note.issue_date ? formatDate(note.issue_date) : '-'}
                     </TableCell>
-                    <TableCell className="text-left">
+                    <TableCell className="text-start">
                       {note.items_count} פריטים
                     </TableCell>
-                    <TableCell className="text-left">
+                    <TableCell className="text-start">
                       {note.total_quantity.toFixed(2)}
                     </TableCell>
                     <TableCell>

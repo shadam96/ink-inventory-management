@@ -46,8 +46,10 @@ export function LoginPage() {
   }
 
   return (
-    <div dir="rtl" className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted to-background dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 relative overflow-hidden">
-      {/* Animated background elements */}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted to-background dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 relative overflow-hidden">
+      {/* Animated background elements — purely decorative, physical sides
+          are intentional so the visual composition stays balanced regardless
+          of language direction. */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-ink-cyan/20 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-ink-magenta/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
@@ -107,13 +109,13 @@ export function LoginPage() {
                   type={showPassword ? 'text' : 'password'}
                   {...register('password')}
                   placeholder="סיסמה"
-                  className="bg-background/50 pl-10"
+                  className="bg-background/50 ps-10"
                   autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(prev => !prev)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -131,7 +133,7 @@ export function LoginPage() {
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   {t('auth.loggingIn')}
                 </>
               ) : (

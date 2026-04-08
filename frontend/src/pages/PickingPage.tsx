@@ -390,12 +390,12 @@ function AdminPickingView() {
               >
                 {submitting ? (
                   <>
-                    <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
                     מבצע ליקוט...
                   </>
                 ) : (
                   <>
-                    <PackageMinus className="w-4 h-4 ml-2" />
+                    <PackageMinus className="w-4 h-4 me-2" />
                     {t('picking.pick')}
                   </>
                 )}
@@ -783,7 +783,7 @@ function RecommendedBatchCard({
             <Loader2 className="w-5 h-5 animate-spin" />
           ) : (
             <>
-              <ThumbsUp className="w-5 h-5 ml-2" />
+              <ThumbsUp className="w-5 h-5 me-2" />
               אישור
             </>
           )}
@@ -794,7 +794,7 @@ function RecommendedBatchCard({
           disabled={submitting}
           onClick={onReject}
         >
-          <ThumbsDown className="w-5 h-5 ml-2" />
+          <ThumbsDown className="w-5 h-5 me-2" />
           {isLast ? 'הצג הכל' : 'הבא'}
         </Button>
       </div>

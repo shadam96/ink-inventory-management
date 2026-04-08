@@ -87,11 +87,11 @@
     transition: background-color 0.3s ease, border-color 0.3s ease, color 0.15s ease !important;
   }
   
-  /* RTL Support for Hebrew */
-  [dir="rtl"] {
-    text-align: right;
-  }
-  
+  /* Text direction is driven by <html dir>, set by
+     src/i18n/applyDocumentDirection.ts. Logical Tailwind utilities
+     (text-start, ms-*, ps-*, start-*, border-s, …) handle alignment
+     in both RTL and LTR — no global override needed. */
+
   /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 8px;

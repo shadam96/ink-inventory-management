@@ -19,8 +19,8 @@ export function Header({ title }: HeaderProps) {
   return (
     <header
       className={cn(
-        'fixed top-0 left-0 z-40 h-16 bg-background/95 backdrop-blur border-b transition-all duration-300',
-        sidebarOpen ? 'right-64' : 'right-16'
+        'fixed top-0 end-0 z-40 h-16 bg-background/95 backdrop-blur border-b transition-all duration-300',
+        sidebarOpen ? 'start-64' : 'start-16'
       )}
     >
       <div className="flex items-center justify-between h-full px-6">

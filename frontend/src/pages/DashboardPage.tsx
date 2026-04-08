@@ -38,9 +38,9 @@ interface KPICardProps {
 
 function KPICard({ title, value, subtitle, icon, trend, variant = 'default' }: KPICardProps) {
   const variants = {
-    default: 'border-l-4 border-l-primary',
-    warning: 'border-l-4 border-l-status-warning',
-    danger: 'border-l-4 border-l-status-critical',
+    default: 'border-s-4 border-s-primary',
+    warning: 'border-s-4 border-s-status-warning',
+    danger: 'border-s-4 border-s-status-critical',
   }
 
   return (
@@ -187,7 +187,7 @@ export function DashboardPage() {
                     </Pie>
                     <Tooltip
                       formatter={(value: number) => formatCurrency(value, currency)}
-                      contentStyle={{ direction: 'rtl', backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
+                      contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -226,7 +226,7 @@ export function DashboardPage() {
                     <YAxis type="category" dataKey="name" width={80} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip
                       formatter={(value: number) => formatCurrency(value, currency)}
-                      contentStyle={{ direction: 'rtl', backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
+                      contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
                     />
                     <Bar dataKey="value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
                   </BarChart>

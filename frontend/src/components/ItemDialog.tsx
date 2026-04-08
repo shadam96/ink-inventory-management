@@ -332,7 +332,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   {t('common.loading')}
                 </>
               ) : (
