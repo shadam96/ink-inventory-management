@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Droplets, Package, Boxes, Warehouse, Mail, Plus, X } from 'lucide-react'
+import { Droplets, Package, Boxes, Warehouse, Mail, Plus, X, Send } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 
@@ -41,6 +41,10 @@ export function SettingsPage() {
   const [savingEmail, setSavingEmail] = useState(false)
   const [loadingEmail, setLoadingEmail] = useState(true)
 
+  // Test email
+  const [testEmail, setTestEmail] = useState('')
+  const [sendingTest, setSendingTest] = useState(false)
+
   useEffect(() => {
     fetchNotificationSettings()
   }, [])
@@ -74,6 +78,23 @@ export function SettingsPage() {
 
   const removeEmail = (email: string) => {
     setNotificationEmails(prev => prev.filter(e => e !== email))
+  }
+
+  const sendTestEmail = async () => {
+    const recipient = testEmail.trim()
+    if (!recipient || !isValidEmail(recipient)) {
+      toast.error('אנא הזן כתובת אימייל תקינה')
+      return
+    }
+    setSendingTest(true)
+    try {
+      await api.post('/settings/email/test', { email: recipient })
+      toast.success(`מייל בדיקה נשלח אל ${recipient}`)
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || 'שליחת מייל הבדיקה נכשלה')
+    } finally {
+      setSendingTest(false)
+    }
   }
 
   const saveNotificationEmails = async () => {
@@ -299,6 +320,32 @@ export function SettingsPage() {
               >
                 {savingEmail ? 'שומר...' : 'שמור התראות'}
               </Button>
+
+              {/* Test email */}
+              <div className="pt-4 mt-2 border-t space-y-2">
+                <Label className="text-sm">שליחת מייל בדיקה</Label>
+                <p className="text-xs text-muted-foreground">
+                  שלח מייל בדיקה כדי לוודא שהחיבור ל-Resend פעיל
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    type="email"
+                    dir="ltr"
+                    placeholder="recipient@example.com"
+                    value={testEmail}
+                    onChange={(e) => setTestEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), sendTestEmail())}
+                  />
+                  <Button
+                    variant="outline"
+                    onClick={sendTestEmail}
+                    disabled={sendingTest || !testEmail.trim()}
+                  >
+                    <Send className="w-4 h-4 ml-2" />
+                    {sendingTest ? 'שולח...' : 'שלח בדיקה'}
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
