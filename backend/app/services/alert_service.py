@@ -21,7 +21,8 @@ class AlertService:
     
     def __init__(self, db: AsyncSession):
         self.db = db
-        self._email_enabled = bool(settings.smtp_user and settings.smtp_password)
+        from app.services.email_service import email_service
+        self._email_enabled = email_service.is_configured
     
     async def create_alert(
         self,

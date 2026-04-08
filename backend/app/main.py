@@ -10,35 +10,33 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.database import close_db, init_db, ensure_default_users
 from app.tasks.scheduler import start_scheduler, shutdown_scheduler
-from app.services.email_service import email_service
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator:
     """Application lifecycle management"""
     # Startup
-    print(">> Starting Ink Inventory Management System...")
+    logger.info("Starting Ink Inventory Management System...")
     await init_db()
     await ensure_default_users()
-    print(">> Database connected, default users ensured")
+    logger.info("Database connected, default users ensured")
 
     # Start scheduler for background tasks
     if not settings.is_development or settings.environment != "test":
         start_scheduler()
-        print(">> Scheduler started")
-    
-    # Start email worker
-    await email_service.start_worker()
-    print(">> Email worker started")
-    
+        logger.info("Scheduler started")
+
     yield
-    
+
     # Shutdown
-    print(">> Shutting down...")
+    logger.info("Shutting down...")
     shutdown_scheduler()
-    await email_service.stop_worker()
     await close_db()
-    print(">> Connections closed")
+    logger.info("Connections closed")
 
 
 app = FastAPI(

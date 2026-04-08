@@ -8,7 +8,7 @@ from unittest.mock import patch
 async def test_get_email_settings_unauthorized(client: AsyncClient):
     """Test getting email settings without auth"""
     response = await client.get("/api/v1/settings/email")
-    assert response.status_code in [401, 403]  # Either unauthorized or forbidden
+    assert response.status_code in [401, 403]
 
 
 @pytest.mark.asyncio
@@ -21,12 +21,11 @@ async def test_get_email_settings_as_manager(
         "/api/v1/settings/email",
         headers=auth_headers
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert "email_configured" in data
-    assert "smtp_host" in data
-    assert "smtp_port" in data
+    assert "provider" in data
     assert "email_from" in data
 
 
@@ -40,7 +39,7 @@ async def test_get_email_settings_as_admin(
         "/api/v1/settings/email",
         headers=admin_headers
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data["email_configured"], bool)
@@ -53,31 +52,37 @@ async def test_send_test_email_unauthorized(client: AsyncClient):
         "/api/v1/settings/email/test",
         json={"email": "test@example.com"}
     )
-    assert response.status_code in [401, 403]  # Either unauthorized or forbidden
+    assert response.status_code in [401, 403]
 
 
 @pytest.mark.asyncio
-@patch('app.services.email_service.aiosmtplib.send')
-@patch('app.services.email_service.settings.smtp_user', 'test@example.com')
-@patch('app.services.email_service.settings.smtp_password', 'testpass')
+@patch("app.services.email_service.resend.Emails.send")
 async def test_send_test_email_success(
     mock_send,
     client: AsyncClient,
     admin_headers: dict
 ):
     """Test sending test email successfully"""
-    mock_send.return_value = None
-    
-    response = await client.post(
-        "/api/v1/settings/email/test",
-        headers=admin_headers,
-        json={"email": "recipient@example.com"}
-    )
-    
-    assert response.status_code == 200
-    data = response.json()
-    assert data["success"] is True
-    assert "Test email sent" in data["message"]
+    mock_send.return_value = {"id": "test-id"}
+
+    # Temporarily mark as configured
+    from app.services.email_service import email_service
+    orig = email_service._configured
+    email_service._configured = True
+
+    try:
+        response = await client.post(
+            "/api/v1/settings/email/test",
+            headers=admin_headers,
+            json={"email": "recipient@example.com"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "Test email sent" in data["message"]
+    finally:
+        email_service._configured = orig
 
 
 @pytest.mark.asyncio
@@ -91,7 +96,7 @@ async def test_send_test_email_not_configured(
         headers=admin_headers,
         json={"email": "test@example.com"}
     )
-    
+
     # Should return 400 if email not configured
     assert response.status_code in [400, 500]
 
@@ -107,5 +112,5 @@ async def test_send_test_email_invalid_email(
         headers=admin_headers,
         json={"email": "invalid-email"}
     )
-    
+
     assert response.status_code == 422  # Validation error

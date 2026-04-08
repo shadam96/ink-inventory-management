@@ -56,12 +56,9 @@ class Settings(BaseSettings):
     # Dead Stock Threshold
     dead_stock_days: int = 180
     
-    # Email Settings
-    smtp_host: str = "smtp.gmail.com"
-    smtp_port: int = 587
-    smtp_user: str = ""
-    smtp_password: str = ""
-    email_from: str = "noreply@linoprint.com"
+    # Email Settings (Resend)
+    resend_api_key: str = ""
+    email_from: str = "Lino Inventory <onboarding@resend.dev>"
     
     @property
     def is_development(self) -> bool:

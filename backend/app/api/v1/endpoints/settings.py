@@ -21,8 +21,7 @@ class TestEmailRequest(BaseModel):
 class EmailSettingsResponse(BaseModel):
     """Email settings response"""
     email_configured: bool
-    smtp_host: str
-    smtp_port: int
+    provider: str
     email_from: str
 
 
@@ -32,10 +31,9 @@ async def get_email_settings(
 ):
     """Get email configuration settings"""
     return EmailSettingsResponse(
-        email_configured=bool(settings.smtp_user and settings.smtp_password),
-        smtp_host=settings.smtp_host,
-        smtp_port=settings.smtp_port,
-        email_from=settings.email_from
+        email_configured=email_service.is_configured,
+        provider="resend",
+        email_from=settings.email_from,
     )
 
 
@@ -100,10 +98,10 @@ async def send_test_email(
     if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
-    if not settings.smtp_user or not settings.smtp_password:
+    if not email_service.is_configured:
         raise HTTPException(
-            status_code=400, 
-            detail="Email not configured. Please set SMTP_USER and SMTP_PASSWORD in environment variables."
+            status_code=400,
+            detail="Email not configured. Set RESEND_API_KEY in environment variables."
         )
     
     try:
