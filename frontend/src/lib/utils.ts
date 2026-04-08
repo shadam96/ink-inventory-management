@@ -1,36 +1,48 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import i18n from "@/i18n"
+import { resolveLanguage } from "@/i18n/config"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+/** Current Intl locale tag derived from i18next. */
+function currentIntlLocale(): string {
+  return resolveLanguage(i18n.language).intlLocale
+}
+
 /**
- * Format number with Hebrew locale (comma as thousands separator)
+ * Format a number using the current language's locale conventions
+ * (thousands separator, decimal mark, digit grouping).
  */
 export function formatNumber(value: number, decimals = 0): string {
-  return new Intl.NumberFormat('he-IL', {
+  return new Intl.NumberFormat(currentIntlLocale(), {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   }).format(value)
 }
 
 /**
- * Format currency with the specified currency code
+ * Format a currency amount using the current language's locale conventions.
+ * The currency code is independent of language (a Hebrew user can display USD).
  */
-export function formatCurrency(value: number, currency: 'ILS' | 'USD' | 'EUR' = 'ILS'): string {
-  return new Intl.NumberFormat('he-IL', {
+export function formatCurrency(
+  value: number,
+  currency: 'ILS' | 'USD' | 'EUR' = 'ILS',
+): string {
+  return new Intl.NumberFormat(currentIntlLocale(), {
     style: 'currency',
     currency,
   }).format(value)
 }
 
 /**
- * Format date in Hebrew format DD/MM/YYYY
+ * Format a date as DD/MM/YYYY style appropriate to the current locale.
  */
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date
-  return new Intl.DateTimeFormat('he-IL', {
+  return new Intl.DateTimeFormat(currentIntlLocale(), {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
