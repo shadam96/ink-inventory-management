@@ -36,6 +36,12 @@ class InventoryRowResponse(BaseSchema):
     status: str
 
 
+class InventoryTotalCostResponse(BaseSchema):
+    """Total cost of inventory broken down by currency."""
+
+    totals: dict[str, Decimal]
+
+
 @router.get("", response_model=PaginatedResponse[InventoryRowResponse])
 async def list_inventory(
     db: DbSession,
@@ -158,6 +164,66 @@ async def list_inventory(
         page_size=page_size,
         pages=pages,
     )
+
+
+@router.get("/total-cost", response_model=InventoryTotalCostResponse)
+async def get_inventory_total_cost(
+    db: DbSession,
+    current_user: CurrentUser,
+    search: Optional[str] = None,
+) -> InventoryTotalCostResponse:
+    """
+    Total cost of active inventory (quantity_available * cost_price),
+    grouped by currency.  Respects the same search filter as the list view.
+    """
+    is_customer = current_user.role == "customer"
+
+    if is_customer and current_user.customer_id:
+        stmt = (
+            select(
+                Item.currency,
+                func.coalesce(
+                    func.sum(Batch.quantity_available * Item.cost_price),
+                    0,
+                ),
+            )
+            .select_from(DeliveryNoteItem)
+            .join(DeliveryNote, DeliveryNoteItem.delivery_note_id == DeliveryNote.id)
+            .join(Batch, DeliveryNoteItem.batch_id == Batch.id)
+            .join(Item, DeliveryNoteItem.item_id == Item.id)
+            .where(DeliveryNote.customer_id == current_user.customer_id)
+            .where(Batch.status == BatchStatus.ACTIVE)
+            .where(Batch.quantity_available > 0)
+            .group_by(Item.currency)
+        )
+    else:
+        stmt = (
+            select(
+                Item.currency,
+                func.coalesce(
+                    func.sum(Batch.quantity_available * Item.cost_price),
+                    0,
+                ),
+            )
+            .select_from(Batch)
+            .join(Item, Batch.item_id == Item.id)
+            .where(Batch.status == BatchStatus.ACTIVE)
+            .where(Batch.quantity_available > 0)
+            .group_by(Item.currency)
+        )
+
+    if search:
+        like = f"%{search}%"
+        stmt = stmt.where(
+            (Item.sku.ilike(like))
+            | (Item.name.ilike(like))
+            | (Batch.batch_number.ilike(like))
+            | (Item.supplier.ilike(like))
+        )
+
+    rows = (await db.execute(stmt)).all()
+    totals = {currency: Decimal(value) for currency, value in rows}
+    return InventoryTotalCostResponse(totals=totals)
 
 
 # ------------------------------------------------------------------

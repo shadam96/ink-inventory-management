@@ -124,6 +124,11 @@ export const inventoryApi = {
     const response = await api.get('/inventory', { params })
     return response.data as PaginatedResponse<InventoryRow>
   },
+
+  totalCost: async (params?: { search?: string }) => {
+    const response = await api.get('/inventory/total-cost', { params })
+    return response.data as InventoryTotalCost
+  },
 }
 
 // Batches API
@@ -386,16 +391,34 @@ export interface CreateDeliveryNoteData {
   notes?: string
 }
 
+export interface CustomerMachine {
+  id: string
+  customer_id: string
+  machine_type: string
+  installation_date?: string | null
+  notes?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CustomerMachineInput {
+  machine_type: string
+  installation_date?: string | null
+  notes?: string | null
+}
+
 export interface Customer {
   id: string
   name: string
   email?: string
-  phone?: string
+  phone_primary?: string
+  phone_secondary?: string
   address?: string
   contact_person?: string
   is_active: boolean
   is_vmi_customer: boolean
   notes?: string
+  machines: CustomerMachine[]
   created_at: string
   updated_at: string
 }
@@ -416,14 +439,20 @@ export interface InventoryRow {
   status: string
 }
 
+export interface InventoryTotalCost {
+  totals: Record<string, number>
+}
+
 export interface CreateCustomerData {
   name: string
   email?: string
-  phone?: string
+  phone_primary?: string
+  phone_secondary?: string
   address?: string
   contact_person?: string
   is_vmi_customer?: boolean
   notes?: string
+  machines?: CustomerMachineInput[]
 }
 
 export default api

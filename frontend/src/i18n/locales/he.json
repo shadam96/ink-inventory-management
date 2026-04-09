@@ -39,7 +39,9 @@
   },
   "inventory": {
     "title": "מלאי קיים",
-    "search": "חיפוש במלאי..."
+    "search": "חיפוש במלאי...",
+    "totalCost": "סך עלות",
+    "grandTotal": "עלות כוללת"
   },
   "items": {
     "title": "פריטים",

@@ -1,9 +1,9 @@
 import { useEffect } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus, Trash2 } from 'lucide-react'
 
 import {
   Dialog,
@@ -18,14 +18,21 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { Customer, CreateCustomerData } from '@/lib/api'
 
+const machineSchema = z.object({
+  machine_type: z.string().min(1, 'סוג מכונה נדרש'),
+  installation_date: z.string().optional().or(z.literal('')),
+})
+
 const customerSchema = z.object({
   name: z.string().min(1, 'שם לקוח נדרש'),
   email: z.string().email('כתובת אימייל לא תקינה').or(z.literal('')).optional(),
-  phone: z.string().max(50).optional().or(z.literal('')),
+  phone_primary: z.string().max(50).optional().or(z.literal('')),
+  phone_secondary: z.string().max(50).optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
   contact_person: z.string().max(100).optional().or(z.literal('')),
   is_vmi_customer: z.boolean(),
   notes: z.string().optional().or(z.literal('')),
+  machines: z.array(machineSchema),
 })
 
 type CustomerFormData = z.infer<typeof customerSchema>
@@ -37,6 +44,36 @@ interface CustomerDialogProps {
   onSubmit: (data: CreateCustomerData) => Promise<void>
 }
 
+function buildDefaults(customer?: Customer | null): CustomerFormData {
+  if (!customer) {
+    return {
+      name: '',
+      email: '',
+      phone_primary: '',
+      phone_secondary: '',
+      address: '',
+      contact_person: '',
+      is_vmi_customer: false,
+      notes: '',
+      machines: [],
+    }
+  }
+  return {
+    name: customer.name,
+    email: customer.email || '',
+    phone_primary: customer.phone_primary || '',
+    phone_secondary: customer.phone_secondary || '',
+    address: customer.address || '',
+    contact_person: customer.contact_person || '',
+    is_vmi_customer: customer.is_vmi_customer,
+    notes: customer.notes || '',
+    machines: (customer.machines || []).map((m) => ({
+      machine_type: m.machine_type,
+      installation_date: m.installation_date || '',
+    })),
+  }
+}
+
 export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: CustomerDialogProps) {
   const { t } = useTranslation()
   const isEdit = !!customer
@@ -45,52 +82,20 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
     register,
     handleSubmit,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<CustomerFormData>({
     resolver: zodResolver(customerSchema),
-    defaultValues: customer
-      ? {
-          name: customer.name,
-          email: customer.email || '',
-          phone: customer.phone || '',
-          address: customer.address || '',
-          contact_person: customer.contact_person || '',
-          is_vmi_customer: customer.is_vmi_customer,
-          notes: customer.notes || '',
-        }
-      : {
-          name: '',
-          email: '',
-          phone: '',
-          address: '',
-          contact_person: '',
-          is_vmi_customer: false,
-          notes: '',
-        },
+    defaultValues: buildDefaults(customer),
+  })
+
+  const { fields, append, remove } = useFieldArray({
+    control,
+    name: 'machines',
   })
 
   useEffect(() => {
-    if (customer) {
-      reset({
-        name: customer.name,
-        email: customer.email || '',
-        phone: customer.phone || '',
-        address: customer.address || '',
-        contact_person: customer.contact_person || '',
-        is_vmi_customer: customer.is_vmi_customer,
-        notes: customer.notes || '',
-      })
-    } else {
-      reset({
-        name: '',
-        email: '',
-        phone: '',
-        address: '',
-        contact_person: '',
-        is_vmi_customer: false,
-        notes: '',
-      })
-    }
+    reset(buildDefaults(customer))
   }, [customer, reset])
 
   const handleFormSubmit = async (data: CustomerFormData) => {
@@ -98,15 +103,20 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
       const submitData: CreateCustomerData = {
         name: data.name,
         email: data.email || undefined,
-        phone: data.phone || undefined,
+        phone_primary: data.phone_primary || undefined,
+        phone_secondary: data.phone_secondary || undefined,
         address: data.address || undefined,
         contact_person: data.contact_person || undefined,
         is_vmi_customer: data.is_vmi_customer,
         notes: data.notes || undefined,
+        machines: data.machines.map((m) => ({
+          machine_type: m.machine_type,
+          installation_date: m.installation_date ? m.installation_date : null,
+        })),
       }
       await onSubmit(submitData)
       onOpenChange(false)
-      reset()
+      reset(buildDefaults(null))
     } catch (error) {
       console.error('Failed to save customer:', error)
     }
@@ -134,21 +144,32 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
             )}
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="contact_person">איש קשר</Label>
+            <Input
+              id="contact_person"
+              {...register('contact_person')}
+              placeholder="שם איש קשר"
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="contact_person">איש קשר</Label>
+              <Label htmlFor="phone_primary">טלפון ראשי</Label>
               <Input
-                id="contact_person"
-                {...register('contact_person')}
-                placeholder="שם איש קשר"
+                id="phone_primary"
+                {...register('phone_primary')}
+                placeholder="050-0000000"
+                dir="ltr"
+                className="text-right"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="phone">טלפון</Label>
+              <Label htmlFor="phone_secondary">טלפון משני</Label>
               <Input
-                id="phone"
-                {...register('phone')}
+                id="phone_secondary"
+                {...register('phone_secondary')}
                 placeholder="050-0000000"
                 dir="ltr"
                 className="text-right"
@@ -200,6 +221,88 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
             <Label htmlFor="is_vmi_customer" className="cursor-pointer">
               לקוח VMI (ניהול מלאי אצל לקוח)
             </Label>
+          </div>
+
+          <div className="space-y-3 border-t pt-4">
+            <div className="flex items-center justify-between">
+              <Label className="text-base font-semibold">מכונות בבעלות הלקוח</Label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  append({ machine_type: '', installation_date: '' })
+                }
+              >
+                <Plus className="w-4 h-4 ml-1" />
+                הוסף מכונה
+              </Button>
+            </div>
+
+            {fields.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                לא הוגדרו מכונות
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {fields.map((field, index) => (
+                  <div
+                    key={field.id}
+                    className="border rounded-md p-3 space-y-2 bg-muted/30"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <Label className="text-sm font-medium">
+                        מכונה #{index + 1}
+                      </Label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => remove(index)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor={`machines.${index}.machine_type`}
+                          className="text-xs"
+                        >
+                          סוג המכונה *
+                        </Label>
+                        <Input
+                          id={`machines.${index}.machine_type`}
+                          {...register(`machines.${index}.machine_type`)}
+                          placeholder="לדוגמה: מדפסת דיגיטלית"
+                        />
+                        {errors.machines?.[index]?.machine_type && (
+                          <p className="text-xs text-destructive">
+                            {errors.machines[index]?.machine_type?.message}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="space-y-1">
+                        <Label
+                          htmlFor={`machines.${index}.installation_date`}
+                          className="text-xs"
+                        >
+                          תאריך התקנה
+                        </Label>
+                        <Input
+                          id={`machines.${index}.installation_date`}
+                          type="date"
+                          {...register(`machines.${index}.installation_date`)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <DialogFooter>

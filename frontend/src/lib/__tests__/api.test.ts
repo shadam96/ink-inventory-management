@@ -97,7 +97,7 @@ describe('Customers API', () => {
     const newCustomer = {
       name: 'New Customer',
       email: 'newcust@example.com',
-      phone: '555-1234',
+      phone_primary: '555-1234',
       is_active: true,
     }
     const result = await customersApi.create(newCustomer)

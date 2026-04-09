@@ -25,7 +25,7 @@ class TestDocumentService:
             name="לקוח בדיקה",
             address="רחוב הבדיקה 1, תל אביב",
             contact_person="יוסי ישראלי",
-            phone="050-1234567",
+            phone_primary="050-1234567",
             email="test@example.com",
         )
         db_session.add(customer)

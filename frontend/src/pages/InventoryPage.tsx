@@ -28,7 +28,7 @@ import {
   daysUntilExpiration,
   getExpirationStatus,
 } from '@/lib/utils'
-import { inventoryApi, type InventoryRow } from '@/lib/api'
+import { inventoryApi, type InventoryRow, type InventoryTotalCost } from '@/lib/api'
 
 export function InventoryPage() {
   const { t } = useTranslation()
@@ -39,11 +39,16 @@ export function InventoryPage() {
   const [total, setTotal] = useState(0)
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [totalCost, setTotalCost] = useState<InventoryTotalCost['totals']>({})
   const pageSize = 20
 
   useEffect(() => {
     fetchInventory()
   }, [page, search, sortBy, sortOrder])
+
+  useEffect(() => {
+    fetchTotalCost()
+  }, [search])
 
   const handleSort = (key: string) => {
     if (sortBy === key) {
@@ -71,6 +76,18 @@ export function InventoryPage() {
       console.error('Failed to fetch inventory:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function fetchTotalCost() {
+    try {
+      const response = await inventoryApi.totalCost({
+        search: search || undefined,
+      })
+      setTotalCost(response.totals || {})
+    } catch (error) {
+      console.error('Failed to fetch inventory total cost:', error)
+      setTotalCost({})
     }
   }
 
@@ -122,6 +139,7 @@ export function InventoryPage() {
                   <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">
                     {t('items.costPrice')}
                   </SortableTableHead>
+                  <TableHead className="text-left">{t('inventory.totalCost')}</TableHead>
                   <SortableTableHead sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>
                     {t('batches.status')}
                   </SortableTableHead>
@@ -134,13 +152,13 @@ export function InventoryPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8">
+                    <TableCell colSpan={12} className="text-center py-8">
                       {t('common.loading')}
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={11} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                       {t('common.noData')}
                     </TableCell>
                   </TableRow>
@@ -175,6 +193,12 @@ export function InventoryPage() {
                         <TableCell className="text-left font-mono">
                           {formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR')}
                         </TableCell>
+                        <TableCell className="text-left font-mono font-medium">
+                          {formatCurrency(
+                            row.quantity_available * row.cost_price,
+                            row.currency as 'ILS' | 'USD' | 'EUR'
+                          )}
+                        </TableCell>
                         <TableCell>
                           <StatusBadge status={row.status} />
                         </TableCell>
@@ -208,6 +232,21 @@ export function InventoryPage() {
           </div>
         </CardContent>
       </Card>
+
+      {Object.keys(totalCost).length > 0 && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-2 sm:gap-4">
+          <span className="text-sm font-medium text-muted-foreground">
+            {t('inventory.grandTotal')}:
+          </span>
+          <div className="flex flex-wrap items-center gap-3">
+            {Object.entries(totalCost).map(([currency, value]) => (
+              <span key={currency} className="font-mono font-semibold text-base">
+                {formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR')}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Pagination */}
       {totalPages > 1 && (

@@ -4,7 +4,7 @@ from app.models.item import Item
 from app.models.location import Location
 from app.models.batch import Batch
 from app.models.movement import Movement
-from app.models.customer import Customer
+from app.models.customer import Customer, CustomerMachine
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
 from app.models.alert import Alert
 
@@ -15,6 +15,7 @@ __all__ = [
     "Batch",
     "Movement",
     "Customer",
+    "CustomerMachine",
     "DeliveryNote",
     "DeliveryNoteItem",
     "Alert",
