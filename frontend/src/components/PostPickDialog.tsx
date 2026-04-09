@@ -35,7 +35,14 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
         documentType,
         action,
       )
-      toast.success(response.message)
+      // Honor the backend's success flag — the endpoint is a stub right
+      // now and returns success=false so the UI cannot mislead operators
+      // into thinking a real pick note / delivery note was produced.
+      if (response.success) {
+        toast.success(response.message)
+      } else {
+        toast.info(response.message)
+      }
     } catch (error: any) {
       toast.error(error?.response?.data?.detail || 'שגיאה בהפקת המסמך')
     } finally {

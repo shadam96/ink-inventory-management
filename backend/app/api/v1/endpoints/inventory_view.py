@@ -179,13 +179,20 @@ async def get_inventory_total_cost(
     is_customer = current_user.role == "customer"
 
     if is_customer and current_user.customer_id:
-        stmt = (
+        # Dedupe by batch_id first — the same Batch may be referenced by
+        # multiple DeliveryNoteItem rows for the same customer (e.g. a split
+        # delivery or a correction). Without DISTINCT ON, the sum counts
+        # `quantity_available` once per DeliveryNoteItem, inflating the total.
+        dedup = (
             select(
+                Batch.id.label("batch_id"),
+                Batch.quantity_available,
+                Item.cost_price,
                 Item.currency,
-                func.coalesce(
-                    func.sum(Batch.quantity_available * Item.cost_price),
-                    0,
-                ),
+                Item.sku,
+                Item.name,
+                Item.supplier,
+                Batch.batch_number,
             )
             .select_from(DeliveryNoteItem)
             .join(DeliveryNote, DeliveryNoteItem.delivery_note_id == DeliveryNote.id)
@@ -194,7 +201,26 @@ async def get_inventory_total_cost(
             .where(DeliveryNote.customer_id == current_user.customer_id)
             .where(Batch.status == BatchStatus.ACTIVE)
             .where(Batch.quantity_available > 0)
-            .group_by(Item.currency)
+        )
+        if search:
+            like = f"%{search}%"
+            dedup = dedup.where(
+                (Item.sku.ilike(like))
+                | (Item.name.ilike(like))
+                | (Batch.batch_number.ilike(like))
+                | (Item.supplier.ilike(like))
+            )
+        dedup_sub = dedup.distinct(Batch.id).subquery()
+
+        stmt = (
+            select(
+                dedup_sub.c.currency,
+                func.coalesce(
+                    func.sum(dedup_sub.c.quantity_available * dedup_sub.c.cost_price),
+                    0,
+                ),
+            )
+            .group_by(dedup_sub.c.currency)
         )
     else:
         stmt = (
@@ -212,14 +238,14 @@ async def get_inventory_total_cost(
             .group_by(Item.currency)
         )
 
-    if search:
-        like = f"%{search}%"
-        stmt = stmt.where(
-            (Item.sku.ilike(like))
-            | (Item.name.ilike(like))
-            | (Batch.batch_number.ilike(like))
-            | (Item.supplier.ilike(like))
-        )
+        if search:
+            like = f"%{search}%"
+            stmt = stmt.where(
+                (Item.sku.ilike(like))
+                | (Item.name.ilike(like))
+                | (Batch.batch_number.ilike(like))
+                | (Item.supplier.ilike(like))
+            )
 
     rows = (await db.execute(stmt)).all()
     totals = {currency: Decimal(value) for currency, value in rows}

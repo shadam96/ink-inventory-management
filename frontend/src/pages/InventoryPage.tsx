@@ -35,6 +35,10 @@ export function InventoryPage() {
   const [rows, setRows] = useState<InventoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  // SearchInput doesn't debounce internally — fire-and-hold the value for
+  // a short window so we don't issue two requests per keystroke against
+  // the heaviest list in the app.
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [sortBy, setSortBy] = useState<string | null>(null)
@@ -43,12 +47,17 @@ export function InventoryPage() {
   const pageSize = 20
 
   useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(search), 250)
+    return () => clearTimeout(id)
+  }, [search])
+
+  useEffect(() => {
     fetchInventory()
-  }, [page, search, sortBy, sortOrder])
+  }, [page, debouncedSearch, sortBy, sortOrder])
 
   useEffect(() => {
     fetchTotalCost()
-  }, [search])
+  }, [debouncedSearch])
 
   const handleSort = (key: string) => {
     if (sortBy === key) {
@@ -66,7 +75,7 @@ export function InventoryPage() {
       const response = await inventoryApi.list({
         page,
         page_size: pageSize,
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         sort_by: sortBy || undefined,
         sort_order: sortBy ? sortOrder : undefined,
       })
@@ -82,7 +91,7 @@ export function InventoryPage() {
   async function fetchTotalCost() {
     try {
       const response = await inventoryApi.totalCost({
-        search: search || undefined,
+        search: debouncedSearch || undefined,
       })
       setTotalCost(response.totals || {})
     } catch (error) {

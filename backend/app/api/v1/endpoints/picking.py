@@ -7,11 +7,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from app.api.deps import DbSession, PickingUser, WarehouseUser
 from app.services.fefo_engine import FEFOEngine
 from app.services.inventory_service import InventoryService
-from app.models.movement import MovementType
+from app.models.movement import Movement, MovementType
 from app.models.user import UserRole
 
 logger = logging.getLogger(__name__)
@@ -306,11 +307,25 @@ async def generate_dispatch_document(
     Generate or send a document for a dispatch (pick note or delivery note).
 
     NOTE: this endpoint is a stub. The actual document templates and
-    rendering will be implemented later — for now we just acknowledge the
-    request so the post-pick UI flow can be wired up end-to-end.
+    rendering are not yet implemented. It returns ``success=False`` with an
+    honest "not implemented" message so the UI does not mislead operators
+    into believing a document was actually produced.
     """
+    # Verify the reference corresponds to a real dispatch so we don't
+    # silently accept arbitrary strings.
+    exists = await db.execute(
+        select(Movement.id)
+        .where(Movement.reference_number == reference_number)
+        .limit(1)
+    )
+    if exists.first() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"לא נמצא ליקוט עם מספר אסמכתא {reference_number}",
+        )
+
     logger.info(
-        "Document request: ref=%s type=%s action=%s user=%s",
+        "Document request (stub, not implemented): ref=%s type=%s action=%s user=%s",
         reference_number,
         request.document_type,
         request.action,
@@ -318,13 +333,10 @@ async def generate_dispatch_document(
     )
 
     type_label = "תעודת ליקוט" if request.document_type == "pick_note" else "תעודת משלוח"
-    if request.action == "print":
-        message = f"{type_label} מוכנה להדפסה (פורמט המסמך טרם הוגדר)"
-    else:
-        message = f"{type_label} תישלח במייל (פורמט המסמך טרם הוגדר)"
+    message = f"{type_label}: הפקת המסמך טרם הוטמעה במערכת"
 
     return DispatchDocumentResponse(
-        success=True,
+        success=False,
         document_type=request.document_type,
         action=request.action,
         reference_number=reference_number,

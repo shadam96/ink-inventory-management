@@ -208,7 +208,7 @@ export function CustomersPage() {
                         <div className="flex items-center gap-1.5 text-muted-foreground">
                           <Wrench className="w-3.5 h-3.5 shrink-0" />
                           <span className="text-xs font-medium">
-                            מכונות ({customer.machines.length})
+                            {t('customers.machines.countSuffix', { count: customer.machines.length })}
                           </span>
                         </div>
                         <ul className="space-y-0.5 ps-5">

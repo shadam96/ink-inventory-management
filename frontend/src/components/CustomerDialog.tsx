@@ -18,8 +18,10 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { Customer, CreateCustomerData } from '@/lib/api'
 
+import i18n from '@/i18n'
+
 const machineSchema = z.object({
-  machine_type: z.string().min(1, 'סוג מכונה נדרש'),
+  machine_type: z.string().min(1, i18n.t('customers.machines.typeRequired')),
   installation_date: z.string().optional().or(z.literal('')),
 })
 
@@ -225,7 +227,9 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
 
           <div className="space-y-3 border-t pt-4">
             <div className="flex items-center justify-between">
-              <Label className="text-base font-semibold">מכונות בבעלות הלקוח</Label>
+              <Label className="text-base font-semibold">
+                {t('customers.machines.sectionTitle')}
+              </Label>
               <Button
                 type="button"
                 variant="outline"
@@ -235,13 +239,13 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                 }
               >
                 <Plus className="w-4 h-4 ml-1" />
-                הוסף מכונה
+                {t('customers.machines.add')}
               </Button>
             </div>
 
             {fields.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                לא הוגדרו מכונות
+                {t('customers.machines.empty')}
               </p>
             ) : (
               <div className="space-y-3">
@@ -252,7 +256,7 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                   >
                     <div className="flex items-start justify-between gap-2">
                       <Label className="text-sm font-medium">
-                        מכונה #{index + 1}
+                        {t('customers.machines.itemLabel', { index: index + 1 })}
                       </Label>
                       <Button
                         type="button"
@@ -271,12 +275,12 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                           htmlFor={`machines.${index}.machine_type`}
                           className="text-xs"
                         >
-                          סוג המכונה *
+                          {t('customers.machines.typeLabel')}
                         </Label>
                         <Input
                           id={`machines.${index}.machine_type`}
                           {...register(`machines.${index}.machine_type`)}
-                          placeholder="לדוגמה: מדפסת דיגיטלית"
+                          placeholder={t('customers.machines.typePlaceholder')}
                         />
                         {errors.machines?.[index]?.machine_type && (
                           <p className="text-xs text-destructive">
@@ -290,7 +294,7 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                           htmlFor={`machines.${index}.installation_date`}
                           className="text-xs"
                         >
-                          תאריך התקנה
+                          {t('customers.machines.installationDate')}
                         </Label>
                         <Input
                           id={`machines.${index}.installation_date`}

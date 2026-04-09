@@ -198,8 +198,15 @@ function AdminPickingView() {
         toast.error('האצווה הנבחרת אינה זמינה')
         return
       }
-      const qty = Math.min(data.quantity, chosen.quantity_available)
-      picks = [{ batch_id: chosen.batch_id, quantity: qty }]
+      // Reject rather than silently clamp — a warehouse operator expects
+      // the quantity they typed to go through or fail visibly.
+      if (data.quantity > chosen.quantity_available) {
+        toast.error(
+          `הכמות המבוקשת (${data.quantity}) חורגת מהאצווה (זמין: ${chosen.quantity_available}). בחר אצווה אחרת או צמצם כמות.`
+        )
+        return
+      }
+      picks = [{ batch_id: chosen.batch_id, quantity: data.quantity }]
     } else {
       picks = activeSuggestions
         .filter(s => s.suggested_quantity > 0)

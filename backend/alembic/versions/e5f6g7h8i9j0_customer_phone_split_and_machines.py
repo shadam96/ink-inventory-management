@@ -88,6 +88,14 @@ def downgrade() -> None:
         "customers",
         sa.Column("phone", sa.String(length=50), nullable=True),
     )
-    op.execute("UPDATE customers SET phone = phone_primary WHERE phone_primary IS NOT NULL")
+    # Coalesce primary and secondary back into the single phone column so a
+    # rollback during incident response does not silently discard data that
+    # was entered in phone_secondary after the upgrade. Primary wins when
+    # both are present.
+    op.execute(
+        "UPDATE customers "
+        "SET phone = COALESCE(phone_primary, phone_secondary) "
+        "WHERE phone_primary IS NOT NULL OR phone_secondary IS NOT NULL"
+    )
     op.drop_column("customers", "phone_secondary")
     op.drop_column("customers", "phone_primary")
