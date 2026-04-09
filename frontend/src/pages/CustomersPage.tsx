@@ -41,7 +41,7 @@ export function CustomersPage() {
       setTotal(response.total)
     } catch (error) {
       console.error('Failed to fetch customers:', error)
-      toast.error('שגיאה בטעינת לקוחות')
+      toast.error(t('customers.fetchError'))
     } finally {
       setLoading(false)
     }
@@ -63,14 +63,14 @@ export function CustomersPage() {
   }
 
   const handleDelete = async (customer: Customer) => {
-    if (!confirm(`האם להשבית את "${customer.name}"?`)) return
+    if (!confirm(t('customers.confirmDeactivate', { name: customer.name }))) return
 
     try {
       await customersApi.delete(customer.id)
-      toast.success(`${customer.name} הושבת בהצלחה`)
+      toast.success(t('customers.deactivated', { name: customer.name }))
       fetchCustomers()
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שגיאה בהשבתת הלקוח')
+      toast.error(error.response?.data?.detail || t('customers.deactivateError'))
     }
   }
 
@@ -78,14 +78,14 @@ export function CustomersPage() {
     try {
       if (editingCustomer) {
         await customersApi.update(editingCustomer.id, data)
-        toast.success('לקוח עודכן בהצלחה')
+        toast.success(t('customers.updated'))
       } else {
         await customersApi.create(data)
-        toast.success('לקוח נוסף בהצלחה')
+        toast.success(t('customers.added'))
       }
       fetchCustomers()
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'שגיאה בשמירת הלקוח'
+      const message = error.response?.data?.detail || t('customers.saveError')
       toast.error(message)
       throw error
     }
@@ -101,19 +101,19 @@ export function CustomersPage() {
         <div className="flex items-center gap-2">
           <Users className="w-5 h-5 text-muted-foreground" />
           <span className="text-muted-foreground">
-            {total} לקוחות
+            {t('customers.countLabel', { count: total })}
           </span>
         </div>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <SearchInput
             value={search}
             onChange={handleSearch}
-            placeholder="חיפוש לפי שם או אימייל..."
+            placeholder={t('customers.searchPlaceholder')}
             className="w-full sm:w-64"
           />
           <Button onClick={handleAdd} className="shrink-0">
             <Plus className="w-4 h-4 me-2" />
-            הוסף לקוח
+            {t('customers.add')}
           </Button>
         </div>
       </div>
@@ -128,7 +128,7 @@ export function CustomersPage() {
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
             <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
-            <p>{search ? 'לא נמצאו לקוחות תואמים' : t('common.noData')}</p>
+            <p>{search ? t('customers.noResults') : t('common.noData')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -142,9 +142,9 @@ export function CustomersPage() {
                       <h3 className="font-semibold text-lg truncate">{customer.name}</h3>
                       <div className="flex flex-wrap gap-1.5 mt-1.5">
                         {customer.is_active ? (
-                          <Badge variant="safe">פעיל</Badge>
+                          <Badge variant="safe">{t('customers.statusActive')}</Badge>
                         ) : (
-                          <Badge variant="secondary">לא פעיל</Badge>
+                          <Badge variant="secondary">{t('customers.statusInactive')}</Badge>
                         )}
                         {customer.is_vmi_customer && (
                           <Badge variant="outline">VMI</Badge>

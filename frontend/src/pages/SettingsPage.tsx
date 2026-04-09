@@ -65,11 +65,11 @@ export function SettingsPage() {
   const addEmail = () => {
     const trimmed = newEmail.trim()
     if (!trimmed || !isValidEmail(trimmed)) {
-      toast.error('אנא הזן כתובת אימייל תקינה')
+      toast.error(t('settings.emailInvalid'))
       return
     }
     if (notificationEmails.includes(trimmed)) {
-      toast.error('כתובת זו כבר קיימת')
+      toast.error(t('settings.emailDuplicate'))
       return
     }
     setNotificationEmails(prev => [...prev, trimmed])
@@ -83,15 +83,15 @@ export function SettingsPage() {
   const sendTestEmail = async () => {
     const recipient = testEmail.trim()
     if (!recipient || !isValidEmail(recipient)) {
-      toast.error('אנא הזן כתובת אימייל תקינה')
+      toast.error(t('settings.emailInvalid'))
       return
     }
     setSendingTest(true)
     try {
       await api.post('/settings/email/test', { email: recipient })
-      toast.success(`מייל בדיקה נשלח אל ${recipient}`)
+      toast.success(t('settings.testEmailSent', { recipient }))
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שליחת מייל הבדיקה נכשלה')
+      toast.error(error.response?.data?.detail || t('settings.testEmailFailed'))
     } finally {
       setSendingTest(false)
     }
@@ -104,9 +104,9 @@ export function SettingsPage() {
         email_notifications_enabled: notificationEmails.length > 0,
         notification_emails: notificationEmails,
       })
-      toast.success('כתובות האימייל נשמרו')
+      toast.success(t('settings.notificationEmailsSaved'))
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שמירת האימייל נכשלה')
+      toast.error(error.response?.data?.detail || t('settings.notificationEmailsSaveFailed'))
     } finally {
       setSavingEmail(false)
     }
@@ -146,7 +146,7 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle>{t('settings.general')}</CardTitle>
           <CardDescription>
-            התאמה אישית של שם האפליקציה והסמל
+            {t('settings.generalDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -201,7 +201,7 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle>{t('settings.appearance')}</CardTitle>
           <CardDescription>
-            התאמה אישית של נושא המערכת והמטבע המוצג
+            {t('settings.appearanceDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -266,15 +266,15 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Mail className="w-5 h-5" />
-            התראות דוא"ל
+            {t('settings.emailNotifications')}
           </CardTitle>
           <CardDescription>
-            הזן כתובת אימייל כדי לקבל התראות על תפוגת מלאי, מלאי נמוך ועוד
+            {t('settings.emailNotificationsDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {loadingEmail ? (
-            <div className="text-center py-4">טוען...</div>
+            <div className="text-center py-4">{t('common.loading')}</div>
           ) : (
             <div className="space-y-3">
               {/* Existing emails */}
@@ -318,14 +318,14 @@ export function SettingsPage() {
                 disabled={savingEmail}
                 className="w-full"
               >
-                {savingEmail ? 'שומר...' : 'שמור התראות'}
+                {savingEmail ? t('common.saving') : t('settings.saveNotifications')}
               </Button>
 
               {/* Test email */}
               <div className="pt-4 mt-2 border-t space-y-2">
-                <Label className="text-sm">שליחת מייל בדיקה</Label>
+                <Label className="text-sm">{t('settings.testEmailTitle')}</Label>
                 <p className="text-xs text-muted-foreground">
-                  שלח מייל בדיקה כדי לוודא שהחיבור ל-Resend פעיל
+                  {t('settings.testEmailHelp')}
                 </p>
                 <div className="flex gap-2">
                   <Input
@@ -342,7 +342,7 @@ export function SettingsPage() {
                     disabled={sendingTest || !testEmail.trim()}
                   >
                     <Send className="w-4 h-4 me-2" />
-                    {sendingTest ? 'שולח...' : 'שלח בדיקה'}
+                    {sendingTest ? t('common.sending') : t('settings.sendTestEmail')}
                   </Button>
                 </div>
               </div>

@@ -126,7 +126,9 @@ describe('Receiving Operations', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: /הוסף לרשימה/i })).toBeInTheDocument()
+      // i18next is mocked to return keys verbatim; "הוסף לרשימה" is now
+      // behind `receiving.addToList`.
+      expect(screen.getByRole('button', { name: /receiving\.addToList/i })).toBeInTheDocument()
     })
 
     // This would require filling the form and clicking add

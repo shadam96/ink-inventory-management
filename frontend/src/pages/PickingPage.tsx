@@ -28,20 +28,19 @@ import { itemsApi, customersApi, pickingApi, receivingApi, type Item } from '@/l
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { useAuthStore } from '@/store/auth'
 
-// ---------- Admin schema (requires customer) ----------
+// Validation messages are i18n key paths, resolved at render time.
 const adminPickSchema = z.object({
-  item_id: z.string().min(1, 'פריט נדרש'),
-  quantity: z.number().int('כמות חייבת להיות מספר שלם').min(1, 'כמות חייבת להיות חיובית'),
-  customer_id: z.string().min(1, 'לקוח נדרש'),
+  item_id: z.string().min(1, 'picking.itemRequired'),
+  quantity: z.number().int('picking.quantityInteger').min(1, 'picking.quantityPositive'),
+  customer_id: z.string().min(1, 'picking.customerRequired'),
   reference_number: z.string().optional(),
   notes: z.string().optional(),
 })
 type AdminPickFormData = z.infer<typeof adminPickSchema>
 
-// ---------- Customer schema (no customer field) ----------
 const customerPickSchema = z.object({
-  item_id: z.string().min(1, 'פריט נדרש'),
-  quantity: z.number().int('כמות חייבת להיות מספר שלם').min(1, 'כמות חייבת להיות חיובית'),
+  item_id: z.string().min(1, 'picking.itemRequired'),
+  quantity: z.number().int('picking.quantityInteger').min(1, 'picking.quantityPositive'),
   notes: z.string().optional(),
 })
 type CustomerPickFormData = z.infer<typeof customerPickSchema>
@@ -173,7 +172,7 @@ function AdminPickingView() {
       const result = await receivingApi.validateBarcode(code)
       if (result.valid && result.item) {
         setValue('item_id', result.item.id)
-        toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+        toast.success(t('picking.itemFound', { name: result.item.name, sku: result.item.sku }))
         if (navigator.vibrate) navigator.vibrate([100, 50, 100])
         return true
       }
@@ -185,7 +184,7 @@ function AdminPickingView() {
 
   const handleDispatch = async (data: AdminPickFormData) => {
     if (activeSuggestions.length === 0) {
-      toast.error('אין אצוות זמינות לליקוט')
+      toast.error(t('picking.noBatchesAvailable'))
       return
     }
 
@@ -195,14 +194,14 @@ function AdminPickingView() {
     if (selectedBatchId) {
       const chosen = activeSuggestions.find(s => s.batch_id === selectedBatchId)
       if (!chosen) {
-        toast.error('האצווה הנבחרת אינה זמינה')
+        toast.error(t('picking.batchUnavailable'))
         return
       }
       // Reject rather than silently clamp — a warehouse operator expects
       // the quantity they typed to go through or fail visibly.
       if (data.quantity > chosen.quantity_available) {
         toast.error(
-          `הכמות המבוקשת (${data.quantity}) חורגת מהאצווה (זמין: ${chosen.quantity_available}). בחר אצווה אחרת או צמצם כמות.`
+          t('picking.quantityExceedsBatch', { requested: data.quantity, available: chosen.quantity_available })
         )
         return
       }
@@ -217,7 +216,7 @@ function AdminPickingView() {
     }
 
     if (picks.length === 0) {
-      toast.error('אין אצוות זמינות לליקוט')
+      toast.error(t('picking.noBatchesAvailable'))
       return
     }
 
@@ -232,7 +231,7 @@ function AdminPickingView() {
 
       if (!isOnline()) {
         await addPendingOperation('pick', '/api/v1/picking/dispatch', 'POST', payload)
-        toast.info('אתה במצב אופליין. הליקוט נשמר ויסונכרן כשתחזור לרשת.')
+        toast.info(t('picking.offlineQueued'))
         reset()
         setSuggestions([])
         setSelectedBatchId(null)
@@ -240,13 +239,13 @@ function AdminPickingView() {
       }
 
       const response = await pickingApi.dispatch(payload)
-      toast.success('הליקוט בוצע בהצלחה!')
+      toast.success(t('picking.success'))
       reset()
       setSuggestions([])
       setSelectedBatchId(null)
       setPostPickRef(response.reference_number)
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שגיאה בביצוע ליקוט')
+      toast.error(error.response?.data?.detail || t('picking.dispatchError'))
     } finally {
       setSubmitting(false)
     }
@@ -271,7 +270,7 @@ function AdminPickingView() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <PackageMinus className="w-5 h-5" />
-              ליקוט ושליחה ללקוח
+              {t('picking.adminTitle')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -283,7 +282,7 @@ function AdminPickingView() {
                 onClick={() => setShowScanner(true)}
               >
                 <Camera className="w-6 h-6 text-primary" />
-                <span>סרוק פריט עם המצלמה</span>
+                <span>{t('picking.scanItem')}</span>
               </Button>
 
               <div className="space-y-2">
@@ -293,7 +292,7 @@ function AdminPickingView() {
                   {...register('item_id')}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
-                  <option value="">בחר פריט...</option>
+                  <option value="">{t('picking.selectItemPlaceholder')}</option>
                   {items.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.sku} - {item.name}
@@ -301,18 +300,18 @@ function AdminPickingView() {
                   ))}
                 </select>
                 {errors.item_id && (
-                  <p className="text-sm text-destructive">{errors.item_id.message}</p>
+                  <p className="text-sm text-destructive">{t(errors.item_id.message ?? '')}</p>
                 )}
                 {selectedItem && !itemInStock && (
                   <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-sm text-destructive">
-                    הפריט הנבחר אינו קיים במלאי
+                    {t('picking.itemNotInStock')}
                   </div>
                 )}
                 {selectedItem && itemInStock && (
                   <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
-                    <p><strong>ספק:</strong> {selectedItem.supplier}</p>
-                    <p><strong>יח':</strong> {selectedItem.unit_of_measure}</p>
-                    <p><strong>זמין לליקוט:</strong> {pickableQuantity}</p>
+                    <p><strong>{t('items.supplier')}:</strong> {selectedItem.supplier}</p>
+                    <p><strong>{t('picking.unitShort')}:</strong> {selectedItem.unit_of_measure}</p>
+                    <p><strong>{t('picking.availableForPick')}:</strong> {pickableQuantity}</p>
                   </div>
                 )}
               </div>
@@ -330,24 +329,24 @@ function AdminPickingView() {
                   placeholder="0"
                 />
                 {errors.quantity && (
-                  <p className="text-sm text-destructive">{errors.quantity.message}</p>
+                  <p className="text-sm text-destructive">{t(errors.quantity.message ?? '')}</p>
                 )}
                 {itemInStock && hasQuantity && !quantityInStock && (
                   <p className="text-sm text-destructive">
-                    הכמות הנבחרת אינה קיימת במלאי
+                    {t('picking.quantityNotInStock')}
                   </p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="customer_id">לקוח *</Label>
+                <Label htmlFor="customer_id">{t('picking.customer')} *</Label>
                 <select
                   id="customer_id"
                   disabled={!canSelectCustomer}
                   {...register('customer_id')}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <option value="">בחר לקוח...</option>
+                  <option value="">{t('picking.selectCustomerPlaceholder')}</option>
                   {customers.map((customer) => (
                     <option key={customer.id} value={customer.id}>
                       {customer.name}
@@ -355,7 +354,7 @@ function AdminPickingView() {
                   ))}
                 </select>
                 {errors.customer_id && (
-                  <p className="text-sm text-destructive">{errors.customer_id.message}</p>
+                  <p className="text-sm text-destructive">{t(errors.customer_id.message ?? '')}</p>
                 )}
               </div>
 
@@ -364,16 +363,16 @@ function AdminPickingView() {
                 <Input
                   id="reference_number"
                   {...register('reference_number')}
-                  placeholder="מספר אסמכתא"
+                  placeholder={t('picking.referencePlaceholder')}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="notes">הערות</Label>
+                <Label htmlFor="notes">{t('common.notes')}</Label>
                 <Textarea
                   id="notes"
                   {...register('notes')}
-                  placeholder="הערות..."
+                  placeholder={t('common.notesPlaceholder')}
                   rows={2}
                 />
               </div>
@@ -391,7 +390,7 @@ function AdminPickingView() {
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                    מבצע ליקוט...
+                    {t('picking.picking')}
                   </>
                 ) : (
                   <>
@@ -407,7 +406,7 @@ function AdminPickingView() {
         {/* Strategy Suggestions */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">אצוות מוצעות</CardTitle>
+            <CardTitle className="text-lg">{t('picking.suggestedBatches')}</CardTitle>
             <div className="flex gap-1 mt-2">
               {(['fefo', 'fifo', 'lifo'] as const).map((s) => (
                 <Button
@@ -453,6 +452,7 @@ function AdminPickingView() {
 
 // ===== CUSTOMER CONSUMPTION VIEW =====
 function CustomerPickingView() {
+  const { t } = useTranslation()
   const [items, setItems] = useState<Item[]>([])
   const [suggestions, setSuggestions] = useState<SuggestedBatch[]>([])
   const [loading, setLoading] = useState(false)
@@ -518,7 +518,7 @@ function CustomerPickingView() {
       const result = await receivingApi.validateBarcode(code)
       if (result.valid && result.item) {
         setValue('item_id', result.item.id)
-        toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+        toast.success(t('picking.itemFound', { name: result.item.name, sku: result.item.sku }))
         if (navigator.vibrate) navigator.vibrate([100, 50, 100])
         return true
       }
@@ -536,13 +536,13 @@ function CustomerPickingView() {
         quantity: batch.suggested_quantity,
         notes,
       })
-      toast.success(`צריכה נרשמה — אצווה ${batch.batch_number}`)
+      toast.success(t('picking.consumptionRecorded', { batch: batch.batch_number }))
       reset()
       setSuggestions([])
       setRecommendationIndex(0)
       setShowAllBatches(false)
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שגיאה ברישום צריכה')
+      toast.error(error.response?.data?.detail || t('picking.consumptionError'))
     } finally {
       setSubmitting(false)
     }
@@ -575,7 +575,7 @@ function CustomerPickingView() {
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
               <PackageMinus className="w-5 h-5" />
-              רישום צריכת דיו
+              {t('picking.customerTitle')}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -586,17 +586,17 @@ function CustomerPickingView() {
               onClick={() => setShowScanner(true)}
             >
               <Camera className="w-6 h-6 text-primary" />
-              <span>סרוק פריט עם המצלמה</span>
+              <span>{t('picking.scanItem')}</span>
             </Button>
 
             <div className="space-y-2">
-              <Label htmlFor="c_item_id">בחר פריט *</Label>
+              <Label htmlFor="c_item_id">{t('picking.selectItem')} *</Label>
               <select
                 id="c_item_id"
                 {...register('item_id')}
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
-                <option value="">בחר פריט...</option>
+                <option value="">{t('picking.selectItemPlaceholder')}</option>
                 {items.map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.sku} - {item.name}
@@ -604,18 +604,18 @@ function CustomerPickingView() {
                 ))}
               </select>
               {errors.item_id && (
-                <p className="text-sm text-destructive">{errors.item_id.message}</p>
+                <p className="text-sm text-destructive">{t(errors.item_id.message ?? '')}</p>
               )}
               {selectedItem && (
                 <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
-                  <p><strong>ספק:</strong> {selectedItem.supplier}</p>
-                  <p><strong>יח':</strong> {selectedItem.unit_of_measure}</p>
+                  <p><strong>{t('items.supplier')}:</strong> {selectedItem.supplier}</p>
+                  <p><strong>{t('picking.unitShort')}:</strong> {selectedItem.unit_of_measure}</p>
                 </div>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="c_quantity">כמות *</Label>
+              <Label htmlFor="c_quantity">{t('picking.quantity')} *</Label>
               <Input
                 id="c_quantity"
                 type="number"
@@ -626,16 +626,16 @@ function CustomerPickingView() {
                 placeholder="0"
               />
               {errors.quantity && (
-                <p className="text-sm text-destructive">{errors.quantity.message}</p>
+                <p className="text-sm text-destructive">{t(errors.quantity.message ?? '')}</p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="c_notes">הערות</Label>
+              <Label htmlFor="c_notes">{t('common.notes')}</Label>
               <Textarea
                 id="c_notes"
                 {...register('notes')}
-                placeholder="הערות..."
+                placeholder={t('common.notesPlaceholder')}
                 rows={2}
               />
             </div>
@@ -647,17 +647,17 @@ function CustomerPickingView() {
           <Card>
             <CardContent className="p-8 text-center text-muted-foreground">
               <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-              <p>מחפש אצוות...</p>
+              <p>{t('picking.searching')}</p>
             </CardContent>
           </Card>
         ) : suggestions.length > 0 && !showAllBatches ? (
           <Card className="border-primary/30">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">
-                המלצת המערכת (FEFO)
+                {t('picking.systemRecommendation')}
               </CardTitle>
               <p className="text-sm text-muted-foreground">
-                המערכת ממליצה להשתמש באצווה הבאה — תפוגה הקרובה ביותר
+                {t('picking.systemRecommendationHelp')}
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -672,7 +672,7 @@ function CustomerPickingView() {
               )}
               {suggestions.length > 1 && (
                 <p className="text-xs text-muted-foreground text-center">
-                  המלצה {recommendationIndex + 1} מתוך {suggestions.length} אצוות זמינות
+                  {t('picking.recommendationOf', { current: recommendationIndex + 1, total: suggestions.length })}
                 </p>
               )}
             </CardContent>
@@ -680,9 +680,9 @@ function CustomerPickingView() {
         ) : showAllBatches && suggestions.length > 0 ? (
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">כל האצוות הזמינות</CardTitle>
+              <CardTitle className="text-lg">{t('picking.allAvailableBatches')}</CardTitle>
               <p className="text-sm text-muted-foreground">
-                בחר אצווה לצריכה
+                {t('picking.chooseBatchHelp')}
               </p>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -698,14 +698,14 @@ function CustomerPickingView() {
                       <span className="font-mono text-sm font-medium">
                         {batch.batch_number}
                       </span>
-                      <Badge variant={status}>{days} ימים</Badge>
+                      <Badge variant={status}>{t('picking.daysCount', { count: days })}</Badge>
                     </div>
                     <div className="flex justify-between text-sm mb-3">
                       <span className="text-muted-foreground">
-                        תפוגה: {formatDate(batch.expiration_date)}
+                        {t('picking.expirationLabel')}: {formatDate(batch.expiration_date)}
                       </span>
                       <span className="font-medium">
-                        כמות: {batch.suggested_quantity}
+                        {t('picking.quantityLabel')}: {batch.suggested_quantity}
                       </span>
                     </div>
                     <Button
@@ -717,7 +717,7 @@ function CustomerPickingView() {
                       {submitting ? (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       ) : (
-                        'בחר אצווה זו'
+                        t('picking.chooseThisBatch')
                       )}
                     </Button>
                   </div>
@@ -745,6 +745,7 @@ function RecommendedBatchCard({
   submitting: boolean
   isLast: boolean
 }) {
+  const { t } = useTranslation()
   const days = daysUntilExpiration(batch.expiration_date)
   const status = getExpirationStatus(days)
 
@@ -754,21 +755,21 @@ function RecommendedBatchCard({
         <div>
           <p className="font-mono text-lg font-semibold">{batch.batch_number}</p>
           {batch.location_code && (
-            <p className="text-sm text-muted-foreground">מיקום: {batch.location_code}</p>
+            <p className="text-sm text-muted-foreground">{t('picking.locationLabel')}: {batch.location_code}</p>
           )}
         </div>
         <Badge variant={status} className="text-base px-3 py-1">
-          {days} ימים
+          {t('picking.daysCount', { count: days })}
         </Badge>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-sm">
         <div className="p-2 rounded-lg bg-background">
-          <p className="text-muted-foreground">תפוגה</p>
+          <p className="text-muted-foreground">{t('picking.expirationLabel')}</p>
           <p className="font-medium">{formatDate(batch.expiration_date)}</p>
         </div>
         <div className="p-2 rounded-lg bg-background">
-          <p className="text-muted-foreground">כמות לצריכה</p>
+          <p className="text-muted-foreground">{t('picking.consumeQuantityLabel')}</p>
           <p className="font-medium">{batch.suggested_quantity}</p>
         </div>
       </div>
@@ -784,7 +785,7 @@ function RecommendedBatchCard({
           ) : (
             <>
               <ThumbsUp className="w-5 h-5 me-2" />
-              אישור
+              {t('picking.confirm')}
             </>
           )}
         </Button>
@@ -795,7 +796,7 @@ function RecommendedBatchCard({
           onClick={onReject}
         >
           <ThumbsDown className="w-5 h-5 me-2" />
-          {isLast ? 'הצג הכל' : 'הבא'}
+          {isLast ? t('picking.showAll') : t('picking.next')}
         </Button>
       </div>
     </div>
@@ -824,11 +825,13 @@ function BatchSuggestionsList({
   selectedBatchId: string | null
   onSelectBatch: (batchId: string) => void
 }) {
+  const { t } = useTranslation()
+
   if (loading) {
     return (
       <div className="text-center py-8 text-muted-foreground">
         <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-        <p>מחפש אצוות...</p>
+        <p>{t('picking.searching')}</p>
       </div>
     )
   }
@@ -837,7 +840,7 @@ function BatchSuggestionsList({
     return (
       <div className="text-center py-8 text-muted-foreground">
         <PackageMinus className="w-12 h-12 mx-auto mb-2 opacity-50" />
-        <p>בחר פריט לקבלת הצעות</p>
+        <p>{t('picking.selectItemPrompt')}</p>
       </div>
     )
   }
@@ -846,7 +849,7 @@ function BatchSuggestionsList({
     return (
       <div className="text-center py-8 text-muted-foreground">
         <PackageMinus className="w-12 h-12 mx-auto mb-2 opacity-50" />
-        <p>אין אצוות זמינות לפריט זה</p>
+        <p>{t('picking.noBatchesForItem')}</p>
       </div>
     )
   }
@@ -859,29 +862,27 @@ function BatchSuggestionsList({
           <div className="p-4 rounded-lg bg-status-safe/10 border border-status-safe/30">
             <div className="flex items-center gap-2 text-status-safe mb-1">
               <CheckCircle2 className="w-5 h-5" />
-              <span className="font-medium">ניתן לספק</span>
+              <span className="font-medium">{t('picking.canFulfill')}</span>
             </div>
             <p className="text-sm">
-              זמין: {totalAvailable} / מבוקש: {requestedQuantity}
+              {t('picking.availableRequested', { available: totalAvailable, requested: requestedQuantity })}
             </p>
           </div>
         ) : (
           <div className="p-4 rounded-lg bg-status-critical/10 border border-status-critical/30">
             <div className="flex items-center gap-2 text-status-critical mb-1">
               <AlertCircle className="w-5 h-5" />
-              <span className="font-medium">מלאי לא מספיק</span>
+              <span className="font-medium">{t('picking.insufficientStock')}</span>
             </div>
             <p className="text-sm text-status-critical">
-              זמין: {totalAvailable} / מבוקש: {requestedQuantity}
+              {t('picking.availableRequested', { available: totalAvailable, requested: requestedQuantity })}
             </p>
           </div>
         )
       )}
 
       <div className="space-y-2">
-        <p className="text-sm font-medium">
-          סדר מומלץ ({strategyLabel}) — לחץ על אצווה לבחירה ידנית:
-        </p>
+        <p className="text-sm font-medium">{t('picking.recommendedOrderClickable', { strategy: strategyLabel })}</p>
         {suggestions.map((batch, index) => {
           const days = daysUntilExpiration(batch.expiration_date)
           const status = getExpirationStatus(days)
@@ -892,7 +893,7 @@ function BatchSuggestionsList({
               type="button"
               onClick={() => onSelectBatch(batch.batch_id)}
               className={cn(
-                'w-full text-right p-3 rounded-lg border bg-card transition-colors',
+                'w-full text-start p-3 rounded-lg border bg-card transition-colors',
                 'hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 isSelected && 'border-primary bg-primary/5 ring-2 ring-primary/40',
               )}
@@ -905,21 +906,21 @@ function BatchSuggestionsList({
                     {batch.batch_number}
                   </span>
                   {isSelected && (
-                    <Badge variant="safe">נבחר</Badge>
+                    <Badge variant="safe">{t('picking.selected')}</Badge>
                   )}
                 </div>
-                <Badge variant={status}>{days} ימים</Badge>
+                <Badge variant={status}>{t('picking.daysCount', { count: days })}</Badge>
               </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">
-                  תפוגה: {formatDate(batch.expiration_date)}
+                  {t('picking.expirationLabel')}: {formatDate(batch.expiration_date)}
                 </span>
                 <span className="text-muted-foreground">
-                  זמין: {batch.quantity_available}
+                  {t('picking.availableLabel')}: {batch.quantity_available}
                 </span>
                 {batch.suggested_quantity > 0 && (
                   <span className="font-medium">
-                    ליקוט: {batch.suggested_quantity}
+                    {t('picking.pickLabel')}: {batch.suggested_quantity}
                   </span>
                 )}
               </div>
@@ -928,7 +929,7 @@ function BatchSuggestionsList({
         })}
         {selectedBatchId && (
           <p className="text-xs text-muted-foreground">
-            הליקוט יבוצע מאצווה אחת בלבד. לחץ שוב על האצווה לחזרה להקצאה אוטומטית.
+            {t('picking.singleBatchHint')}
           </p>
         )}
       </div>
@@ -944,7 +945,7 @@ export function PickingPage() {
 
   return (
     <div className="space-y-6">
-      <Header title={isCustomer ? 'צריכת דיו' : t('picking.title')} />
+      <Header title={isCustomer ? t('picking.customerHeader') : t('picking.title')} />
       {isCustomer ? <CustomerPickingView /> : <AdminPickingView />}
     </div>
   )

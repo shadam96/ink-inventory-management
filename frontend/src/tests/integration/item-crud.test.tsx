@@ -162,7 +162,9 @@ describe('Item CRUD Operations', () => {
     })
 
     // Should show pagination controls when total > page_size
-    const nextButton = screen.getByRole('button', { name: /הבא/i })
+    // i18next is mocked to return keys verbatim; the Hebrew text
+    // "הבא" is now behind `common.next`.
+    const nextButton = screen.getByRole('button', { name: /common\.next/i })
     expect(nextButton).toBeInTheDocument()
     expect(nextButton).not.toBeDisabled()
   })

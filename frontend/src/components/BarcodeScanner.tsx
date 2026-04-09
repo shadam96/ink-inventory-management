@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Html5Qrcode } from 'html5-qrcode'
 import { Camera, X, SwitchCamera, CheckCircle2, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ interface BarcodeScannerProps {
 const SCANNER_ID = 'barcode-scanner-viewport'
 
 export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerProps) {
+  const { t } = useTranslation()
   const scannerRef = useRef<Html5Qrcode | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [facingMode, setFacingMode] = useState<'environment' | 'user'>('environment')
@@ -94,7 +96,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
               // Audio not supported
             }
 
-            setStatusMessage({ text: `סורק: ${code}`, type: 'success' })
+            setStatusMessage({ text: t('scanner.scanning', { code }), type: 'success' })
 
             Promise.resolve(onScan({ code, format }))
               .then((shouldClose) => {
@@ -103,7 +105,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
                   setStatusMessage({ text: `✓ ${code}`, type: 'success' })
                   setTimeout(() => { if (mountedRef.current) onClose() }, 600)
                 } else {
-                  setStatusMessage({ text: `${code} — לא נמצא`, type: 'error' })
+                  setStatusMessage({ text: t('scanner.notFound', { code }), type: 'error' })
                   setTimeout(() => {
                     if (mountedRef.current) setStatusMessage(null)
                     processingRef.current = false
@@ -112,7 +114,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
               })
               .catch(() => {
                 if (!mountedRef.current) return
-                setStatusMessage({ text: 'שגיאה בבדיקת ברקוד', type: 'error' })
+                setStatusMessage({ text: t('scanner.barcodeError'), type: 'error' })
                 setTimeout(() => {
                   if (mountedRef.current) setStatusMessage(null)
                   processingRef.current = false
@@ -129,7 +131,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
       } catch (err) {
         console.error('Scanner start error:', err)
         if (mountedRef.current) {
-          setError('לא ניתן לגשת למצלמה. אנא אשר הרשאות מצלמה.')
+          setError(t('scanner.cameraError'))
         }
       }
     }
@@ -142,6 +144,9 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         scanner.stop().catch(() => {})
       }
     }
+    // Intentional: re-run only on facing mode change. Adding `t` would
+    // restart the camera on every language change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [facingMode, onScan, onClose])
 
   const switchCamera = async () => {
@@ -170,7 +175,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
     >
       {/* Header — pt includes safe area so background covers the notch */}
       <div className="flex items-center justify-between px-4 pb-3 bg-black/70 backdrop-blur-sm" style={{ paddingTop: 'max(1rem, env(safe-area-inset-top))' }}>
-        <h2 className="text-white font-medium">סריקת ברקוד</h2>
+        <h2 className="text-white font-medium">{t('scanner.title')}</h2>
         <Button
           variant="ghost"
           size="icon"
@@ -189,7 +194,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
               <Camera className="w-16 h-16 mx-auto mb-4 opacity-50" />
               <p className="text-lg mb-2">{error}</p>
               <Button onClick={retryScanner}>
-                נסה שוב
+                {t('scanner.retry')}
               </Button>
             </div>
           </div>
@@ -224,7 +229,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
           size="icon"
           onClick={switchCamera}
           className="text-white hover:bg-white/20 h-14 w-14 rounded-full"
-          title="החלף מצלמה"
+          title={t('scanner.switchCamera')}
         >
           <SwitchCamera className="w-6 h-6" />
         </Button>
@@ -232,7 +237,7 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
 
       {/* Instructions */}
       <div className="text-center pb-6 safe-area-bottom text-white/60 text-sm">
-        מקם את הברקוד או קוד QR בתוך המסגרת
+        {t('scanner.instructions')}
       </div>
     </div>
   )

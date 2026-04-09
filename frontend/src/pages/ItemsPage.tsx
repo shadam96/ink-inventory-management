@@ -83,7 +83,7 @@ export function ItemsPage() {
   }
 
   const handleDelete = async (item: Item) => {
-    if (!confirm(`האם למחוק את "${item.name}"?`)) {
+    if (!confirm(t('items.confirmDelete', { name: item.name }))) {
       return
     }
 
@@ -92,7 +92,7 @@ export function ItemsPage() {
       fetchItems()
     } catch (error) {
       console.error('Failed to delete item:', error)
-      alert('שגיאה במחיקת הפריט')
+      alert(t('items.deleteError'))
     }
   }
 
@@ -105,7 +105,7 @@ export function ItemsPage() {
       }
       fetchItems()
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'שגיאה בשמירת הפריט'
+      const message = error.response?.data?.detail || t('items.saveError')
       alert(message)
       throw error
     }
@@ -134,10 +134,10 @@ export function ItemsPage() {
       document.body.removeChild(a)
       window.URL.revokeObjectURL(url)
       
-      toast.success(`יצוא ${format === 'excel' ? 'Excel' : 'CSV'} הושלם בהצלחה`)
+      toast.success(t('items.exportSuccess', { format: format === 'excel' ? 'Excel' : 'CSV' }))
     } catch (error) {
       console.error('Export failed:', error)
-      toast.error('היצוא נכשל')
+      toast.error(t('items.exportError'))
     }
   }
 
@@ -255,7 +255,7 @@ export function ItemsPage() {
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
             >
-              הקודם
+              {t('common.previous')}
             </Button>
             <Button
               variant="outline"
@@ -263,7 +263,7 @@ export function ItemsPage() {
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              הבא
+              {t('common.next')}
             </Button>
           </div>
         </div>

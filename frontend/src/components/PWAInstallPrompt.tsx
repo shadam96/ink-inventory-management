@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Download, X, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -13,6 +14,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function PWAInstallPrompt() {
+  const { t } = useTranslation()
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
   const [isInstalled, setIsInstalled] = useState(false)
@@ -93,9 +95,9 @@ export function PWAInstallPrompt() {
             </div>
 
             <div className="flex-1 text-white">
-              <h3 className="font-semibold mb-1">התקן את האפליקציה</h3>
+              <h3 className="font-semibold mb-1">{t('pwa.installTitle')}</h3>
               <p className="text-sm text-white/80 mb-3">
-                קבל גישה מהירה, עבודה אופליין וסריקת ברקוד
+                {t('pwa.installBody')}
               </p>
 
               <div className="flex gap-2">
@@ -106,7 +108,7 @@ export function PWAInstallPrompt() {
                   className="bg-white text-primary hover:bg-white/90"
                 >
                   <Download className="w-4 h-4 me-2" />
-                  התקן עכשיו
+                  {t('pwa.installNow')}
                 </Button>
                 <Button
                   onClick={handleDismiss}
@@ -114,7 +116,7 @@ export function PWAInstallPrompt() {
                   size="sm"
                   className="text-white hover:bg-white/20"
                 >
-                  לא עכשיו
+                  {t('pwa.notNow')}
                 </Button>
               </div>
             </div>

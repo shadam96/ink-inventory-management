@@ -13,8 +13,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuthStore } from '@/store/auth'
 
 const loginSchema = z.object({
-  username: z.string().min(1, 'שם משתמש נדרש'),
-  password: z.string().min(1, 'סיסמה נדרשת'),
+  username: z.string().min(1, 'auth.usernameRequired'),
+  password: z.string().min(1, 'auth.passwordRequired'),
 })
 
 type LoginForm = z.infer<typeof loginSchema>
@@ -92,12 +92,12 @@ export function LoginPage() {
               <Input
                 id="username"
                 {...register('username')}
-                placeholder="שם משתמש"
+                placeholder={t('auth.username')}
                 className="bg-background/50"
                 autoComplete="username"
               />
               {errors.username && (
-                <p className="text-sm text-destructive">{errors.username.message}</p>
+                <p className="text-sm text-destructive">{t(errors.username.message ?? '')}</p>
               )}
             </div>
 
@@ -108,7 +108,7 @@ export function LoginPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   {...register('password')}
-                  placeholder="סיסמה"
+                  placeholder={t('auth.password')}
                   className="bg-background/50 ps-10"
                   autoComplete="current-password"
                 />
@@ -122,7 +122,7 @@ export function LoginPage() {
                 </button>
               </div>
               {errors.password && (
-                <p className="text-sm text-destructive">{errors.password.message}</p>
+                <p className="text-sm text-destructive">{t(errors.password.message ?? '')}</p>
               )}
             </div>
 

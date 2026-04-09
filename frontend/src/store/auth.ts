@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { authApi } from '@/lib/api'
+import i18n from '@/i18n'
 
 export type UserRole = 'admin' | 'manager' | 'warehouse_worker' | 'viewer' | 'customer'
 
@@ -46,7 +47,7 @@ export const useAuthStore = create<AuthState>()(
           await get().fetchUser()
           set({ isAuthenticated: true, isLoading: false })
         } catch (error: any) {
-          const message = error.response?.data?.detail || 'שגיאה בהתחברות'
+          const message = error.response?.data?.detail || i18n.t('auth.error')
           set({ error: message, isLoading: false })
           throw error
         }

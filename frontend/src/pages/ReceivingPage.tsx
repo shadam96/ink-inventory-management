@@ -18,9 +18,9 @@ import { itemsApi, receivingApi, type Item } from '@/lib/api'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 
 const receiveSchema = z.object({
-  item_id: z.string().min(1, 'פריט נדרש'),
-  quantity: z.number().min(1, 'כמות חייבת להיות חיובית'),
-  expiration_date: z.string().min(1, 'תאריך תפוגה נדרש'),
+  item_id: z.string().min(1, 'receiving.itemRequired'),
+  quantity: z.number().min(1, 'receiving.quantityPositive'),
+  expiration_date: z.string().min(1, 'receiving.expirationDateRequired'),
   manufacturing_date: z.string().optional(),
   batch_number: z.string().optional(),
   notes: z.string().optional(),
@@ -131,9 +131,9 @@ export function ReceivingPage() {
 
         if (result.parsed_data) {
           applyParsedData(result.parsed_data)
-          toast.success(`נמצא ומולא: ${result.item.name} (${result.item.sku})`)
+          toast.success(t('receiving.itemFoundFilled', { name: result.item.name, sku: result.item.sku }))
         } else {
-          toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+          toast.success(t('receiving.itemFound', { name: result.item.name, sku: result.item.sku }))
         }
 
         if (navigator.vibrate) navigator.vibrate([100, 50, 100])
@@ -155,18 +155,18 @@ export function ReceivingPage() {
 
         if (result.parsed_data) {
           applyParsedData(result.parsed_data)
-          toast.success(`נמצא ומולא: ${result.item.name} (${result.item.sku})`)
+          toast.success(t('receiving.itemFoundFilled', { name: result.item.name, sku: result.item.sku }))
         } else {
-          toast.success(`נמצא: ${result.item.name} (${result.item.sku})`)
+          toast.success(t('receiving.itemFound', { name: result.item.name, sku: result.item.sku }))
         }
 
         if (navigator.vibrate) navigator.vibrate([100, 50, 100])
       } else {
-        toast.error(`ברקוד "${code}" לא נמצא במערכת`)
+        toast.error(t('receiving.barcodeNotFound', { code }))
       }
     } catch (error) {
       console.error('Failed to validate barcode:', error)
-      toast.error('שגיאה בבדיקת ברקוד')
+      toast.error(t('scanner.barcodeError'))
     }
   }
 
@@ -235,7 +235,7 @@ export function ReceivingPage() {
           'POST',
           payload
         )
-        toast.info('אתה במצב אופליין. הקליטה נשמרה ותסונכרן כשתחזור לרשת.')
+        toast.info(t('receiving.offlineQueued'))
         setReceiveList([])
         return
       }
@@ -246,11 +246,11 @@ export function ReceivingPage() {
         await receivingApi.receiveMultiple(payload as any)
       }
 
-      toast.success('הסחורה נקלטה בהצלחה!')
+      toast.success(t('receiving.success'))
       setReceiveList([])
     } catch (error: any) {
       console.error('Failed to receive items:', error)
-      toast.error(error.response?.data?.detail || 'שגיאה בקליטת סחורה')
+      toast.error(error.response?.data?.detail || t('receiving.error'))
     } finally {
       setSubmitting(false)
     }
@@ -290,7 +290,7 @@ export function ReceivingPage() {
               onClick={() => setShowScanner(true)}
             >
               <Camera className="w-5 h-5 text-primary" />
-              <span>סרוק עם המצלמה</span>
+              <span>{t('receiving.scanWithCamera')}</span>
             </Button>
           </div>
 
@@ -299,13 +299,13 @@ export function ReceivingPage() {
               <span className="w-full border-t" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-card px-2 text-muted-foreground">או הזן ידנית</span>
+              <span className="bg-card px-2 text-muted-foreground">{t('receiving.orEnterManually')}</span>
             </div>
           </div>
 
           <form onSubmit={handleBarcodeSubmit} className="flex gap-2">
             <Input
-              placeholder="הזן ברקוד..."
+              placeholder={t('receiving.enterBarcode')}
               value={barcode}
               onChange={(e) => setBarcode(e.target.value)}
               className="font-mono flex-1"
@@ -322,7 +322,7 @@ export function ReceivingPage() {
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <PackagePlus className="w-5 h-5" />
-            קבלת סחורה
+            {t('receiving.title')}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -336,7 +336,7 @@ export function ReceivingPage() {
                   {...register('item_id')}
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <option value="">בחר פריט...</option>
+                  <option value="">{t('picking.selectItemPlaceholder')}</option>
                   {items.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
@@ -344,12 +344,12 @@ export function ReceivingPage() {
                   ))}
                 </select>
                 {errors.item_id && (
-                  <p className="text-sm text-destructive">{errors.item_id.message}</p>
+                  <p className="text-sm text-destructive">{t(errors.item_id.message ?? '')}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label>מק״ט</Label>
+                <Label>{t('items.sku')}</Label>
                 <Input
                   value={selectedItem?.sku || ''}
                   readOnly
@@ -362,8 +362,8 @@ export function ReceivingPage() {
             {/* Item info banner */}
             {selectedItem && (
               <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 text-sm flex gap-4 text-muted-foreground">
-                <span>ספק: {selectedItem.supplier}</span>
-                <span>יח': {selectedItem.unit_of_measure}</span>
+                <span>{t('items.supplier')}: {selectedItem.supplier}</span>
+                <span>{t('picking.unitShort')}: {selectedItem.unit_of_measure}</span>
               </div>
             )}
 
@@ -381,7 +381,7 @@ export function ReceivingPage() {
                   className={fieldClass('quantity')}
                 />
                 {errors.quantity && (
-                  <p className="text-sm text-destructive">{errors.quantity.message}</p>
+                  <p className="text-sm text-destructive">{t(errors.quantity.message ?? '')}</p>
                 )}
               </div>
 
@@ -394,12 +394,12 @@ export function ReceivingPage() {
                   className={fieldClass('expiration_date')}
                 />
                 {errors.expiration_date && (
-                  <p className="text-sm text-destructive">{errors.expiration_date.message}</p>
+                  <p className="text-sm text-destructive">{t(errors.expiration_date.message ?? '')}</p>
                 )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="manufacturing_date">תאריך ייצור</Label>
+                <Label htmlFor="manufacturing_date">{t('receiving.manufacturingDate')}</Label>
                 <Input
                   id="manufacturing_date"
                   type="date"
@@ -415,7 +415,7 @@ export function ReceivingPage() {
               <Input
                 id="batch_number"
                 {...register('batch_number')}
-                placeholder="יווצר אוטומטית אם לא צוין"
+                placeholder={t('receiving.batchNumberPlaceholder')}
                 className={fieldClass('batch_number')}
               />
             </div>
@@ -426,14 +426,14 @@ export function ReceivingPage() {
               <Textarea
                 id="notes"
                 {...register('notes')}
-                placeholder="הערות..."
+                placeholder={t('common.notesPlaceholder')}
                 rows={2}
               />
             </div>
 
             <Button type="submit" className="w-full">
               <Plus className="w-4 h-4 me-2" />
-              הוסף לרשימה
+              {t('receiving.addToList')}
             </Button>
           </form>
         </CardContent>
@@ -444,7 +444,7 @@ export function ReceivingPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-4">
-              <CardTitle className="text-lg">רשימת קבלה ({receiveList.length} פריטים)</CardTitle>
+              <CardTitle className="text-lg">{t('receiving.listTitle', { count: receiveList.length })}</CardTitle>
               <Button
                 onClick={handleReceiveAll}
                 disabled={submitting}
@@ -453,12 +453,12 @@ export function ReceivingPage() {
                 {submitting ? (
                   <>
                     <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                    מקליט...
+                    {t('receiving.recording')}
                   </>
                 ) : (
                   <>
                     <PackagePlus className="w-4 h-4 me-2" />
-                    קלוט הכל
+                    {t('receiving.receiveAll')}
                   </>
                 )}
               </Button>
@@ -479,10 +479,10 @@ export function ReceivingPage() {
                       <span className="font-medium truncate">{item.item_name}</span>
                     </div>
                     <div className="flex gap-4 flex-wrap text-sm text-muted-foreground">
-                      <span>כמות: {item.quantity}</span>
-                      <span>תפוגה: {item.expiration_date}</span>
-                      {item.manufacturing_date && <span>ייצור: {item.manufacturing_date}</span>}
-                      {item.batch_number && <span>אצווה: {item.batch_number}</span>}
+                      <span>{t('picking.quantityLabel')}: {item.quantity}</span>
+                      <span>{t('picking.expirationLabel')}: {item.expiration_date}</span>
+                      {item.manufacturing_date && <span>{t('receiving.manufacturingShort')}: {item.manufacturing_date}</span>}
+                      {item.batch_number && <span>{t('receiving.batchShort')}: {item.batch_number}</span>}
                     </div>
                     {item.notes && (
                       <p className="text-sm text-muted-foreground mt-1 truncate">{item.notes}</p>

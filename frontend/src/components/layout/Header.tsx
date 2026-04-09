@@ -1,4 +1,5 @@
 import { Moon, Sun } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { NotificationBell } from '@/components/NotificationBell'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui'
@@ -10,6 +11,7 @@ export interface HeaderProps {
 }
 
 export function Header({ title }: HeaderProps) {
+  const { t } = useTranslation()
   const { sidebarOpen, theme, setTheme } = useUIStore()
 
   const toggleTheme = () => {
@@ -31,7 +33,7 @@ export function Header({ title }: HeaderProps) {
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
-            title={theme === 'dark' ? 'מצב בהיר' : 'מצב כהה'}
+            title={theme === 'dark' ? t('common.themeLight') : t('common.themeDark')}
           >
             {theme === 'dark' ? (
               <Sun className="w-5 h-5" />

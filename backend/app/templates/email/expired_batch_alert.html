@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}אצווה פגת תוקף - {{ item_name }}{% endblock %}
+
+{% block header %}⛔ אצווה פגת תוקף{% endblock %}
+
+{% block content %}
+<div class="alert-box critical">
+    <h2 style="margin-top: 0;">אצווה פגה תוקפה וסומנה אוטומטית כגריטה</h2>
+</div>
+
+<p>האצווה הבאה פגה תוקפה והוסרה מהמלאי הזמין:</p>
+
+<div style="margin: 20px 0;">
+    <div class="detail-row">
+        <span class="detail-label">מוצר:</span>
+        <span class="detail-value"><strong>{{ item_name }}</strong></span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">מספר אצווה:</span>
+        <span class="detail-value">{{ batch_number }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">תאריך תפוגה:</span>
+        <span class="detail-value">
+            <span class="badge critical">{{ expiration_date }}</span>
+        </span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">כמות שבוזבזה:</span>
+        <span class="detail-value">{{ quantity_available }}</span>
+    </div>
+</div>
+
+<h3>פעולות מומלצות:</h3>
+<ul>
+    <li>בדוק את רישומי הגריטה במערכת</li>
+    <li>עדכן את נוהלי ה-FEFO כדי למנוע מקרים דומים</li>
+    <li>שקול להוסיף התראות מוקדמות יותר</li>
+</ul>
+
+<a href="http://localhost:5173/batches" class="button">צפה באצוות במערכת</a>
+{% endblock %}

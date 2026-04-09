@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}מלאי מת - {{ item_name }}{% endblock %}
+
+{% block header %}💤 מלאי מת{% endblock %}
+
+{% block content %}
+<div class="alert-box warning">
+    <h2 style="margin-top: 0;">פריט ללא תנועה לתקופה ממושכת</h2>
+</div>
+
+<p>הפריט הבא לא זז מהמחסן במשך זמן רב:</p>
+
+<div style="margin: 20px 0;">
+    <div class="detail-row">
+        <span class="detail-label">מוצר:</span>
+        <span class="detail-value"><strong>{{ item_name }}</strong></span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">מק"ט:</span>
+        <span class="detail-value">{{ sku }}</span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">ימים ללא תנועה:</span>
+        <span class="detail-value">
+            <span class="badge warning">{{ days_inactive }}</span>
+        </span>
+    </div>
+    <div class="detail-row">
+        <span class="detail-label">כמות במלאי:</span>
+        <span class="detail-value">{{ total_quantity }}</span>
+    </div>
+</div>
+
+<h3>פעולות מומלצות:</h3>
+<ul>
+    <li>שקול קמפיין מכירה או הנחה כדי לזרז תנועה</li>
+    <li>בדוק אם יש לקוחות פוטנציאליים שזקוקים לפריט</li>
+    <li>אם הפריט לא נדרש — שקול להעביר אותו לגריטה</li>
+    <li>עדכן את תחזיות ההזמנה העתידיות</li>
+</ul>
+
+<a href="http://localhost:5173/items" class="button">צפה בפריטים במערכת</a>
+{% endblock %}

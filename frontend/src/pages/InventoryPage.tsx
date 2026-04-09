@@ -271,7 +271,7 @@ export function InventoryPage() {
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
             >
-              הקודם
+              {t('common.previous')}
             </Button>
             <Button
               variant="outline"
@@ -279,7 +279,7 @@ export function InventoryPage() {
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              הבא
+              {t('common.next')}
             </Button>
           </div>
         </div>
@@ -289,6 +289,7 @@ export function InventoryPage() {
 }
 
 function ReceiptDateCell({ dates }: { dates: string[] }) {
+  const { t } = useTranslation()
   if (dates.length === 0) return <span className="text-muted-foreground/50">—</span>
 
   const formatted = dates.map(d => formatDate(d))
@@ -310,7 +311,7 @@ function ReceiptDateCell({ dates }: { dates: string[] }) {
         </TooltipTrigger>
         <TooltipContent side="top">
           <div className="space-y-1">
-            <p className="font-medium text-xs mb-1">תאריכי קבלה:</p>
+            <p className="font-medium text-xs mb-1">{t('inventory.receiptDates')}</p>
             {formatted.map((d, i) => (
               <p key={i} className="text-xs">{d}</p>
             ))}
@@ -322,6 +323,7 @@ function ReceiptDateCell({ dates }: { dates: string[] }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation()
   const variantMap: Record<string, 'safe' | 'warning' | 'critical' | 'expired' | 'secondary'> = {
     active: 'safe',
     expired: 'expired',
@@ -329,16 +331,9 @@ function StatusBadge({ status }: { status: string }) {
     depleted: 'secondary',
   }
 
-  const labelMap: Record<string, string> = {
-    active: 'פעיל',
-    expired: 'פג תוקף',
-    scrap: 'גריטה',
-    depleted: 'אזל',
-  }
-
   return (
     <Badge variant={variantMap[status] || 'secondary'}>
-      {labelMap[status] || status}
+      {t(`batches.${status}`, status)}
     </Badge>
   )
 }

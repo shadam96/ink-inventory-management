@@ -117,7 +117,7 @@ export function BatchesPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="חיפוש אצוות..."
+          placeholder={t('batches.searchPlaceholder')}
           className="flex-1 max-w-md"
         />
         
@@ -148,7 +148,7 @@ export function BatchesPage() {
             size="sm"
             onClick={() => setStatusFilter('all')}
           >
-            הכל
+            {t('common.all')}
           </Button>
         </div>
       </div>
@@ -197,7 +197,7 @@ export function BatchesPage() {
                           {formatNumber(batch.quantity_available)}
                         </span>
                         <span className="text-xs text-muted-foreground">
-                          מתוך {formatNumber(batch.quantity_received)}
+                          {t('batches.outOf', { total: formatNumber(batch.quantity_received) })}
                         </span>
                       </div>
                     </TableCell>
@@ -228,7 +228,7 @@ export function BatchesPage() {
             <p className="text-2xl font-bold text-primary">
               {batches.filter(b => b.status.toLowerCase() === 'active').length}
             </p>
-            <p className="text-sm text-muted-foreground">אצוות פעילות</p>
+            <p className="text-sm text-muted-foreground">{t('batches.summaryActive')}</p>
           </CardContent>
         </Card>
         <Card>
@@ -239,7 +239,7 @@ export function BatchesPage() {
                 return b.status.toLowerCase() === 'active' && days < 30
               }).length}
             </p>
-            <p className="text-sm text-muted-foreground">קריטי (30- ימים)</p>
+            <p className="text-sm text-muted-foreground">{t('batches.summaryCritical')}</p>
           </CardContent>
         </Card>
         <Card>
@@ -250,7 +250,7 @@ export function BatchesPage() {
                 return b.status.toLowerCase() === 'active' && days >= 30 && days < 60
               }).length}
             </p>
-            <p className="text-sm text-muted-foreground">אזהרה (30-60 ימים)</p>
+            <p className="text-sm text-muted-foreground">{t('batches.summaryWarning')}</p>
           </CardContent>
         </Card>
         <Card>
@@ -258,7 +258,7 @@ export function BatchesPage() {
             <p className="text-2xl font-bold">
               {batches.reduce((sum, b) => sum + Number(b.quantity_available || 0), 0).toFixed(2)}
             </p>
-            <p className="text-sm text-muted-foreground">סה"כ כמות זמינה</p>
+            <p className="text-sm text-muted-foreground">{t('batches.summaryTotal')}</p>
           </CardContent>
         </Card>
       </div>

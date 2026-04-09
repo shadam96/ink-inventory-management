@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bell, CheckCheck, AlertTriangle, Package, Clock } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { he } from 'date-fns/locale'
+import { getDateFnsLocale } from '@/lib/dateLocale'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -114,7 +114,7 @@ export function AlertsPage() {
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">סה"כ לא נקראו</p>
+                <p className="text-sm text-muted-foreground">{t('alerts.totalUnread')}</p>
                 <p className="text-2xl font-bold">{summary.total_unread}</p>
               </div>
               <Bell className="w-8 h-8 text-muted-foreground" />
@@ -164,14 +164,14 @@ export function AlertsPage() {
             size="sm"
             onClick={() => setFilter('unread')}
           >
-            לא נקראו
+            {t('alerts.unread')}
           </Button>
           <Button
             variant={filter === 'all' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilter('all')}
           >
-            הכל
+            {t('common.all')}
           </Button>
         </div>
         <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
@@ -229,7 +229,7 @@ export function AlertsPage() {
                         <p className="text-xs text-muted-foreground mt-2">
                           {formatDistanceToNow(new Date(alert.created_at), {
                             addSuffix: true,
-                            locale: he,
+                            locale: getDateFnsLocale(),
                           })}
                         </p>
                       </div>
