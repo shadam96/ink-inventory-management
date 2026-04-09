@@ -181,12 +181,24 @@ export const pickingApi = {
 
   dispatch: async (data: DispatchData) => {
     const response = await api.post('/picking/dispatch', data)
-    return response.data
+    return response.data as DispatchResponse
   },
 
   consume: async (data: { batch_id: string; quantity: number; notes?: string }) => {
     const response = await api.post('/picking/consume', data)
     return response.data
+  },
+
+  generateDispatchDocument: async (
+    referenceNumber: string,
+    documentType: 'pick_note' | 'delivery_note',
+    action: 'print' | 'email',
+  ) => {
+    const response = await api.post(
+      `/picking/dispatches/${encodeURIComponent(referenceNumber)}/document`,
+      { document_type: documentType, action },
+    )
+    return response.data as DispatchDocumentResponse
   },
 }
 
@@ -370,6 +382,22 @@ export interface DispatchData {
   customer_id?: string
   reference_number?: string
   notes?: string
+}
+
+export interface DispatchResponse {
+  success: boolean
+  reference_number: string
+  items_dispatched: number
+  total_quantity: number
+  movements: { movement_id: string; batch_id: string; quantity: number; quantity_remaining: number }[]
+}
+
+export interface DispatchDocumentResponse {
+  success: boolean
+  document_type: 'pick_note' | 'delivery_note'
+  action: 'print' | 'email'
+  reference_number: string
+  message: string
 }
 
 export interface DashboardKPIs {

@@ -1,7 +1,8 @@
 """Picking and dispatch endpoints with FEFO support"""
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
@@ -12,6 +13,8 @@ from app.services.fefo_engine import FEFOEngine
 from app.services.inventory_service import InventoryService
 from app.models.movement import MovementType
 from app.models.user import UserRole
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -56,6 +59,23 @@ class DispatchResponse(BaseModel):
     items_dispatched: int
     total_quantity: Decimal
     movements: List[dict]
+
+
+class DispatchDocumentRequest(BaseModel):
+    """Request for generating/sending a document for a dispatch."""
+
+    document_type: Literal["pick_note", "delivery_note"]
+    action: Literal["print", "email"]
+
+
+class DispatchDocumentResponse(BaseModel):
+    """Stub response for dispatch document generation."""
+
+    success: bool
+    document_type: str
+    action: str
+    reference_number: str
+    message: str
 
 
 @router.post("/suggest-batches")
@@ -270,6 +290,46 @@ async def create_dispatch(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
+
+
+@router.post(
+    "/dispatches/{reference_number}/document",
+    response_model=DispatchDocumentResponse,
+)
+async def generate_dispatch_document(
+    reference_number: str,
+    request: DispatchDocumentRequest,
+    db: DbSession,
+    current_user: WarehouseUser,
+) -> DispatchDocumentResponse:
+    """
+    Generate or send a document for a dispatch (pick note or delivery note).
+
+    NOTE: this endpoint is a stub. The actual document templates and
+    rendering will be implemented later — for now we just acknowledge the
+    request so the post-pick UI flow can be wired up end-to-end.
+    """
+    logger.info(
+        "Document request: ref=%s type=%s action=%s user=%s",
+        reference_number,
+        request.document_type,
+        request.action,
+        current_user.id,
+    )
+
+    type_label = "תעודת ליקוט" if request.document_type == "pick_note" else "תעודת משלוח"
+    if request.action == "print":
+        message = f"{type_label} מוכנה להדפסה (פורמט המסמך טרם הוגדר)"
+    else:
+        message = f"{type_label} תישלח במייל (פורמט המסמך טרם הוגדר)"
+
+    return DispatchDocumentResponse(
+        success=True,
+        document_type=request.document_type,
+        action=request.action,
+        reference_number=reference_number,
+        message=message,
+    )
 
 
 @router.post("/consume")

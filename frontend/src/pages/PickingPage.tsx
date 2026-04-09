@@ -22,7 +22,8 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
-import { formatDate, daysUntilExpiration, getExpirationStatus } from '@/lib/utils'
+import { PostPickDialog } from '@/components/PostPickDialog'
+import { formatDate, daysUntilExpiration, getExpirationStatus, cn } from '@/lib/utils'
 import { itemsApi, customersApi, pickingApi, receivingApi, type Item } from '@/lib/api'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { useAuthStore } from '@/store/auth'
@@ -77,6 +78,8 @@ function AdminPickingView() {
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
+  const [selectedBatchId, setSelectedBatchId] = useState<string | null>(null)
+  const [postPickRef, setPostPickRef] = useState<string | null>(null)
 
   const {
     register,
@@ -92,13 +95,26 @@ function AdminPickingView() {
   const selectedItemId = watch('item_id')
   const requestedQuantity = watch('quantity')
 
+  // ----- Validation flow -----
+  // Item is "in stock" only if it has more than its configured min_stock floor.
+  // A requested quantity is valid only if the pick leaves at least min_stock
+  // remaining (i.e. it doesn't dip into the safety stock).
+  const selectedItem = items.find(i => i.id === selectedItemId)
+  const itemAvailable = selectedItem?.total_quantity_available ?? 0
+  const itemMinStock = selectedItem?.min_stock ?? 0
+  const itemInStock = !!selectedItem && itemAvailable > itemMinStock
+  const pickableQuantity = Math.max(0, itemAvailable - itemMinStock)
+  const hasQuantity = typeof requestedQuantity === 'number' && requestedQuantity > 0
+  const quantityInStock = itemInStock && hasQuantity && requestedQuantity <= pickableQuantity
+  const canSelectCustomer = itemInStock && quantityInStock
+
   useEffect(() => {
     fetchItems()
     fetchCustomers()
   }, [])
 
   useEffect(() => {
-    if (selectedItemId) {
+    if (selectedItemId && itemInStock) {
       fetchSuggestions()
     } else {
       setSuggestions([])
@@ -107,12 +123,16 @@ function AdminPickingView() {
       setTotalAvailable(0)
       setCanFulfill(true)
     }
-  }, [selectedItemId, requestedQuantity])
+    setSelectedBatchId(null)
+  }, [selectedItemId, requestedQuantity, itemInStock])
 
   async function fetchItems() {
     try {
       const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items.filter(i => (i.total_quantity_available ?? 0) > 0))
+      // Show all items here — the in-stock check happens after selection
+      // so we can display a clear "not in stock" message for items that
+      // dipped below min_stock.
+      setItems(response.items)
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
@@ -169,15 +189,33 @@ function AdminPickingView() {
       return
     }
 
-    setSubmitting(true)
-    try {
-      const picks = activeSuggestions
+    // If the user manually picked a single batch from the list, use only
+    // that one. Otherwise fall back to the strategy's auto-allocation.
+    let picks: { batch_id: string; quantity: number }[]
+    if (selectedBatchId) {
+      const chosen = activeSuggestions.find(s => s.batch_id === selectedBatchId)
+      if (!chosen) {
+        toast.error('האצווה הנבחרת אינה זמינה')
+        return
+      }
+      const qty = Math.min(data.quantity, chosen.quantity_available)
+      picks = [{ batch_id: chosen.batch_id, quantity: qty }]
+    } else {
+      picks = activeSuggestions
         .filter(s => s.suggested_quantity > 0)
         .map(s => ({
           batch_id: s.batch_id,
           quantity: s.suggested_quantity,
         }))
+    }
 
+    if (picks.length === 0) {
+      toast.error('אין אצוות זמינות לליקוט')
+      return
+    }
+
+    setSubmitting(true)
+    try {
       const payload = {
         items: picks,
         customer_id: data.customer_id,
@@ -190,21 +228,22 @@ function AdminPickingView() {
         toast.info('אתה במצב אופליין. הליקוט נשמר ויסונכרן כשתחזור לרשת.')
         reset()
         setSuggestions([])
+        setSelectedBatchId(null)
         return
       }
 
-      await pickingApi.dispatch(payload)
+      const response = await pickingApi.dispatch(payload)
       toast.success('הליקוט בוצע בהצלחה!')
       reset()
       setSuggestions([])
+      setSelectedBatchId(null)
+      setPostPickRef(response.reference_number)
     } catch (error: any) {
       toast.error(error.response?.data?.detail || 'שגיאה בביצוע ליקוט')
     } finally {
       setSubmitting(false)
     }
   }
-
-  const selectedItem = items.find(i => i.id === selectedItemId)
 
   const activeSuggestions =
     activeStrategy === 'fifo' ? fifoSuggestions :
@@ -257,10 +296,16 @@ function AdminPickingView() {
                 {errors.item_id && (
                   <p className="text-sm text-destructive">{errors.item_id.message}</p>
                 )}
-                {selectedItem && (
+                {selectedItem && !itemInStock && (
+                  <div className="p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-sm text-destructive">
+                    הפריט הנבחר אינו קיים במלאי
+                  </div>
+                )}
+                {selectedItem && itemInStock && (
                   <div className="p-3 rounded-lg bg-muted text-sm space-y-1">
                     <p><strong>ספק:</strong> {selectedItem.supplier}</p>
                     <p><strong>יח':</strong> {selectedItem.unit_of_measure}</p>
+                    <p><strong>זמין לליקוט:</strong> {pickableQuantity}</p>
                   </div>
                 )}
               </div>
@@ -273,11 +318,17 @@ function AdminPickingView() {
                   step="1"
                   min={1}
                   inputMode="numeric"
+                  disabled={!itemInStock}
                   {...register('quantity', { valueAsNumber: true })}
                   placeholder="0"
                 />
                 {errors.quantity && (
                   <p className="text-sm text-destructive">{errors.quantity.message}</p>
+                )}
+                {itemInStock && hasQuantity && !quantityInStock && (
+                  <p className="text-sm text-destructive">
+                    הכמות הנבחרת אינה קיימת במלאי
+                  </p>
                 )}
               </div>
 
@@ -285,8 +336,9 @@ function AdminPickingView() {
                 <Label htmlFor="customer_id">לקוח *</Label>
                 <select
                   id="customer_id"
+                  disabled={!canSelectCustomer}
                   {...register('customer_id')}
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">בחר לקוח...</option>
                   {customers.map((customer) => (
@@ -322,7 +374,12 @@ function AdminPickingView() {
               <Button
                 type="submit"
                 className="w-full touch-manipulation"
-                disabled={!canFulfill || submitting || activeSuggestions.length === 0 || !requestedQuantity}
+                disabled={
+                  !canFulfill ||
+                  submitting ||
+                  activeSuggestions.length === 0 ||
+                  !canSelectCustomer
+                }
               >
                 {submitting ? (
                   <>
@@ -367,10 +424,22 @@ function AdminPickingView() {
               canFulfill={canFulfill}
               strategyLabel={activeStrategy.toUpperCase()}
               hasItem={!!selectedItemId}
+              selectedBatchId={selectedBatchId}
+              onSelectBatch={(id) =>
+                setSelectedBatchId(prev => (prev === id ? null : id))
+              }
             />
           </CardContent>
         </Card>
       </div>
+
+      <PostPickDialog
+        open={postPickRef !== null}
+        onOpenChange={(open) => {
+          if (!open) setPostPickRef(null)
+        }}
+        referenceNumber={postPickRef}
+      />
     </>
   )
 }
@@ -735,6 +804,8 @@ function BatchSuggestionsList({
   canFulfill,
   strategyLabel,
   hasItem,
+  selectedBatchId,
+  onSelectBatch,
 }: {
   loading: boolean
   suggestions: SuggestedBatch[]
@@ -743,6 +814,8 @@ function BatchSuggestionsList({
   canFulfill: boolean
   strategyLabel: string
   hasItem: boolean
+  selectedBatchId: string | null
+  onSelectBatch: (batchId: string) => void
 }) {
   if (loading) {
     return (
@@ -799,18 +872,34 @@ function BatchSuggestionsList({
       )}
 
       <div className="space-y-2">
-        <p className="text-sm font-medium">סדר מומלץ ({strategyLabel}):</p>
+        <p className="text-sm font-medium">
+          סדר מומלץ ({strategyLabel}) — לחץ על אצווה לבחירה ידנית:
+        </p>
         {suggestions.map((batch, index) => {
           const days = daysUntilExpiration(batch.expiration_date)
           const status = getExpirationStatus(days)
+          const isSelected = selectedBatchId === batch.batch_id
           return (
-            <div key={batch.batch_id} className="p-3 rounded-lg border bg-card">
+            <button
+              key={batch.batch_id}
+              type="button"
+              onClick={() => onSelectBatch(batch.batch_id)}
+              className={cn(
+                'w-full text-right p-3 rounded-lg border bg-card transition-colors',
+                'hover:border-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                isSelected && 'border-primary bg-primary/5 ring-2 ring-primary/40',
+              )}
+              aria-pressed={isSelected}
+            >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary">#{index + 1}</Badge>
                   <span className="font-mono text-sm font-medium">
                     {batch.batch_number}
                   </span>
+                  {isSelected && (
+                    <Badge variant="safe">נבחר</Badge>
+                  )}
                 </div>
                 <Badge variant={status}>{days} ימים</Badge>
               </div>
@@ -827,9 +916,14 @@ function BatchSuggestionsList({
                   </span>
                 )}
               </div>
-            </div>
+            </button>
           )
         })}
+        {selectedBatchId && (
+          <p className="text-xs text-muted-foreground">
+            הליקוט יבוצע מאצווה אחת בלבד. לחץ שוב על האצווה לחזרה להקצאה אוטומטית.
+          </p>
+        )}
       </div>
     </div>
   )
