@@ -39,7 +39,9 @@
   },
   "inventory": {
     "title": "מלאי קיים",
-    "search": "חיפוש במלאי..."
+    "search": "חיפוש במלאי...",
+    "totalCost": "סך עלות",
+    "grandTotal": "עלות כוללת"
   },
   "items": {
     "title": "פריטים",
@@ -92,6 +94,19 @@
     "pick": "בצע ליקוט",
     "reference": "מספר אסמכתא",
     "success": "הליקוט בוצע בהצלחה"
+  },
+  "customers": {
+    "machines": {
+      "sectionTitle": "מכונות בבעלות הלקוח",
+      "add": "הוסף מכונה",
+      "empty": "לא הוגדרו מכונות",
+      "itemLabel": "מכונה #{{index}}",
+      "typeLabel": "סוג המכונה *",
+      "typePlaceholder": "לדוגמה: מדפסת דיגיטלית",
+      "typeRequired": "סוג מכונה נדרש",
+      "installationDate": "תאריך התקנה",
+      "countSuffix": "מכונות ({{count}})"
+    }
   },
   "deliveryNotes": {
     "title": "תעודות משלוח",

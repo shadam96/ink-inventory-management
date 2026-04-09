@@ -4,9 +4,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, ManagerUser
-from app.models.customer import Customer
+from app.models.customer import Customer, CustomerMachine
 from app.schemas.customer import CustomerCreate, CustomerResponse, CustomerUpdate
 from app.schemas.common import PaginatedResponse, MessageResponse
 
@@ -24,29 +25,29 @@ async def list_customers(
     is_vmi: Optional[bool] = None,
 ) -> PaginatedResponse[CustomerResponse]:
     """List all customers"""
-    query = select(Customer)
-    
+    query = select(Customer).options(selectinload(Customer.machines))
+
     if search:
         search_filter = f"%{search}%"
         query = query.where(
             (Customer.name.ilike(search_filter)) |
             (Customer.email.ilike(search_filter))
         )
-    
+
     if is_active is not None:
         query = query.where(Customer.is_active == is_active)
-    
+
     if is_vmi is not None:
         query = query.where(Customer.is_vmi_customer == is_vmi)
-    
+
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
     total = (await db.execute(count_query)).scalar() or 0
-    
+
     # Paginate
     query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
-    customers = result.scalars().all()
+    customers = result.scalars().unique().all()
     
     pages = (total + page_size - 1) // page_size if total > 0 else 1
     
@@ -66,11 +67,24 @@ async def create_customer(
     current_user: ManagerUser,
 ) -> CustomerResponse:
     """Create a new customer"""
-    customer = Customer(**customer_data.model_dump())
+    payload = customer_data.model_dump()
+    machines_data = payload.pop("machines", []) or []
+
+    customer = Customer(**payload)
+    for m in machines_data:
+        customer.machines.append(CustomerMachine(**m))
+
     db.add(customer)
     await db.commit()
-    await db.refresh(customer)
-    
+
+    # Refresh with machines loaded
+    result = await db.execute(
+        select(Customer)
+        .where(Customer.id == customer.id)
+        .options(selectinload(Customer.machines))
+    )
+    customer = result.scalar_one()
+
     return CustomerResponse.model_validate(customer)
 
 
@@ -82,16 +96,18 @@ async def get_customer(
 ) -> CustomerResponse:
     """Get customer by ID"""
     result = await db.execute(
-        select(Customer).where(Customer.id == customer_id)
+        select(Customer)
+        .where(Customer.id == customer_id)
+        .options(selectinload(Customer.machines))
     )
     customer = result.scalar_one_or_none()
-    
+
     if customer is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="לקוח לא נמצא",  # Customer not found
         )
-    
+
     return CustomerResponse.model_validate(customer)
 
 
@@ -104,23 +120,39 @@ async def update_customer(
 ) -> CustomerResponse:
     """Update a customer"""
     result = await db.execute(
-        select(Customer).where(Customer.id == customer_id)
+        select(Customer)
+        .where(Customer.id == customer_id)
+        .options(selectinload(Customer.machines))
     )
     customer = result.scalar_one_or_none()
-    
+
     if customer is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="לקוח לא נמצא",
         )
-    
+
     update_data = customer_data.model_dump(exclude_unset=True)
+    machines_data = update_data.pop("machines", None)
+
     for field, value in update_data.items():
         setattr(customer, field, value)
-    
+
+    # Replace the machine list when the client explicitly sent one.
+    if machines_data is not None:
+        customer.machines.clear()
+        for m in machines_data:
+            customer.machines.append(CustomerMachine(**m))
+
     await db.commit()
-    await db.refresh(customer)
-    
+
+    result = await db.execute(
+        select(Customer)
+        .where(Customer.id == customer.id)
+        .options(selectinload(Customer.machines))
+    )
+    customer = result.scalar_one()
+
     return CustomerResponse.model_validate(customer)
 
 

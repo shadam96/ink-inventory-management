@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Users, Plus, Pencil, Trash2, Mail, Phone, MapPin, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Users, Plus, Pencil, Trash2, Mail, Phone, MapPin, ChevronLeft, ChevronRight, Wrench } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -10,6 +10,7 @@ import { Header } from '@/components/layout/Header'
 import { SearchInput } from '@/components/SearchInput'
 import { CustomerDialog } from '@/components/CustomerDialog'
 import { customersApi, type Customer, type CreateCustomerData } from '@/lib/api'
+import { formatDate } from '@/lib/utils'
 
 export function CustomersPage() {
   const { t } = useTranslation()
@@ -184,16 +185,49 @@ export function CustomersPage() {
                         <span className="truncate" dir="ltr">{customer.email}</span>
                       </div>
                     )}
-                    {customer.phone && (
+                    {customer.phone_primary && (
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <Phone className="w-3.5 h-3.5 shrink-0" />
-                        <span dir="ltr">{customer.phone}</span>
+                        <span dir="ltr">{customer.phone_primary}</span>
+                      </div>
+                    )}
+                    {customer.phone_secondary && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="w-3.5 h-3.5 shrink-0 opacity-60" />
+                        <span dir="ltr">{customer.phone_secondary}</span>
                       </div>
                     )}
                     {customer.address && (
                       <div className="flex items-center gap-2 text-muted-foreground">
                         <MapPin className="w-3.5 h-3.5 shrink-0" />
                         <span className="truncate">{customer.address}</span>
+                      </div>
+                    )}
+                    {customer.machines && customer.machines.length > 0 && (
+                      <div className="pt-2 mt-2 border-t border-border/60 space-y-1">
+                        <div className="flex items-center gap-1.5 text-muted-foreground">
+                          <Wrench className="w-3.5 h-3.5 shrink-0" />
+                          <span className="text-xs font-medium">
+                            {t('customers.machines.countSuffix', { count: customer.machines.length })}
+                          </span>
+                        </div>
+                        <ul className="space-y-0.5 ps-5">
+                          {customer.machines.map((machine) => (
+                            <li
+                              key={machine.id}
+                              className="text-xs text-muted-foreground flex items-center gap-2"
+                            >
+                              <span className="font-medium text-foreground/80 truncate">
+                                {machine.machine_type}
+                              </span>
+                              {machine.installation_date && (
+                                <span className="text-muted-foreground/70">
+                                  ({formatDate(machine.installation_date)})
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
                       </div>
                     )}
                     {customer.notes && (
