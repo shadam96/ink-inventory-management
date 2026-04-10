@@ -235,7 +235,7 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                   append({ machine_type: '', installation_date: '' })
                 }
               >
-                <Plus className="w-4 h-4 ml-1" />
+                <Plus className="w-4 h-4 me-1" />
                 {t('customers.machines.add')}
               </Button>
             </div>
