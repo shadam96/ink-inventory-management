@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { SUPPORTED_LANGUAGES, resolveLanguage } from '@/i18n/config'
 import { cn } from '@/lib/utils'
 
 /**
- * A flag-based language picker that opens a small dropdown.
- * Shows the current language's flag; clicking opens a list of
- * all supported languages with flag + native name.
+ * A globe-icon language picker in the header.
+ * Click the globe → dropdown with native name for each language.
+ * Works on all platforms (no emoji flags — Windows doesn't render them).
  */
 export function LanguagePicker() {
   const { i18n } = useTranslation()
@@ -25,10 +26,9 @@ export function LanguagePicker() {
         variant="ghost"
         size="icon"
         onClick={() => setOpen(!open)}
-        className="text-lg"
         aria-label="Change language"
       >
-        {current.flag}
+        <Globe className="w-5 h-5" />
       </Button>
 
       {open && (
@@ -40,7 +40,7 @@ export function LanguagePicker() {
           />
 
           {/* Dropdown */}
-          <div className="absolute end-0 top-10 z-50 min-w-[160px] rounded-lg border bg-popover p-1 shadow-lg">
+          <div className="absolute end-0 top-10 z-50 min-w-[170px] rounded-lg border bg-popover p-1 shadow-lg">
             {SUPPORTED_LANGUAGES.map((lang) => (
               <button
                 key={lang.code}
@@ -51,7 +51,9 @@ export function LanguagePicker() {
                   lang.code === current.code && 'bg-accent font-medium'
                 )}
               >
-                <span className="text-lg leading-none">{lang.flag}</span>
+                <span className="w-6 text-center text-xs font-bold uppercase text-muted-foreground">
+                  {lang.code}
+                </span>
                 <span>{lang.label}</span>
               </button>
             ))}
