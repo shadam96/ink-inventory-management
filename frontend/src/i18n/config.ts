@@ -10,6 +10,8 @@ export interface LanguageDefinition {
   code: LanguageCode
   /** Native-script label shown in the language switcher */
   label: string
+  /** Emoji flag shown in the header language picker */
+  flag: string
   /** Text direction for the document root */
   dir: 'rtl' | 'ltr'
   /** BCP-47 locale tag used for Intl APIs (NumberFormat, DateTimeFormat) */
@@ -17,10 +19,10 @@ export interface LanguageDefinition {
 }
 
 export const SUPPORTED_LANGUAGES: readonly LanguageDefinition[] = [
-  { code: 'he', label: 'עברית', dir: 'rtl', intlLocale: 'he-IL' },
-  { code: 'en', label: 'English', dir: 'ltr', intlLocale: 'en-US' },
-  { code: 'el', label: 'Ελληνικά', dir: 'ltr', intlLocale: 'el-GR' },
-  { code: 'tr', label: 'Türkçe', dir: 'ltr', intlLocale: 'tr-TR' },
+  { code: 'he', label: 'עברית', flag: '🇮🇱', dir: 'rtl', intlLocale: 'he-IL' },
+  { code: 'en', label: 'English', flag: '🇬🇧', dir: 'ltr', intlLocale: 'en-US' },
+  { code: 'el', label: 'Ελληνικά', flag: '🇬🇷', dir: 'ltr', intlLocale: 'el-GR' },
+  { code: 'tr', label: 'Türkçe', flag: '🇹🇷', dir: 'ltr', intlLocale: 'tr-TR' },
 ] as const
 
 export const SUPPORTED_LANGUAGE_CODES: readonly LanguageCode[] =

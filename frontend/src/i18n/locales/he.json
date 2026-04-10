@@ -208,19 +208,6 @@
     "pickNote": "תעודת ליקוט",
     "deliveryNote": "תעודת משלוח"
   },
-  "customers": {
-    "machines": {
-      "sectionTitle": "מכונות בבעלות הלקוח",
-      "add": "הוסף מכונה",
-      "empty": "לא הוגדרו מכונות",
-      "itemLabel": "מכונה #{{index}}",
-      "typeLabel": "סוג המכונה *",
-      "typePlaceholder": "לדוגמה: מדפסת דיגיטלית",
-      "typeRequired": "סוג מכונה נדרש",
-      "installationDate": "תאריך התקנה",
-      "countSuffix": "מכונות ({{count}})"
-    }
-  },
   "deliveryNotes": {
     "title": "תעודות משלוח",
     "create": "צור תעודה",
@@ -240,6 +227,17 @@
     "itemsCount": "{{count}} פריטים"
   },
   "customers": {
+    "machines": {
+      "sectionTitle": "מכונות בבעלות הלקוח",
+      "add": "הוסף מכונה",
+      "empty": "לא הוגדרו מכונות",
+      "itemLabel": "מכונה #{{index}}",
+      "typeLabel": "סוג המכונה *",
+      "typePlaceholder": "לדוגמה: מדפסת דיגיטלית",
+      "typeRequired": "סוג מכונה נדרש",
+      "installationDate": "תאריך התקנה",
+      "countSuffix": "מכונות ({{count}})"
+    },
     "title": "לקוחות",
     "add": "הוסף לקוח",
     "edit": "עריכת לקוח",
@@ -248,6 +246,8 @@
     "contactPerson": "איש קשר",
     "contactPersonPlaceholder": "שם איש קשר",
     "phone": "טלפון",
+    "phonePrimary": "טלפון ראשי",
+    "phoneSecondary": "טלפון משני",
     "email": "אימייל",
     "address": "כתובת",
     "addressPlaceholder": "רחוב, עיר",
@@ -267,9 +267,7 @@
     "searchPlaceholder": "חיפוש לפי שם או אימייל...",
     "noResults": "לא נמצאו לקוחות תואמים",
     "statusActive": "פעיל",
-    "statusInactive": "לא פעיל",
-    "phonePrimary": "טלפון ראשי",
-    "phoneSecondary": "טלפון משני"
+    "statusInactive": "לא פעיל"
   },
   "alerts": {
     "title": "התראות",

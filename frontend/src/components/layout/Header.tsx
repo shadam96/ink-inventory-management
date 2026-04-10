@@ -1,6 +1,7 @@
 import { Moon, Sun } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NotificationBell } from '@/components/NotificationBell'
+import { LanguagePicker } from '@/components/LanguagePicker'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
@@ -28,7 +29,8 @@ export function Header({ title }: HeaderProps) {
       <div className="flex items-center justify-between h-full px-6">
         <h1 className="text-xl font-semibold">{title}</h1>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <LanguagePicker />
           <Button
             variant="ghost"
             size="icon"
