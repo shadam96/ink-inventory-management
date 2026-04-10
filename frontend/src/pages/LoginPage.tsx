@@ -13,8 +13,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAuthStore } from '@/store/auth'
 
 const loginSchema = z.object({
-  username: z.string().min(1, 'שם משתמש נדרש'),
-  password: z.string().min(1, 'סיסמה נדרשת'),
+  username: z.string().min(1, 'auth.usernameRequired'),
+  password: z.string().min(1, 'auth.passwordRequired'),
 })
 
 type LoginForm = z.infer<typeof loginSchema>
@@ -46,8 +46,10 @@ export function LoginPage() {
   }
 
   return (
-    <div dir="rtl" className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted to-background dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 relative overflow-hidden">
-      {/* Animated background elements */}
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-muted to-background dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 relative overflow-hidden">
+      {/* Animated background elements — purely decorative, physical sides
+          are intentional so the visual composition stays balanced regardless
+          of language direction. */}
       <div className="absolute inset-0 overflow-hidden">
         <div className="absolute top-1/4 right-1/4 w-96 h-96 bg-ink-cyan/20 rounded-full blur-3xl animate-pulse" />
         <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-ink-magenta/20 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
@@ -90,12 +92,12 @@ export function LoginPage() {
               <Input
                 id="username"
                 {...register('username')}
-                placeholder="שם משתמש"
+                placeholder={t('auth.username')}
                 className="bg-background/50"
                 autoComplete="username"
               />
               {errors.username && (
-                <p className="text-sm text-destructive">{errors.username.message}</p>
+                <p className="text-sm text-destructive">{t(errors.username.message ?? '')}</p>
               )}
             </div>
 
@@ -106,21 +108,21 @@ export function LoginPage() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   {...register('password')}
-                  placeholder="סיסמה"
-                  className="bg-background/50 pl-10"
+                  placeholder={t('auth.password')}
+                  className="bg-background/50 ps-10"
                   autoComplete="current-password"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(prev => !prev)}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  className="absolute start-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   tabIndex={-1}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {errors.password && (
-                <p className="text-sm text-destructive">{errors.password.message}</p>
+                <p className="text-sm text-destructive">{t(errors.password.message ?? '')}</p>
               )}
             </div>
 
@@ -131,7 +133,7 @@ export function LoginPage() {
             >
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   {t('auth.loggingIn')}
                 </>
               ) : (

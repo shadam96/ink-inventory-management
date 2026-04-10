@@ -32,18 +32,20 @@ import {
 } from '@/components/ui/tooltip'
 import type { Item, CreateItemData } from '@/lib/api'
 
+// Validation messages are stored as i18n key paths and resolved
+// at render time with `t()`, so they reflect the active language.
 const itemSchema = z.object({
-  sku: z.string().min(1, 'מק"ט נדרש'),
+  sku: z.string().min(1, 'items.skuRequired'),
   barcode: z.string().max(50).optional().or(z.literal('')),
-  name: z.string().min(1, 'שם נדרש'),
+  name: z.string().min(1, 'items.nameRequired'),
   description: z.string().optional(),
-  supplier: z.string().min(1, 'ספק נדרש'),
-  unit_of_measure: z.string().min(1, 'יחידת מידה נדרשת'),
-  cost_price: z.number().min(0, 'מחיר חייב להיות חיובי'),
+  supplier: z.string().min(1, 'items.supplierRequired'),
+  unit_of_measure: z.string().min(1, 'items.unitRequired'),
+  cost_price: z.number().min(0, 'items.costPriceInvalid'),
   currency: z.enum(['ILS', 'USD', 'EUR']),
-  reorder_point: z.number().int('נקודת הזמנה חייבת להיות מספר שלם').min(0).optional(),
-  min_stock: z.number().int('מלאי מינימלי חייב להיות מספר שלם').min(0).optional(),
-  max_stock: z.number().int('מלאי מקסימלי חייב להיות מספר שלם').min(0).optional(),
+  reorder_point: z.number().int('items.reorderPointInvalid').min(0).optional(),
+  min_stock: z.number().int('items.minStockInvalid').min(0).optional(),
+  max_stock: z.number().int('items.maxStockInvalid').min(0).optional(),
 })
 
 type ItemFormData = z.infer<typeof itemSchema>
@@ -80,7 +82,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           name: '',
           description: '',
           supplier: '',
-          unit_of_measure: 'ליטר',
+          unit_of_measure: t('items.unitDefault'),
           cost_price: 0,
           currency: defaultCurrency,
           reorder_point: 10,
@@ -103,7 +105,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         name: '',
         description: '',
         supplier: '',
-        unit_of_measure: 'ליטר',
+        unit_of_measure: t('items.unitDefault'),
         cost_price: 0,
         currency: defaultCurrency,
         reorder_point: 10,
@@ -160,12 +162,12 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 disabled={isEdit}
               />
               {errors.sku && (
-                <p className="text-sm text-destructive">{errors.sku.message}</p>
+                <p className="text-sm text-destructive">{t(errors.sku.message ?? '')}</p>
               )}
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="barcode">ברקוד</Label>
+              <Label htmlFor="barcode">{t('items.barcode')}</Label>
               <Input
                 id="barcode"
                 {...register('barcode')}
@@ -180,10 +182,10 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
             <Input
               id="name"
               {...register('name')}
-              placeholder="דיו שחור"
+              placeholder={t('items.namePlaceholder')}
             />
             {errors.name && (
-              <p className="text-sm text-destructive">{errors.name.message}</p>
+              <p className="text-sm text-destructive">{t(errors.name.message ?? '')}</p>
             )}
           </div>
 
@@ -192,7 +194,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
             <Textarea
               id="description"
               {...register('description')}
-              placeholder="תיאור הפריט..."
+              placeholder={t('items.descriptionPlaceholder')}
               rows={2}
             />
           </div>
@@ -203,10 +205,10 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="supplier"
                 {...register('supplier')}
-                placeholder="ספק דיו"
+                placeholder={t('items.supplierPlaceholder')}
               />
               {errors.supplier && (
-                <p className="text-sm text-destructive">{errors.supplier.message}</p>
+                <p className="text-sm text-destructive">{t(errors.supplier.message ?? '')}</p>
               )}
             </div>
 
@@ -215,10 +217,10 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
               <Input
                 id="unit_of_measure"
                 {...register('unit_of_measure')}
-                placeholder="ליטר"
+                placeholder={t('items.unitDefault')}
               />
               {errors.unit_of_measure && (
-                <p className="text-sm text-destructive">{errors.unit_of_measure.message}</p>
+                <p className="text-sm text-destructive">{t(errors.unit_of_measure.message ?? '')}</p>
               )}
             </div>
           </div>
@@ -251,16 +253,16 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="ILS">₪ שקל</SelectItem>
-                        <SelectItem value="USD">$ דולר</SelectItem>
-                        <SelectItem value="EUR">€ אירו</SelectItem>
+                        <SelectItem value="ILS">{t('currency.ils')}</SelectItem>
+                        <SelectItem value="USD">{t('currency.usd')}</SelectItem>
+                        <SelectItem value="EUR">{t('currency.eur')}</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
                 />
               </div>
               {errors.cost_price && (
-                <p className="text-sm text-destructive">{errors.cost_price.message}</p>
+                <p className="text-sm text-destructive">{t(errors.cost_price.message ?? '')}</p>
               )}
             </div>
 
@@ -273,9 +275,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                       <HelpCircle className="h-4 w-4 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-xs">
-                      <p>
-                        נקודת הזמנה היא הכמות המינימלית של הפריט במלאי. כאשר המלאי יורד מתחת לנקודה זו, המערכת תציג התראה כי יש להזמין עוד מהפריט.
-                      </p>
+                      <p>{t('items.reorderPointHelp')}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -332,7 +332,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   {t('common.loading')}
                 </>
               ) : (

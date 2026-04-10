@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
+import { formatDistanceToNow } from 'date-fns'
 import { Bell, X, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -8,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/api'
 import { useAlertNotifications } from '@/hooks/useWebSocket'
+import { getDateFnsLocale } from '@/lib/dateLocale'
 
 interface Alert {
   id: string
@@ -20,6 +23,7 @@ interface Alert {
 }
 
 export function NotificationBell() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [isOpen, setIsOpen] = useState(false)
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -93,15 +97,17 @@ export function NotificationBell() {
     }
   }
 
+  // Locale-aware relative time. Falls back to "just now" for very
+  // recent timestamps where date-fns would otherwise return "less than
+  // a minute ago".
   const getTimeAgo = (timestamp: string) => {
-    const now = new Date()
     const time = new Date(timestamp)
-    const diff = Math.floor((now.getTime() - time.getTime()) / 1000)
-
-    if (diff < 60) return 'כרגע'
-    if (diff < 3600) return `לפני ${Math.floor(diff / 60)} דקות`
-    if (diff < 86400) return `לפני ${Math.floor(diff / 3600)} שעות`
-    return `לפני ${Math.floor(diff / 86400)} ימים`
+    const diffSeconds = (Date.now() - time.getTime()) / 1000
+    if (diffSeconds < 60) return t('notifications.justNow')
+    return formatDistanceToNow(time, {
+      addSuffix: true,
+      locale: getDateFnsLocale(),
+    })
   }
 
   return (
@@ -116,7 +122,7 @@ export function NotificationBell() {
         {unreadCount > 0 && (
           <Badge
             variant="destructive"
-            className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
+            className="absolute -top-1 -end-1 w-5 h-5 p-0 flex items-center justify-center text-xs"
           >
             {unreadCount > 9 ? '9+' : unreadCount}
           </Badge>
@@ -129,9 +135,9 @@ export function NotificationBell() {
             className="fixed inset-0 z-40"
             onClick={() => setIsOpen(false)}
           />
-          <Card className="absolute left-0 top-12 w-96 z-50 shadow-lg">
+          <Card className="absolute end-0 top-12 w-96 z-50 shadow-lg">
             <div className="p-4 flex items-center justify-between border-b">
-              <h3 className="font-semibold">התראות</h3>
+              <h3 className="font-semibold">{t('alerts.title')}</h3>
               <div className="flex items-center gap-2">
                 {unreadCount > 0 && (
                   <Button
@@ -140,8 +146,8 @@ export function NotificationBell() {
                     onClick={markAllAsRead}
                     className="h-8 text-xs"
                   >
-                    <Check className="w-4 h-4 ml-1" />
-                    סמן הכל כנקרא
+                    <Check className="w-4 h-4 me-1" />
+                    {t('alerts.markAllRead')}
                   </Button>
                 )}
                 <Button
@@ -158,12 +164,12 @@ export function NotificationBell() {
             <ScrollArea className="h-96">
               {loading ? (
                 <div className="p-4 text-center text-muted-foreground">
-                  טוען...
+                  {t('common.loading')}
                 </div>
               ) : alerts.length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   <Bell className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                  <p>אין התראות חדשות</p>
+                  <p>{t('alerts.noAlerts')}</p>
                 </div>
               ) : (
                 <div className="divide-y">
@@ -188,10 +194,10 @@ export function NotificationBell() {
                               )}`}
                             >
                               {alert.severity === 'CRITICAL'
-                                ? 'קריטי'
+                                ? t('alerts.critical')
                                 : alert.severity === 'WARNING'
-                                ? 'אזהרה'
-                                : 'מידע'}
+                                ? t('alerts.warning')
+                                : t('alerts.info')}
                             </span>
                             <span className="text-xs text-muted-foreground">
                               {getTimeAgo(alert.created_at)}
@@ -225,7 +231,7 @@ export function NotificationBell() {
                   navigate('/alerts')
                 }}
               >
-                צפה בכל ההתראות
+                {t('notifications.viewAll')}
               </Button>
             </div>
           </Card>

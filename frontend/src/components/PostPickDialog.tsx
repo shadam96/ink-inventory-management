@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Loader2, Printer, Mail, FileText, Truck } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -23,6 +24,7 @@ interface PostPickDialogProps {
 }
 
 export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPickDialogProps) {
+  const { t } = useTranslation()
   const [busy, setBusy] = useState<`${DocumentType}-${DocumentAction}` | null>(null)
 
   const handle = async (documentType: DocumentType, action: DocumentAction) => {
@@ -44,7 +46,7 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
         toast.info(response.message)
       }
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || 'שגיאה בהפקת המסמך')
+      toast.error(error?.response?.data?.detail || t('picking.documentError'))
     } finally {
       setBusy(null)
     }
@@ -54,9 +56,9 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>הליקוט בוצע בהצלחה</DialogTitle>
+          <DialogTitle>{t('picking.successDialogTitle')}</DialogTitle>
           <DialogDescription>
-            מספר אסמכתא:{' '}
+            {t('picking.referenceLabel')}:{' '}
             {referenceNumber && (
               <span className="font-mono font-medium" dir="ltr">
                 {referenceNumber}
@@ -67,7 +69,7 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
 
         <div className="space-y-4">
           <DocumentSection
-            title="תעודת ליקוט"
+            title={t('picking.pickNote')}
             icon={<FileText className="w-4 h-4" />}
             onPrint={() => handle('pick_note', 'print')}
             onEmail={() => handle('pick_note', 'email')}
@@ -77,7 +79,7 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
           />
 
           <DocumentSection
-            title="תעודת משלוח"
+            title={t('picking.deliveryNote')}
             icon={<Truck className="w-4 h-4" />}
             onPrint={() => handle('delivery_note', 'print')}
             onEmail={() => handle('delivery_note', 'email')}
@@ -94,7 +96,7 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
             onClick={() => onOpenChange(false)}
             disabled={busy !== null}
           >
-            סגור
+            {t('common.close')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -119,6 +121,7 @@ function DocumentSection({
   emailBusy: boolean
   disabled: boolean
 }) {
+  const { t } = useTranslation()
   return (
     <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
       <div className="flex items-center gap-2 text-sm font-medium">
@@ -136,8 +139,8 @@ function DocumentSection({
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <>
-              <Printer className="w-4 h-4 ml-2" />
-              הדפסה
+              <Printer className="w-4 h-4 me-2" />
+              {t('common.print')}
             </>
           )}
         </Button>
@@ -151,8 +154,8 @@ function DocumentSection({
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <>
-              <Mail className="w-4 h-4 ml-2" />
-              שליחה במייל
+              <Mail className="w-4 h-4 me-2" />
+              {t('common.sendEmail')}
             </>
           )}
         </Button>

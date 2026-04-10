@@ -83,7 +83,7 @@ export function ItemsPage() {
   }
 
   const handleDelete = async (item: Item) => {
-    if (!confirm(`האם למחוק את "${item.name}"?`)) {
+    if (!confirm(t('items.confirmDelete', { name: item.name }))) {
       return
     }
 
@@ -92,7 +92,7 @@ export function ItemsPage() {
       fetchItems()
     } catch (error) {
       console.error('Failed to delete item:', error)
-      alert('שגיאה במחיקת הפריט')
+      alert(t('items.deleteError'))
     }
   }
 
@@ -105,7 +105,7 @@ export function ItemsPage() {
       }
       fetchItems()
     } catch (error: any) {
-      const message = error.response?.data?.detail || 'שגיאה בשמירת הפריט'
+      const message = error.response?.data?.detail || t('items.saveError')
       alert(message)
       throw error
     }
@@ -134,10 +134,10 @@ export function ItemsPage() {
       document.body.removeChild(a)
       window.URL.revokeObjectURL(url)
       
-      toast.success(`יצוא ${format === 'excel' ? 'Excel' : 'CSV'} הושלם בהצלחה`)
+      toast.success(t('items.exportSuccess', { format: format === 'excel' ? 'Excel' : 'CSV' }))
     } catch (error) {
       console.error('Export failed:', error)
-      toast.error('היצוא נכשל')
+      toast.error(t('items.exportError'))
     }
   }
 
@@ -154,15 +154,15 @@ export function ItemsPage() {
         />
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => handleExport('excel')}>
-            <FileSpreadsheet className="w-4 h-4 ml-2" />
+            <FileSpreadsheet className="w-4 h-4 me-2" />
             Excel
           </Button>
           <Button variant="outline" onClick={() => handleExport('csv')}>
-            <Download className="w-4 h-4 ml-2" />
+            <Download className="w-4 h-4 me-2" />
             CSV
           </Button>
           <Button onClick={handleAdd}>
-            <Plus className="w-4 h-4 ml-2" />
+            <Plus className="w-4 h-4 me-2" />
             {t('items.add')}
           </Button>
         </div>
@@ -177,8 +177,8 @@ export function ItemsPage() {
                 <SortableTableHead sortKey="name" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('items.name')}</SortableTableHead>
                 <SortableTableHead sortKey="supplier" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('items.supplier')}</SortableTableHead>
                 <TableHead>{t('items.unit')}</TableHead>
-                <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">{t('items.costPrice')}</SortableTableHead>
-                <SortableTableHead sortKey="reorder_point" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">{t('items.reorderPoint')}</SortableTableHead>
+                <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">{t('items.costPrice')}</SortableTableHead>
+                <SortableTableHead sortKey="reorder_point" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">{t('items.reorderPoint')}</SortableTableHead>
                 <TableHead className="w-12">{t('items.actions')}</TableHead>
               </TableRow>
             </TableHeader>
@@ -208,10 +208,10 @@ export function ItemsPage() {
                     <TableCell>
                       <Badge variant="secondary">{item.unit_of_measure}</Badge>
                     </TableCell>
-                    <TableCell className="text-left font-mono">
+                    <TableCell className="text-start font-mono">
                       {formatCurrency(item.cost_price, item.currency)}
                     </TableCell>
-                    <TableCell className="text-left">
+                    <TableCell className="text-start">
                       {formatNumber(item.reorder_point)}
                     </TableCell>
                     <TableCell>
@@ -255,7 +255,7 @@ export function ItemsPage() {
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
             >
-              הקודם
+              {t('common.previous')}
             </Button>
             <Button
               variant="outline"
@@ -263,7 +263,7 @@ export function ItemsPage() {
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              הבא
+              {t('common.next')}
             </Button>
           </div>
         </div>

@@ -52,8 +52,10 @@ describe('ItemDialog', () => {
     const submitButton = screen.getByText('common.save')
     await user.click(submitButton)
 
+    // The test mocks react-i18next to return keys verbatim, so the
+    // validation message renders as its translation key path.
     await waitFor(() => {
-      expect(screen.getByText(/מק"ט נדרש/)).toBeInTheDocument()
+      expect(screen.getByText('items.skuRequired')).toBeInTheDocument()
     })
   })
 

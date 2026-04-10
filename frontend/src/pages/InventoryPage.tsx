@@ -135,7 +135,7 @@ export function InventoryPage() {
                   <SortableTableHead sortKey="batch_number" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>
                     {t('batches.batchNumber')}
                   </SortableTableHead>
-                  <SortableTableHead sortKey="quantity_available" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">
+                  <SortableTableHead sortKey="quantity_available" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">
                     {t('batches.quantity')}
                   </SortableTableHead>
                   <TableHead>{t('items.unit')}</TableHead>
@@ -145,7 +145,7 @@ export function InventoryPage() {
                   <SortableTableHead sortKey="receipt_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>
                     {t('batches.receiptDate')}
                   </SortableTableHead>
-                  <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-left">
+                  <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">
                     {t('items.costPrice')}
                   </SortableTableHead>
                   <TableHead className="text-left">{t('inventory.totalCost')}</TableHead>
@@ -185,7 +185,7 @@ export function InventoryPage() {
                         <TableCell className="font-mono text-muted-foreground">
                           {row.batch_number}
                         </TableCell>
-                        <TableCell className="text-left font-mono">
+                        <TableCell className="text-start font-mono">
                           {formatNumber(row.quantity_available, 1)}
                         </TableCell>
                         <TableCell>
@@ -199,7 +199,7 @@ export function InventoryPage() {
                         <TableCell>
                           <ReceiptDateCell dates={row.receipt_dates} />
                         </TableCell>
-                        <TableCell className="text-left font-mono">
+                        <TableCell className="text-start font-mono">
                           {formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR')}
                         </TableCell>
                         <TableCell className="text-left font-mono font-medium">
@@ -271,7 +271,7 @@ export function InventoryPage() {
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
             >
-              הקודם
+              {t('common.previous')}
             </Button>
             <Button
               variant="outline"
@@ -279,7 +279,7 @@ export function InventoryPage() {
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              הבא
+              {t('common.next')}
             </Button>
           </div>
         </div>
@@ -289,6 +289,7 @@ export function InventoryPage() {
 }
 
 function ReceiptDateCell({ dates }: { dates: string[] }) {
+  const { t } = useTranslation()
   if (dates.length === 0) return <span className="text-muted-foreground/50">—</span>
 
   const formatted = dates.map(d => formatDate(d))
@@ -303,14 +304,14 @@ function ReceiptDateCell({ dates }: { dates: string[] }) {
         <TooltipTrigger asChild>
           <span className="underline decoration-dotted cursor-help">
             {formatted[0]}
-            <span className="text-muted-foreground text-xs mr-1">
+            <span className="text-muted-foreground text-xs me-1">
               (+{dates.length - 1})
             </span>
           </span>
         </TooltipTrigger>
         <TooltipContent side="top">
           <div className="space-y-1">
-            <p className="font-medium text-xs mb-1">תאריכי קבלה:</p>
+            <p className="font-medium text-xs mb-1">{t('inventory.receiptDates')}</p>
             {formatted.map((d, i) => (
               <p key={i} className="text-xs">{d}</p>
             ))}
@@ -322,6 +323,7 @@ function ReceiptDateCell({ dates }: { dates: string[] }) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation()
   const variantMap: Record<string, 'safe' | 'warning' | 'critical' | 'expired' | 'secondary'> = {
     active: 'safe',
     expired: 'expired',
@@ -329,16 +331,9 @@ function StatusBadge({ status }: { status: string }) {
     depleted: 'secondary',
   }
 
-  const labelMap: Record<string, string> = {
-    active: 'פעיל',
-    expired: 'פג תוקף',
-    scrap: 'גריטה',
-    depleted: 'אזל',
-  }
-
   return (
     <Badge variant={variantMap[status] || 'secondary'}>
-      {labelMap[status] || status}
+      {t(`batches.${status}`, status)}
     </Badge>
   )
 }

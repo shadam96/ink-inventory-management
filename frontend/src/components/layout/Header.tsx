@@ -1,5 +1,7 @@
 import { Moon, Sun } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { NotificationBell } from '@/components/NotificationBell'
+import { LanguagePicker } from '@/components/LanguagePicker'
 import { Button } from '@/components/ui/button'
 import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
@@ -10,6 +12,7 @@ export interface HeaderProps {
 }
 
 export function Header({ title }: HeaderProps) {
+  const { t } = useTranslation()
   const { sidebarOpen, theme, setTheme } = useUIStore()
 
   const toggleTheme = () => {
@@ -19,19 +22,20 @@ export function Header({ title }: HeaderProps) {
   return (
     <header
       className={cn(
-        'fixed top-0 left-0 z-40 h-16 bg-background/95 backdrop-blur border-b transition-all duration-300',
-        sidebarOpen ? 'right-64' : 'right-16'
+        'fixed top-0 end-0 z-40 h-16 bg-background/95 backdrop-blur border-b transition-all duration-300',
+        sidebarOpen ? 'start-64' : 'start-16'
       )}
     >
       <div className="flex items-center justify-between h-full px-6">
         <h1 className="text-xl font-semibold">{title}</h1>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <LanguagePicker />
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleTheme}
-            title={theme === 'dark' ? 'מצב בהיר' : 'מצב כהה'}
+            title={theme === 'dark' ? t('common.themeLight') : t('common.themeDark')}
           >
             {theme === 'dark' ? (
               <Sun className="w-5 h-5" />

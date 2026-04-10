@@ -1,5 +1,10 @@
 <!doctype html>
-<html lang="he" dir="rtl">
+<!--
+  lang and dir are intentionally omitted here. They are set synchronously
+  by src/i18n/applyDocumentDirection.ts before React mounts, based on the
+  detected/persisted user language.
+-->
+<html>
   <head>
     <meta charset="UTF-8" />
     
@@ -8,7 +13,7 @@
     <meta name="theme-color" content="#0ea5e9" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="מלאי דיו" />
+    <meta name="apple-mobile-web-app-title" content="Lino Print" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="format-detection" content="telephone=no" />
     
@@ -18,8 +23,8 @@
     <link rel="mask-icon" href="/favicon.svg" color="#0ea5e9" />
     
     <!-- SEO -->
-    <title>מערכת ניהול מלאי דיו | Lino Print</title>
-    <meta name="description" content="מערכת ניהול מלאי דיו עם מעקב אצוות ותפוגה, סריקת ברקוד, ותמיכה בעבודה אופליין" />
+    <title>Lino Print — Inventory Management</title>
+    <meta name="description" content="Ink inventory management with batch & expiration tracking, barcode scanning, and offline support" />
     
     <!-- Preconnect for fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />

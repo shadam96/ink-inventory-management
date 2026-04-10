@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bell, CheckCheck, AlertTriangle, Package, Clock } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
-import { he } from 'date-fns/locale'
+import { getDateFnsLocale } from '@/lib/dateLocale'
 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -110,18 +110,18 @@ export function AlertsPage() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-l-4 border-l-muted-foreground">
+        <Card className="border-s-4 border-s-muted-foreground">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">סה"כ לא נקראו</p>
+                <p className="text-sm text-muted-foreground">{t('alerts.totalUnread')}</p>
                 <p className="text-2xl font-bold">{summary.total_unread}</p>
               </div>
               <Bell className="w-8 h-8 text-muted-foreground" />
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-status-critical">
+        <Card className="border-s-4 border-s-status-critical">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -132,7 +132,7 @@ export function AlertsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-status-warning">
+        <Card className="border-s-4 border-s-status-warning">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -143,7 +143,7 @@ export function AlertsPage() {
             </div>
           </CardContent>
         </Card>
-        <Card className="border-l-4 border-l-primary">
+        <Card className="border-s-4 border-s-primary">
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
               <div>
@@ -164,18 +164,18 @@ export function AlertsPage() {
             size="sm"
             onClick={() => setFilter('unread')}
           >
-            לא נקראו
+            {t('alerts.unread')}
           </Button>
           <Button
             variant={filter === 'all' ? 'default' : 'outline'}
             size="sm"
             onClick={() => setFilter('all')}
           >
-            הכל
+            {t('common.all')}
           </Button>
         </div>
         <Button variant="outline" size="sm" onClick={handleMarkAllRead}>
-          <CheckCheck className="w-4 h-4 ml-2" />
+          <CheckCheck className="w-4 h-4 me-2" />
           {t('alerts.markAllRead')}
         </Button>
       </div>
@@ -229,7 +229,7 @@ export function AlertsPage() {
                         <p className="text-xs text-muted-foreground mt-2">
                           {formatDistanceToNow(new Date(alert.created_at), {
                             addSuffix: true,
-                            locale: he,
+                            locale: getDateFnsLocale(),
                           })}
                         </p>
                       </div>

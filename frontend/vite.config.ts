@@ -11,17 +11,15 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.svg'],
       manifest: {
-        name: 'מערכת ניהול מלאי דיו',
-        short_name: 'מלאי דיו',
-        description: 'מערכת ניהול מלאי דיו עם מעקב אצוות ו-FEFO',
+        name: 'Lino Print — Inventory',
+        short_name: 'Lino Print',
+        description: 'Ink inventory management with batch tracking and FEFO',
         theme_color: '#0ea5e9',
         background_color: '#0f172a',
         display: 'standalone',
         orientation: 'portrait-primary',
         scope: '/',
         start_url: '/',
-        dir: 'rtl',
-        lang: 'he',
         icons: [
           {
             src: 'favicon.svg',
@@ -43,14 +41,14 @@ export default defineConfig({
         categories: ['business', 'productivity'],
         shortcuts: [
           {
-            name: 'קבלת סחורה',
-            short_name: 'קבלה',
+            name: 'Receiving',
+            short_name: 'Receive',
             url: '/receiving',
             icons: [{ src: 'favicon.svg', sizes: '192x192' }],
           },
           {
-            name: 'ליקוט',
-            short_name: 'ליקוט',
+            name: 'Picking',
+            short_name: 'Pick',
             url: '/picking',
             icons: [{ src: 'favicon.svg', sizes: '192x192' }],
           },

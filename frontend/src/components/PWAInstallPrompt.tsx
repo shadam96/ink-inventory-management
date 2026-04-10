@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Download, X, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -13,6 +14,7 @@ interface BeforeInstallPromptEvent extends Event {
 }
 
 export function PWAInstallPrompt() {
+  const { t } = useTranslation()
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [showPrompt, setShowPrompt] = useState(false)
   const [isInstalled, setIsInstalled] = useState(false)
@@ -84,7 +86,7 @@ export function PWAInstallPrompt() {
   }
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 z-50 md:left-auto md:right-4 md:w-96 animate-in slide-in-from-bottom duration-300">
+    <div className="fixed bottom-4 inset-x-4 z-50 md:inset-x-auto md:end-4 md:w-96 animate-in slide-in-from-bottom duration-300">
       <Card className="bg-gradient-to-r from-primary/90 to-primary border-0 shadow-xl">
         <CardContent className="p-4">
           <div className="flex items-start gap-3">
@@ -93,9 +95,9 @@ export function PWAInstallPrompt() {
             </div>
 
             <div className="flex-1 text-white">
-              <h3 className="font-semibold mb-1">התקן את האפליקציה</h3>
+              <h3 className="font-semibold mb-1">{t('pwa.installTitle')}</h3>
               <p className="text-sm text-white/80 mb-3">
-                קבל גישה מהירה, עבודה אופליין וסריקת ברקוד
+                {t('pwa.installBody')}
               </p>
 
               <div className="flex gap-2">
@@ -105,8 +107,8 @@ export function PWAInstallPrompt() {
                   size="sm"
                   className="bg-white text-primary hover:bg-white/90"
                 >
-                  <Download className="w-4 h-4 ml-2" />
-                  התקן עכשיו
+                  <Download className="w-4 h-4 me-2" />
+                  {t('pwa.installNow')}
                 </Button>
                 <Button
                   onClick={handleDismiss}
@@ -114,7 +116,7 @@ export function PWAInstallPrompt() {
                   size="sm"
                   className="text-white hover:bg-white/20"
                 >
-                  לא עכשיו
+                  {t('pwa.notNow')}
                 </Button>
               </div>
             </div>

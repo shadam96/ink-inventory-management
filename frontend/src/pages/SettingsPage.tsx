@@ -65,11 +65,11 @@ export function SettingsPage() {
   const addEmail = () => {
     const trimmed = newEmail.trim()
     if (!trimmed || !isValidEmail(trimmed)) {
-      toast.error('אנא הזן כתובת אימייל תקינה')
+      toast.error(t('settings.emailInvalid'))
       return
     }
     if (notificationEmails.includes(trimmed)) {
-      toast.error('כתובת זו כבר קיימת')
+      toast.error(t('settings.emailDuplicate'))
       return
     }
     setNotificationEmails(prev => [...prev, trimmed])
@@ -83,15 +83,15 @@ export function SettingsPage() {
   const sendTestEmail = async () => {
     const recipient = testEmail.trim()
     if (!recipient || !isValidEmail(recipient)) {
-      toast.error('אנא הזן כתובת אימייל תקינה')
+      toast.error(t('settings.emailInvalid'))
       return
     }
     setSendingTest(true)
     try {
       await api.post('/settings/email/test', { email: recipient })
-      toast.success(`מייל בדיקה נשלח אל ${recipient}`)
+      toast.success(t('settings.testEmailSent', { recipient }))
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שליחת מייל הבדיקה נכשלה')
+      toast.error(error.response?.data?.detail || t('settings.testEmailFailed'))
     } finally {
       setSendingTest(false)
     }
@@ -104,9 +104,9 @@ export function SettingsPage() {
         email_notifications_enabled: notificationEmails.length > 0,
         notification_emails: notificationEmails,
       })
-      toast.success('כתובות האימייל נשמרו')
+      toast.success(t('settings.notificationEmailsSaved'))
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'שמירת האימייל נכשלה')
+      toast.error(error.response?.data?.detail || t('settings.notificationEmailsSaveFailed'))
     } finally {
       setSavingEmail(false)
     }
@@ -146,7 +146,7 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle>{t('settings.general')}</CardTitle>
           <CardDescription>
-            התאמה אישית של שם האפליקציה והסמל
+            {t('settings.generalDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -171,7 +171,7 @@ export function SettingsPage() {
                   return (
                     <div
                       key={iconKey}
-                      className={`flex items-center space-x-3 space-x-reverse border rounded-lg p-4 cursor-pointer transition-all ${
+                      className={`flex items-center gap-3 border rounded-lg p-4 cursor-pointer transition-all ${
                         localAppIcon === iconKey
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50'
@@ -201,7 +201,7 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle>{t('settings.appearance')}</CardTitle>
           <CardDescription>
-            התאמה אישית של נושא המערכת והמטבע המוצג
+            {t('settings.appearanceDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -210,19 +210,19 @@ export function SettingsPage() {
             <Label>{t('settings.theme')}</Label>
             <RadioGroup value={localTheme} onValueChange={(value: any) => setLocalTheme(value)}>
               <div className="space-y-2">
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="light" id="light" />
                   <Label htmlFor="light" className="cursor-pointer">
                     {t('settings.themeLight')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="dark" id="dark" />
                   <Label htmlFor="dark" className="cursor-pointer">
                     {t('settings.themeDark')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="system" id="system" />
                   <Label htmlFor="system" className="cursor-pointer">
                     {t('settings.themeSystem')}
@@ -237,19 +237,19 @@ export function SettingsPage() {
             <Label>{t('settings.currency')}</Label>
             <RadioGroup value={localCurrency} onValueChange={(value: any) => setLocalCurrency(value)}>
               <div className="space-y-2">
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="ILS" id="ILS" />
                   <Label htmlFor="ILS" className="cursor-pointer">
                     {t('settings.currencyILS')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="USD" id="USD" />
                   <Label htmlFor="USD" className="cursor-pointer">
                     {t('settings.currencyUSD')}
                   </Label>
                 </div>
-                <div className="flex items-center space-x-3 space-x-reverse">
+                <div className="flex items-center gap-3">
                   <RadioGroupItem value="EUR" id="EUR" />
                   <Label htmlFor="EUR" className="cursor-pointer">
                     {t('settings.currencyEUR')}
@@ -266,15 +266,15 @@ export function SettingsPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Mail className="w-5 h-5" />
-            התראות דוא"ל
+            {t('settings.emailNotifications')}
           </CardTitle>
           <CardDescription>
-            הזן כתובת אימייל כדי לקבל התראות על תפוגת מלאי, מלאי נמוך ועוד
+            {t('settings.emailNotificationsDescription')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           {loadingEmail ? (
-            <div className="text-center py-4">טוען...</div>
+            <div className="text-center py-4">{t('common.loading')}</div>
           ) : (
             <div className="space-y-3">
               {/* Existing emails */}
@@ -318,14 +318,14 @@ export function SettingsPage() {
                 disabled={savingEmail}
                 className="w-full"
               >
-                {savingEmail ? 'שומר...' : 'שמור התראות'}
+                {savingEmail ? t('common.saving') : t('settings.saveNotifications')}
               </Button>
 
               {/* Test email */}
               <div className="pt-4 mt-2 border-t space-y-2">
-                <Label className="text-sm">שליחת מייל בדיקה</Label>
+                <Label className="text-sm">{t('settings.testEmailTitle')}</Label>
                 <p className="text-xs text-muted-foreground">
-                  שלח מייל בדיקה כדי לוודא שהחיבור ל-Resend פעיל
+                  {t('settings.testEmailHelp')}
                 </p>
                 <div className="flex gap-2">
                   <Input
@@ -341,8 +341,8 @@ export function SettingsPage() {
                     onClick={sendTestEmail}
                     disabled={sendingTest || !testEmail.trim()}
                   >
-                    <Send className="w-4 h-4 ml-2" />
-                    {sendingTest ? 'שולח...' : 'שלח בדיקה'}
+                    <Send className="w-4 h-4 me-2" />
+                    {sendingTest ? t('common.sending') : t('settings.sendTestEmail')}
                   </Button>
                 </div>
               </div>

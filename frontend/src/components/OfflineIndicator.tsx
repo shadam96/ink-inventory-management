@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import { WifiOff, Wifi, CloudOff, RefreshCw, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -10,6 +11,7 @@ interface OfflineIndicatorProps {
 }
 
 export function OfflineIndicator({ className }: OfflineIndicatorProps) {
+  const { t } = useTranslation()
   const [online, setOnline] = useState(isOnline())
   const [pendingCount, setPendingCount] = useState(0)
   const [syncing, setSyncing] = useState(false)
@@ -83,7 +85,7 @@ export function OfflineIndicator({ className }: OfflineIndicatorProps) {
   return (
     <div
       className={cn(
-        'fixed bottom-4 left-4 z-40 flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg transition-all duration-300',
+        'fixed bottom-4 start-4 z-40 flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg transition-all duration-300',
         online
           ? pendingCount > 0
             ? 'bg-amber-500 text-white'
@@ -95,10 +97,10 @@ export function OfflineIndicator({ className }: OfflineIndicatorProps) {
       {!online ? (
         <>
           <WifiOff className="w-4 h-4" />
-          <span className="text-sm font-medium">אופליין</span>
+          <span className="text-sm font-medium">{t('offline.offline')}</span>
           {pendingCount > 0 && (
             <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">
-              {pendingCount} בהמתנה
+              {t('offline.pending', { count: pendingCount })}
             </span>
           )}
         </>
@@ -106,13 +108,13 @@ export function OfflineIndicator({ className }: OfflineIndicatorProps) {
         <>
           <Check className="w-4 h-4" />
           <span className="text-sm font-medium">
-            סונכרנו {syncResult.success} פעולות
+            {t('offline.synced', { count: syncResult.success })}
           </span>
         </>
       ) : pendingCount > 0 ? (
         <>
           <CloudOff className="w-4 h-4" />
-          <span className="text-sm font-medium">{pendingCount} פעולות בהמתנה</span>
+          <span className="text-sm font-medium">{t('offline.pendingOperations', { count: pendingCount })}</span>
           <Button
             variant="ghost"
             size="sm"
@@ -126,7 +128,7 @@ export function OfflineIndicator({ className }: OfflineIndicatorProps) {
       ) : (
         <>
           <Wifi className="w-4 h-4" />
-          <span className="text-sm font-medium">מחובר</span>
+          <span className="text-sm font-medium">{t('offline.online')}</span>
         </>
       )}
     </div>

@@ -18,11 +18,11 @@ import {
   Bell,
   Settings,
   LogOut,
-  ChevronRight,
   Droplets,
   Boxes,
   Warehouse,
 } from 'lucide-react'
+import { ChevronStart, ChevronEnd } from '@/components/ui/DirectionalIcon'
 
 const allNavItems = [
   { path: '/', icon: LayoutDashboard, label: 'nav.dashboard', staffOnly: true },
@@ -57,7 +57,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed top-0 right-0 z-40 h-screen bg-card border-l transition-all duration-300',
+        'fixed top-0 start-0 z-40 h-screen bg-card border-e transition-all duration-300',
         sidebarOpen ? 'w-64' : 'w-16'
       )}
     >
@@ -78,12 +78,14 @@ export function Sidebar() {
             onClick={toggleSidebar}
             className="shrink-0"
           >
-            <ChevronRight
-              className={cn(
-                'w-4 h-4 transition-transform',
-                sidebarOpen && 'rotate-180'
-              )}
-            />
+            {/* When the sidebar is open, the chevron points toward the
+                start side (collapse direction). When collapsed, it points
+                toward the end side (expand direction). */}
+            {sidebarOpen ? (
+              <ChevronStart className="w-4 h-4 transition-transform" />
+            ) : (
+              <ChevronEnd className="w-4 h-4 transition-transform" />
+            )}
           </Button>
         </div>
 

@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   LayoutDashboard,
   Package,
@@ -13,19 +14,22 @@ import {
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth'
 
+// Labels are i18n keys; resolved with `t()` at render time so the
+// nav re-translates when the user switches language.
 const allNavItems = [
-  { to: '/', icon: LayoutDashboard, label: 'דשבורד', staffOnly: true },
-  { to: '/receiving', icon: PackagePlus, label: 'קבלה', staffOnly: true },
-  { to: '/picking', icon: PackageMinus, label: 'ליקוט', staffOnly: false },
-  { to: '/delivery-notes', icon: FileText, label: 'תעודות', staffOnly: true },
-  { to: '/items', icon: Package, label: 'פריטים', staffOnly: true },
-  { to: '/batches', icon: Layers, label: 'אצוות', staffOnly: true },
-  { to: '/customers', icon: Users, label: 'לקוחות', staffOnly: true },
-  { to: '/alerts', icon: Bell, label: 'התראות', staffOnly: true },
-  { to: '/settings', icon: Settings, label: 'הגדרות', staffOnly: false },
+  { to: '/', icon: LayoutDashboard, labelKey: 'nav.dashboard', staffOnly: true },
+  { to: '/receiving', icon: PackagePlus, labelKey: 'nav.receiving', staffOnly: true },
+  { to: '/picking', icon: PackageMinus, labelKey: 'nav.picking', staffOnly: false },
+  { to: '/delivery-notes', icon: FileText, labelKey: 'nav.deliveryNotesShort', staffOnly: true },
+  { to: '/items', icon: Package, labelKey: 'nav.items', staffOnly: true },
+  { to: '/batches', icon: Layers, labelKey: 'nav.batches', staffOnly: true },
+  { to: '/customers', icon: Users, labelKey: 'nav.customers', staffOnly: true },
+  { to: '/alerts', icon: Bell, labelKey: 'nav.alerts', staffOnly: true },
+  { to: '/settings', icon: Settings, labelKey: 'nav.settings', staffOnly: false },
 ]
 
 export function MobileNav() {
+  const { t } = useTranslation()
   const { user } = useAuthStore()
   const isCustomer = user?.role === 'customer'
   const navItems = isCustomer
@@ -33,7 +37,7 @@ export function MobileNav() {
     : allNavItems
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-t md:hidden safe-area-inset-bottom">
+    <nav className="fixed bottom-0 inset-x-0 z-50 bg-background/95 backdrop-blur-sm border-t md:hidden safe-area-inset-bottom">
       <div
         className="flex overflow-x-auto scrollbar-hide snap-x snap-mandatory"
         style={{ WebkitOverflowScrolling: 'touch' }}
@@ -53,7 +57,7 @@ export function MobileNav() {
             }
           >
             <item.icon className="w-5 h-5" />
-            <span className="text-[10px] font-medium leading-tight">{item.label}</span>
+            <span className="text-[10px] font-medium leading-tight">{t(item.labelKey)}</span>
           </NavLink>
         ))}
       </div>

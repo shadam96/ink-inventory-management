@@ -26,8 +26,8 @@ const machineSchema = z.object({
 })
 
 const customerSchema = z.object({
-  name: z.string().min(1, 'שם לקוח נדרש'),
-  email: z.string().email('כתובת אימייל לא תקינה').or(z.literal('')).optional(),
+  name: z.string().min(1, 'customers.nameRequired'),
+  email: z.string().email('customers.emailInvalid').or(z.literal('')).optional(),
   phone_primary: z.string().max(50).optional().or(z.literal('')),
   phone_secondary: z.string().max(50).optional().or(z.literal('')),
   address: z.string().optional().or(z.literal('')),
@@ -129,86 +129,83 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {isEdit ? 'עריכת לקוח' : 'הוספת לקוח'}
+            {isEdit ? t('customers.edit') : t('customers.add')}
           </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">שם לקוח *</Label>
+            <Label htmlFor="name">{t('customers.name')} *</Label>
             <Input
               id="name"
               {...register('name')}
-              placeholder="שם החברה או הלקוח"
+              placeholder={t('customers.namePlaceholder')}
             />
             {errors.name && (
-              <p className="text-sm text-destructive">{errors.name.message}</p>
+              <p className="text-sm text-destructive">{t(errors.name.message ?? '')}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="contact_person">איש קשר</Label>
+            <Label htmlFor="contact_person">{t('customers.contactPerson')}</Label>
             <Input
               id="contact_person"
               {...register('contact_person')}
-              placeholder="שם איש קשר"
+              placeholder={t('customers.contactPersonPlaceholder')}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="phone_primary">טלפון ראשי</Label>
+              <Label htmlFor="phone_primary">{t('customers.phonePrimary')}</Label>
               <Input
                 id="phone_primary"
                 {...register('phone_primary')}
                 placeholder="050-0000000"
                 dir="ltr"
-                className="text-right"
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="phone_secondary">טלפון משני</Label>
+              <Label htmlFor="phone_secondary">{t('customers.phoneSecondary')}</Label>
               <Input
                 id="phone_secondary"
                 {...register('phone_secondary')}
                 placeholder="050-0000000"
                 dir="ltr"
-                className="text-right"
               />
             </div>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="email">אימייל</Label>
+            <Label htmlFor="email">{t('customers.email')}</Label>
             <Input
               id="email"
               type="email"
               {...register('email')}
               placeholder="email@example.com"
               dir="ltr"
-              className="text-right"
             />
             {errors.email && (
-              <p className="text-sm text-destructive">{errors.email.message}</p>
+              <p className="text-sm text-destructive">{t(errors.email.message ?? '')}</p>
             )}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="address">כתובת</Label>
+            <Label htmlFor="address">{t('customers.address')}</Label>
             <Input
               id="address"
               {...register('address')}
-              placeholder="רחוב, עיר"
+              placeholder={t('customers.addressPlaceholder')}
             />
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="notes">הערות</Label>
+            <Label htmlFor="notes">{t('customers.notes')}</Label>
             <Textarea
               id="notes"
               {...register('notes')}
-              placeholder="הערות נוספות..."
+              placeholder={t('customers.notesPlaceholder')}
               rows={2}
             />
           </div>
@@ -221,7 +218,7 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
               className="h-4 w-4 rounded border-input accent-primary"
             />
             <Label htmlFor="is_vmi_customer" className="cursor-pointer">
-              לקוח VMI (ניהול מלאי אצל לקוח)
+              {t('customers.vmiLabel')}
             </Label>
           </div>
 
@@ -238,7 +235,7 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                   append({ machine_type: '', installation_date: '' })
                 }
               >
-                <Plus className="w-4 h-4 ml-1" />
+                <Plus className="w-4 h-4 me-1" />
                 {t('customers.machines.add')}
               </Button>
             </div>
@@ -321,7 +318,7 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
             <Button type="submit" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 ml-2 animate-spin" />
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
                   {t('common.loading')}
                 </>
               ) : (

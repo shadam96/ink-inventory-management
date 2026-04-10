@@ -81,7 +81,7 @@ export function DeliveryNotesPage() {
       window.URL.revokeObjectURL(url)
     } catch (error) {
       console.error('Failed to download PDF:', error)
-      alert('שגיאה בהורדת PDF')
+      alert(t('deliveryNotes.pdfDownloadError'))
     }
   }
 
@@ -110,11 +110,11 @@ export function DeliveryNotesPage() {
         <div className="flex items-center gap-2">
           <FileText className="w-5 h-5 text-muted-foreground" />
           <span className="text-muted-foreground">
-            {total} תעודות משלוח
+            {t('deliveryNotes.countLabel', { count: total })}
           </span>
         </div>
         <Button>
-          <Plus className="w-4 h-4 ml-2" />
+          <Plus className="w-4 h-4 me-2" />
           {t('deliveryNotes.create')}
         </Button>
       </div>
@@ -128,9 +128,9 @@ export function DeliveryNotesPage() {
                 <TableHead>{t('deliveryNotes.customer')}</TableHead>
                 <SortableTableHead sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('deliveryNotes.status')}</SortableTableHead>
                 <SortableTableHead sortKey="issue_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>{t('deliveryNotes.issueDate')}</SortableTableHead>
-                <TableHead className="text-left">{t('deliveryNotes.items')}</TableHead>
-                <TableHead className="text-left">סה"כ כמות</TableHead>
-                <TableHead className="w-12">פעולות</TableHead>
+                <TableHead className="text-start">{t('deliveryNotes.items')}</TableHead>
+                <TableHead className="text-start">{t('deliveryNotes.totalQuantity')}</TableHead>
+                <TableHead className="w-12">{t('common.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -158,10 +158,10 @@ export function DeliveryNotesPage() {
                     <TableCell>
                       {note.issue_date ? formatDate(note.issue_date) : '-'}
                     </TableCell>
-                    <TableCell className="text-left">
-                      {note.items_count} פריטים
+                    <TableCell className="text-start">
+                      {t('deliveryNotes.itemsCount', { count: note.items_count })}
                     </TableCell>
-                    <TableCell className="text-left">
+                    <TableCell className="text-start">
                       {note.total_quantity.toFixed(2)}
                     </TableCell>
                     <TableCell>
@@ -170,7 +170,7 @@ export function DeliveryNotesPage() {
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8"
-                          title="צפה"
+                          title={t('common.view')}
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
@@ -206,7 +206,7 @@ export function DeliveryNotesPage() {
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
             >
-              הקודם
+              {t('common.previous')}
             </Button>
             <Button
               variant="outline"
@@ -214,7 +214,7 @@ export function DeliveryNotesPage() {
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
             >
-              הבא
+              {t('common.next')}
             </Button>
           </div>
         </div>
