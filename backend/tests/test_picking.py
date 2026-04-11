@@ -64,9 +64,11 @@ async def test_suggest_batches(
     auth_headers: dict,
     item_with_stock: tuple[Item, list[Batch]],
 ):
-    """Test batch suggestion endpoint"""
+    """The suggest-batches endpoint returns every available batch in FEFO
+    order — batches needed for the pick carry suggested_quantity > 0, the
+    rest carry 0 so the UI can still show them."""
     item, batches = item_with_stock
-    
+
     response = await client.post(
         "/api/v1/picking/suggest-batches",
         headers=auth_headers,
@@ -75,12 +77,18 @@ async def test_suggest_batches(
             "quantity_needed": "50",
         },
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert data["can_fulfill"] is True
-    assert len(data["suggestions"]) == 1
-    assert data["suggestions"][0]["batch_number"] == "PICK-001"  # Earliest expiring
+    # Both batches are returned, not just the ones needed for the pick.
+    assert len(data["suggestions"]) == 2
+    # FEFO ordering: PICK-001 expires first (60 days) so it comes first.
+    assert data["suggestions"][0]["batch_number"] == "PICK-001"
+    assert data["suggestions"][0]["suggested_quantity"] == 50
+    # PICK-002 is returned as a fallback option with suggested_quantity = 0.
+    assert data["suggestions"][1]["batch_number"] == "PICK-002"
+    assert data["suggestions"][1]["suggested_quantity"] == 0
 
 
 @pytest.mark.asyncio
@@ -89,9 +97,11 @@ async def test_suggest_batches_insufficient_stock(
     auth_headers: dict,
     item_with_stock: tuple[Item, list[Batch]],
 ):
-    """Test batch suggestion with insufficient stock"""
+    """When the request exceeds total available stock the endpoint still
+    returns 200 with can_fulfill=False — the UI surfaces what *does* exist
+    rather than a hard 400 that leaves the operator with nothing."""
     item, batches = item_with_stock
-    
+
     response = await client.post(
         "/api/v1/picking/suggest-batches",
         headers=auth_headers,
@@ -100,8 +110,17 @@ async def test_suggest_batches_insufficient_stock(
             "quantity_needed": "500",  # More than available (250)
         },
     )
-    
-    assert response.status_code == 400
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["can_fulfill"] is False
+    assert data["total_available"] == 250
+    # Both batches come back, each with their full quantity as the
+    # suggested pick — the engine fills what it can even when it can't
+    # fully fulfill the request.
+    assert len(data["suggestions"]) == 2
+    total_suggested = sum(s["suggested_quantity"] for s in data["suggestions"])
+    assert total_suggested == 250
 
 
 @pytest.mark.asyncio
