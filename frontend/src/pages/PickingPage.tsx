@@ -128,10 +128,10 @@ function AdminPickingView() {
   async function fetchItems() {
     try {
       const response = await itemsApi.list({ page_size: 100 })
-      // Show all items here — the in-stock check happens after selection
-      // so we can display a clear "not in stock" message for items that
-      // dipped below min_stock.
-      setItems(response.items)
+      // Only list items with pickable stock. The backend already excludes
+      // expired batches from total_quantity_available, so this filter is
+      // enough to hide items no operator can actually dispatch.
+      setItems(response.items.filter(i => (i.total_quantity_available ?? 0) > 0))
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
@@ -431,9 +431,26 @@ function AdminPickingView() {
               strategyLabel={activeStrategy.toUpperCase()}
               hasItem={!!selectedItemId}
               selectedBatchId={selectedBatchId}
-              onSelectBatch={(id) =>
-                setSelectedBatchId(prev => (prev === id ? null : id))
-              }
+              onSelectBatch={(id) => {
+                const isToggleOff = selectedBatchId === id
+                setSelectedBatchId(isToggleOff ? null : id)
+                // Auto-fill the quantity field when the operator clicks a
+                // batch without having entered one yet. "Grab this batch,
+                // whatever's in it" is a common warehouse flow, and leaving
+                // the pick button dead after a click was confusing.
+                if (!isToggleOff && !hasQuantity) {
+                  const batch = activeSuggestions.find(s => s.batch_id === id)
+                  if (batch) {
+                    const fill = Math.min(
+                      Math.floor(batch.quantity_available),
+                      pickableQuantity,
+                    )
+                    if (fill > 0) {
+                      setValue('quantity', fill, { shouldValidate: true })
+                    }
+                  }
+                }
+              }}
             />
           </CardContent>
         </Card>

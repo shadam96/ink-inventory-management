@@ -176,7 +176,7 @@
     "noBatchesForItem": "Δεν υπάρχουν διαθέσιμες παρτίδες για αυτό το είδος",
     "canFulfill": "Μπορεί να εκτελεστεί",
     "insufficientStock": "Ανεπαρκές απόθεμα",
-    "availableRequested": "Διαθέσιμα: {{available}} / Ζητούμενα: {{requested}}",
+    "availableRequested": "Συνολική διαθεσιμότητα: {{available}} / Ζητούμενα: {{requested}}",
     "recommendedOrder": "Προτεινόμενη σειρά ({{strategy}}):",
     "daysCount": "{{count}} ημέρες",
     "expirationLabel": "Λήξη",

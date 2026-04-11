@@ -176,7 +176,7 @@
     "noBatchesForItem": "No batches available for this item",
     "canFulfill": "Can fulfill",
     "insufficientStock": "Insufficient stock",
-    "availableRequested": "Available: {{available}} / Requested: {{requested}}",
+    "availableRequested": "Total availability: {{available}} / Requested: {{requested}}",
     "recommendedOrder": "Recommended order ({{strategy}}):",
     "daysCount": "{{count}} days",
     "expirationLabel": "Expiration",

@@ -1,4 +1,5 @@
 """Item/Inventory endpoints"""
+from datetime import date
 from typing import Literal, List, Optional
 from uuid import UUID
 
@@ -58,14 +59,21 @@ async def list_items(
     items = result.scalars().all()
     
     # Convert to response with computed fields
+    today = date.today()
     item_responses = []
     for item in items:
         response = ItemResponse.model_validate(item)
-        # Calculate computed fields
-        active_batches = [b for b in item.batches if b.status == BatchStatus.ACTIVE]
-        response.total_quantity_available = sum(b.quantity_available for b in active_batches)
+        # Calculate computed fields. Expired batches keep ACTIVE status
+        # (there is no EXPIRED state) but must not count as pickable stock,
+        # otherwise the picking screen sees an item as "in stock" but the
+        # FEFO engine filters out every batch.
+        pickable_batches = [
+            b for b in item.batches
+            if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
+        ]
+        response.total_quantity_available = sum(b.quantity_available for b in pickable_batches)
         response.total_inventory_value = response.total_quantity_available * item.cost_price
-        response.active_batches_count = len(active_batches)
+        response.active_batches_count = len(pickable_batches)
         response.is_below_reorder_point = response.total_quantity_available < item.reorder_point
         
         # Filter by below_reorder if specified
@@ -138,12 +146,16 @@ async def get_item(
         )
     
     response = ItemResponse.model_validate(item)
-    active_batches = [b for b in item.batches if b.status == BatchStatus.ACTIVE]
-    response.total_quantity_available = sum(b.quantity_available for b in active_batches)
+    today = date.today()
+    pickable_batches = [
+        b for b in item.batches
+        if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
+    ]
+    response.total_quantity_available = sum(b.quantity_available for b in pickable_batches)
     response.total_inventory_value = response.total_quantity_available * item.cost_price
-    response.active_batches_count = len(active_batches)
+    response.active_batches_count = len(pickable_batches)
     response.is_below_reorder_point = response.total_quantity_available < item.reorder_point
-    
+
     return response
 
 
@@ -188,12 +200,16 @@ async def update_item(
     await db.refresh(item)
     
     response = ItemResponse.model_validate(item)
-    active_batches = [b for b in item.batches if b.status == BatchStatus.ACTIVE]
-    response.total_quantity_available = sum(b.quantity_available for b in active_batches)
+    today = date.today()
+    pickable_batches = [
+        b for b in item.batches
+        if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
+    ]
+    response.total_quantity_available = sum(b.quantity_available for b in pickable_batches)
     response.total_inventory_value = response.total_quantity_available * item.cost_price
-    response.active_batches_count = len(active_batches)
+    response.active_batches_count = len(pickable_batches)
     response.is_below_reorder_point = response.total_quantity_available < item.reorder_point
-    
+
     return response
 
 

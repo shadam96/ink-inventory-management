@@ -176,7 +176,7 @@
     "noBatchesForItem": "Bu ürün için mevcut parti yok",
     "canFulfill": "Karşılanabilir",
     "insufficientStock": "Yetersiz stok",
-    "availableRequested": "Mevcut: {{available}} / İstenen: {{requested}}",
+    "availableRequested": "Toplam kullanılabilirlik: {{available}} / İstenen: {{requested}}",
     "recommendedOrder": "Önerilen sıra ({{strategy}}):",
     "daysCount": "{{count}} gün",
     "expirationLabel": "Son Kullanma",

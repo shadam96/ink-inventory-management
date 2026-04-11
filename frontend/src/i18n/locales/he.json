@@ -176,7 +176,7 @@
     "noBatchesForItem": "אין אצוות זמינות לפריט זה",
     "canFulfill": "ניתן לספק",
     "insufficientStock": "מלאי לא מספיק",
-    "availableRequested": "זמין: {{available}} / מבוקש: {{requested}}",
+    "availableRequested": "זמינות כוללת: {{available}} / מבוקש: {{requested}}",
     "recommendedOrder": "סדר מומלץ ({{strategy}}):",
     "daysCount": "{{count}} ימים",
     "expirationLabel": "תפוגה",
