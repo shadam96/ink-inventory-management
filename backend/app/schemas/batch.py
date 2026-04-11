@@ -38,7 +38,7 @@ class BatchCreate(BatchBase):
     @classmethod
     def receipt_not_future(cls, v: date) -> date:
         if v > date.today():
-            raise ValueError("תאריך קבלה לא יכול להיות בעתיד")  # Receipt date cannot be in the future
+            raise ValueError("תאריך קליטה לא יכול להיות בעתיד")  # Intake date cannot be in the future
         return v
 
 

@@ -55,7 +55,7 @@
     "search": "Search inventory...",
     "totalCost": "Total Cost",
     "grandTotal": "Grand Total",
-    "receiptDates": "Receipt dates:"
+    "receiptDates": "Intake dates:"
   },
   "items": {
     "title": "Items",
@@ -99,7 +99,7 @@
     "batchNumber": "Batch Number",
     "quantity": "Quantity",
     "expirationDate": "Expiration Date",
-    "receiptDate": "Receipt Date",
+    "receiptDate": "Intake Date",
     "status": "Status",
     "daysUntilExpiration": "days until expiration",
     "active": "Active",

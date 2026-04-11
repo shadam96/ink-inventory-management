@@ -141,7 +141,7 @@ class ExportService:
         headers = [
             "Batch Number", "Item Name", "Item SKU",
             "Quantity Received", "Quantity Available", "Status",
-            "Receipt Date", "Expiration Date", "Days Until Expiry",
+            "Intake Date", "Expiration Date", "Days Until Expiry",
             "Location", "Notes", "Created At"
         ]
         
@@ -199,7 +199,7 @@ class ExportService:
         writer.writerow([
             "Batch Number", "Item Name", "Item SKU",
             "Quantity Received", "Quantity Available", "Status",
-            "Receipt Date", "Expiration Date", "Days Until Expiry",
+            "Intake Date", "Expiration Date", "Days Until Expiry",
             "Location", "Notes", "Created At"
         ])
         

@@ -55,7 +55,7 @@
     "search": "חיפוש במלאי...",
     "totalCost": "סך עלות",
     "grandTotal": "עלות כוללת",
-    "receiptDates": "תאריכי קבלה:"
+    "receiptDates": "תאריכי קליטה:"
   },
   "items": {
     "title": "פריטים",
@@ -99,7 +99,7 @@
     "batchNumber": "מספר אצווה",
     "quantity": "כמות",
     "expirationDate": "תאריך תפוגה",
-    "receiptDate": "תאריך קבלה",
+    "receiptDate": "תאריך קליטה",
     "status": "סטטוס",
     "daysUntilExpiration": "ימים לתפוגה",
     "active": "פעיל",

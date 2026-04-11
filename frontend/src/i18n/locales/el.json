@@ -55,7 +55,7 @@
     "search": "Αναζήτηση αποθέματος...",
     "totalCost": "Συνολικό Κόστος",
     "grandTotal": "Γενικό Σύνολο",
-    "receiptDates": "Ημερομηνίες παραλαβής:"
+    "receiptDates": "Ημερομηνίες εισαγωγής:"
   },
   "items": {
     "title": "Είδη",
@@ -99,7 +99,7 @@
     "batchNumber": "Αριθμός Παρτίδας",
     "quantity": "Ποσότητα",
     "expirationDate": "Ημερομηνία Λήξης",
-    "receiptDate": "Ημερομηνία Παραλαβής",
+    "receiptDate": "Ημερομηνία Εισαγωγής",
     "status": "Κατάσταση",
     "daysUntilExpiration": "ημέρες έως τη λήξη",
     "active": "Ενεργή",
