@@ -114,6 +114,42 @@ class EmailService:
         )
         await self.send_email(to, subject, html_body)
 
+    async def send_expired_batch_alert(
+        self,
+        to: str,
+        batch_number: str,
+        item_name: str,
+        expiration_date: str,
+        quantity_available: float,
+    ):
+        subject = f"אצווה פגת תוקף - {item_name}"
+        html_body = self.render_template(
+            "expired_batch_alert.html",
+            batch_number=batch_number,
+            item_name=item_name,
+            expiration_date=expiration_date,
+            quantity_available=quantity_available,
+        )
+        await self.send_email(to, subject, html_body)
+
+    async def send_dead_stock_alert(
+        self,
+        to: str,
+        item_name: str,
+        sku: str,
+        days_inactive: int,
+        total_quantity: float,
+    ):
+        subject = f"מלאי מת - {item_name}"
+        html_body = self.render_template(
+            "dead_stock_alert.html",
+            item_name=item_name,
+            sku=sku,
+            days_inactive=days_inactive,
+            total_quantity=total_quantity,
+        )
+        await self.send_email(to, subject, html_body)
+
     async def send_delivery_note_email(
         self,
         to: str,

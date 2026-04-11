@@ -214,10 +214,13 @@ class AlertService:
         expired_batches = result.scalars().all()
         
         for batch in expired_batches:
+            # Capture quantity before marking as scrap (for email)
+            lost_quantity = float(batch.quantity_available)
+
             # Mark as scrap
             batch.status = BatchStatus.SCRAP
             batch.notes = f"{batch.notes or ''}\nסומן כגריטה אוטומטית עקב פג תוקף: {today}".strip()
-            
+
             # Create alert
             alert = await self.create_alert(
                 alert_type=AlertType.EXPIRED,
@@ -226,13 +229,17 @@ class AlertService:
                 message=(
                     f"אצווה {batch.batch_number} של {batch.item.name if batch.item else 'פריט'} "
                     f"פגה תוקפה ב-{batch.expiration_date.strftime('%d/%m/%Y')} "
-                    f"וסומנה אוטומטית כגריטה. כמות: {batch.quantity_available}"
+                    f"וסומנה אוטומטית כגריטה. כמות: {lost_quantity}"
                 ),
                 batch_id=batch.id,
                 item_id=batch.item_id,
             )
             results.append((batch, alert))
-        
+
+            # Send email notification for expired batches
+            if self._email_enabled:
+                await self._send_expired_batch_email(batch, lost_quantity)
+
         await self.db.flush()
         return results
     
@@ -351,7 +358,11 @@ class AlertService:
                     item_id=item.id,
                 )
                 alerts_created.append(alert)
-        
+
+                # Send email notification for dead stock
+                if self._email_enabled:
+                    await self._send_dead_stock_email(item, days_inactive, float(total_qty))
+
         return alerts_created
     
     async def run_all_checks(self) -> dict:
@@ -415,7 +426,7 @@ class AlertService:
         """Send low stock alert email to opted-in users"""
         try:
             from app.services.email_service import email_service
-            
+
             recipients = await self._get_notification_recipients()
             for email in recipients:
                 await email_service.send_low_stock_alert(
@@ -428,3 +439,43 @@ class AlertService:
                 )
         except Exception as e:
             print(f">> Failed to send low stock email: {e}")
+
+    async def _send_expired_batch_email(self, batch: Batch, lost_quantity: float):
+        """Send expired-batch alert email to opted-in users"""
+        try:
+            from app.services.email_service import email_service
+
+            recipients = await self._get_notification_recipients()
+            for email in recipients:
+                try:
+                    await email_service.send_expired_batch_alert(
+                        to=email,
+                        batch_number=batch.batch_number,
+                        item_name=batch.item.name if batch.item else "Unknown",
+                        expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
+                        quantity_available=lost_quantity,
+                    )
+                except Exception as per_recipient_error:
+                    print(f">> Failed to email {email} about expired batch: {per_recipient_error}")
+        except Exception as e:
+            print(f">> Failed to send expired batch email: {e}")
+
+    async def _send_dead_stock_email(self, item: Item, days_inactive: int, total_quantity: float):
+        """Send dead-stock alert email to opted-in users"""
+        try:
+            from app.services.email_service import email_service
+
+            recipients = await self._get_notification_recipients()
+            for email in recipients:
+                try:
+                    await email_service.send_dead_stock_alert(
+                        to=email,
+                        item_name=item.name,
+                        sku=item.sku,
+                        days_inactive=days_inactive,
+                        total_quantity=total_quantity,
+                    )
+                except Exception as per_recipient_error:
+                    print(f">> Failed to email {email} about dead stock: {per_recipient_error}")
+        except Exception as e:
+            print(f">> Failed to send dead stock email: {e}")
