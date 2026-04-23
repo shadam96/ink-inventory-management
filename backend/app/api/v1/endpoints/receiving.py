@@ -8,9 +8,15 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbSession, WarehouseUser
+from app.core.websocket import manager as ws_manager
 from app.services.receiving_service import ReceivingService
+from app.services.pending_receipt_service import PendingReceiptService, serialize_pending
 from app.schemas.batch import BatchResponse
 from app.schemas.common import MessageResponse
+from app.schemas.pending_receipt import (
+    PendingReceiptItemCreate,
+    PendingReceiptItemResponse,
+)
 
 router = APIRouter()
 
@@ -90,12 +96,13 @@ async def receive_single_item(
             notes=receipt.notes,
             manufacturing_date=receipt.manufacturing_date,
         )
-        
+
+        # Persist alert for critical/warning windows before commit so the
+        # alert row ships with the receipt in a single transaction.
+        warning = await service.record_short_expiry_alert(batch)
+
         await db.commit()
-        
-        # Check for expiration warning
-        warning = service.validate_expiration_warning(receipt.expiration_date)
-        
+
         return SingleReceiptResponse(
             grn_number=grn_number,
             batch_number=batch.batch_number,
@@ -132,6 +139,7 @@ async def receive_multiple_items(
                 "item_id": item.item_id,
                 "quantity": item.quantity,
                 "expiration_date": item.expiration_date,
+                "manufacturing_date": item.manufacturing_date,
                 "batch_number": item.batch_number,
                 "supplier_batch_number": item.supplier_batch_number,
                 "location_id": item.location_id,
@@ -144,19 +152,15 @@ async def receive_multiple_items(
             receipts=receipts_data,
             user_id=current_user.id,
         )
-        
-        await db.commit()
-        
-        # Collect warnings
+
         warnings = []
         items_response = []
-        
-        for i, batch in enumerate(batches):
-            warning = service.validate_expiration_warning(batch.expiration_date)
+
+        for batch in batches:
+            warning = await service.record_short_expiry_alert(batch)
             if warning:
-                warning["batch_number"] = batch.batch_number
                 warnings.append(warning)
-            
+
             items_response.append({
                 "batch_id": str(batch.id),
                 "batch_number": batch.batch_number,
@@ -164,6 +168,8 @@ async def receive_multiple_items(
                 "quantity": float(batch.quantity_received),
                 "expiration_date": batch.expiration_date.isoformat(),
             })
+
+        await db.commit()
         
         total_quantity = sum(b.quantity_received for b in batches)
         
@@ -316,6 +322,131 @@ async def generate_batch_number(
     """Generate a new batch number"""
     service = ReceivingService(db)
     batch_number = await service.generate_batch_number(prefix)
-    
+
     return {"batch_number": batch_number}
+
+
+# ---------------------------------------------------------------------------
+# Shared pending-receipt queue
+#
+# A single global queue visible to every warehouse user. Rows are added as
+# shipments arrive, removed by any worker, and drained together via
+# POST /pending/receive-all which converts each row into a real Batch +
+# Movement under a single GRN.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/pending", response_model=List[PendingReceiptItemResponse])
+async def list_pending_receipts(
+    db: DbSession,
+    current_user: WarehouseUser,
+) -> list[dict]:
+    """Return every row in the shared pending-receipt queue."""
+    service = PendingReceiptService(db)
+    rows = await service.list_pending()
+    return [serialize_pending(r) for r in rows]
+
+
+@router.post("/pending", response_model=PendingReceiptItemResponse)
+async def add_pending_receipt(
+    payload: PendingReceiptItemCreate,
+    db: DbSession,
+    current_user: WarehouseUser,
+) -> dict:
+    """Add one row to the shared pending-receipt queue."""
+    service = PendingReceiptService(db)
+    try:
+        row = await service.add(
+            user_id=current_user.id,
+            item_id=payload.item_id,
+            quantity=payload.quantity,
+            expiration_date=payload.expiration_date,
+            manufacturing_date=payload.manufacturing_date,
+            batch_number=payload.batch_number,
+            supplier_batch_number=payload.supplier_batch_number,
+            location_id=payload.location_id,
+            notes=payload.notes,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    await db.commit()
+
+    serialized = serialize_pending(row)
+    await ws_manager.broadcast({"type": "pending_receipt:added", "data": serialized})
+    return serialized
+
+
+@router.delete("/pending/{pending_id}", response_model=MessageResponse)
+async def remove_pending_receipt(
+    pending_id: UUID,
+    db: DbSession,
+    current_user: WarehouseUser,
+) -> MessageResponse:
+    """Remove one row from the shared pending-receipt queue."""
+    service = PendingReceiptService(db)
+    removed = await service.remove(pending_id)
+    if not removed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="פריט לא נמצא ברשימת ההמתנה",
+        )
+
+    await db.commit()
+
+    await ws_manager.broadcast({
+        "type": "pending_receipt:removed",
+        "data": {"id": str(pending_id)},
+    })
+    return MessageResponse(message="removed")
+
+
+@router.post("/pending/receive-all", response_model=GoodsReceiptResponse)
+async def receive_all_pending(
+    db: DbSession,
+    current_user: WarehouseUser,
+) -> GoodsReceiptResponse:
+    """Drain the pending queue: create a Batch + Movement per row under a
+    single GRN, delete the pending rows, and broadcast a `cleared` event.
+    """
+    service = PendingReceiptService(db)
+    try:
+        batches, movements, grn_number, warnings = await service.drain_and_receive(
+            user_id=current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+    await db.commit()
+
+    items_response = [
+        {
+            "batch_id": str(batch.id),
+            "batch_number": batch.batch_number,
+            "item_id": str(batch.item_id),
+            "quantity": float(batch.quantity_received),
+            "expiration_date": batch.expiration_date.isoformat(),
+        }
+        for batch in batches
+    ]
+    total_quantity = sum((b.quantity_received for b in batches), Decimal("0"))
+
+    await ws_manager.broadcast({
+        "type": "pending_receipt:cleared",
+        "data": {"grn_number": grn_number, "count": len(batches)},
+    })
+
+    return GoodsReceiptResponse(
+        grn_number=grn_number,
+        batches_created=len(batches),
+        total_quantity=total_quantity,
+        items=items_response,
+        warnings=warnings,
+    )
 

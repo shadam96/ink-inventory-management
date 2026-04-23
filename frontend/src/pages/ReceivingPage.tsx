@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { PackagePlus, Barcode, Plus, X, Loader2, Camera, ScanLine } from 'lucide-react'
+import { PackagePlus, Barcode, Plus, X, Loader2, Camera, ScanLine, User } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -14,8 +14,14 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
-import { itemsApi, receivingApi, type Item } from '@/lib/api'
-import { addPendingOperation, isOnline } from '@/lib/offline'
+import {
+  itemsApi,
+  receivingApi,
+  type Item,
+  type PendingReceiptItem,
+  type ReceiveWarning,
+} from '@/lib/api'
+import { websocketService } from '@/lib/websocket'
 
 const receiveSchema = z.object({
   item_id: z.string().min(1, 'receiving.itemRequired'),
@@ -23,43 +29,19 @@ const receiveSchema = z.object({
   expiration_date: z.string().min(1, 'receiving.expirationDateRequired'),
   manufacturing_date: z.string().optional(),
   batch_number: z.string().optional(),
+  supplier_batch_number: z.string().optional(),
   notes: z.string().optional(),
 })
 
 type ReceiveFormData = z.infer<typeof receiveSchema>
 
-interface ReceiveItem extends ReceiveFormData {
-  id: string
-  item_name?: string
-  item_sku?: string
-}
-
 export function ReceivingPage() {
   const { t } = useTranslation()
   const [items, setItems] = useState<Item[]>([])
-  const [receiveList, _setReceiveList] = useState<ReceiveItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('receiveList')
-      return saved ? JSON.parse(saved) : []
-    } catch {
-      return []
-    }
-  })
-
-  // Wrapper that syncs to localStorage on every mutation
-  const setReceiveList = (update: ReceiveItem[] | ((prev: ReceiveItem[]) => ReceiveItem[])) => {
-    _setReceiveList((prev) => {
-      const next = typeof update === 'function' ? update(prev) : update
-      if (next.length > 0) {
-        localStorage.setItem('receiveList', JSON.stringify(next))
-      } else {
-        localStorage.removeItem('receiveList')
-      }
-      return next
-    })
-  }
+  const [queue, setQueue] = useState<PendingReceiptItem[]>([])
   const [barcode, setBarcode] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [adding, setAdding] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set())
   const autoFillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -78,6 +60,7 @@ export function ReceivingPage() {
       expiration_date: '',
       manufacturing_date: '',
       batch_number: '',
+      supplier_batch_number: '',
       notes: '',
     },
   })
@@ -88,6 +71,39 @@ export function ReceivingPage() {
     fetchItems()
   }, [])
 
+  const loadQueue = useCallback(async () => {
+    try {
+      const rows = await receivingApi.listPending()
+      setQueue(rows)
+    } catch (error) {
+      console.error('Failed to load pending queue:', error)
+      toast.error(t('receiving.queueLoadError'))
+    }
+  }, [t])
+
+  useEffect(() => {
+    loadQueue()
+  }, [loadQueue])
+
+  // Live updates: react to any other user adding/removing/draining the queue.
+  useEffect(() => {
+    const unsubAdd = websocketService.subscribe('pending_receipt:added', (msg) => {
+      const row = msg.data as PendingReceiptItem
+      setQueue((prev) => (prev.some((r) => r.id === row.id) ? prev : [...prev, row]))
+    })
+    const unsubRemove = websocketService.subscribe('pending_receipt:removed', (msg) => {
+      const { id } = msg.data as { id: string }
+      setQueue((prev) => prev.filter((r) => r.id !== id))
+    })
+    const unsubClear = websocketService.subscribe('pending_receipt:cleared', () => {
+      setQueue([])
+    })
+    return () => {
+      unsubAdd()
+      unsubRemove()
+      unsubClear()
+    }
+  }, [])
 
   async function fetchItems() {
     try {
@@ -113,11 +129,10 @@ export function ReceivingPage() {
       filled.add('quantity')
     }
     if (parsedData.supplier_batch_number) {
-      setValue('batch_number', parsedData.supplier_batch_number, { shouldValidate: true })
-      filled.add('batch_number')
+      setValue('supplier_batch_number', parsedData.supplier_batch_number, { shouldValidate: true })
+      filled.add('supplier_batch_number')
     }
     setAutoFilledFields(filled)
-    // Clear highlight after 3 seconds
     if (autoFillTimerRef.current) clearTimeout(autoFillTimerRef.current)
     autoFillTimerRef.current = setTimeout(() => setAutoFilledFields(new Set()), 3000)
   }
@@ -176,81 +191,80 @@ export function ReceivingPage() {
     await handleManualBarcodeScanned(barcode)
   }
 
-  const handleAddToList = (data: ReceiveFormData) => {
-    const item = items.find(i => i.id === data.item_id)
-    if (!item) return
-
-    const newItem: ReceiveItem = {
-      ...data,
-      id: Math.random().toString(36).substring(7),
-      item_name: item.name,
-      item_sku: item.sku,
+  const handleAddToList = async (data: ReceiveFormData) => {
+    setAdding(true)
+    try {
+      await receivingApi.addPending({
+        item_id: data.item_id,
+        quantity: data.quantity,
+        expiration_date: data.expiration_date,
+        manufacturing_date: data.manufacturing_date || undefined,
+        batch_number: data.batch_number || undefined,
+        supplier_batch_number: data.supplier_batch_number || undefined,
+        notes: data.notes || undefined,
+      })
+      // The row will also arrive via WS, but add optimistically for the local
+      // tab so the UI doesn't wait on a round-trip.
+      await loadQueue()
+      setAutoFilledFields(new Set())
+      reset({
+        item_id: '',
+        quantity: 1,
+        expiration_date: '',
+        manufacturing_date: '',
+        batch_number: '',
+        supplier_batch_number: '',
+        notes: '',
+      })
+    } catch (error: any) {
+      console.error('Failed to add item to queue:', error)
+      toast.error(error.response?.data?.detail || t('receiving.addError'))
+    } finally {
+      setAdding(false)
     }
-
-    setReceiveList([...receiveList, newItem])
-    setAutoFilledFields(new Set())
-    reset({
-      item_id: '',
-      quantity: 1,
-      expiration_date: '',
-      manufacturing_date: '',
-      batch_number: '',
-      notes: '',
-    })
   }
 
-  const handleRemoveFromList = (id: string) => {
-    setReceiveList(receiveList.filter(item => item.id !== id))
+  const handleRemoveFromList = async (id: string) => {
+    // Optimistic removal; if it fails we reload to restore.
+    setQueue((prev) => prev.filter((row) => row.id !== id))
+    try {
+      await receivingApi.removePending(id)
+    } catch (error: any) {
+      console.error('Failed to remove pending item:', error)
+      toast.error(error.response?.data?.detail || t('receiving.removeError'))
+      await loadQueue()
+    }
+  }
+
+  const showWarnings = (warnings: ReceiveWarning[]) => {
+    for (const w of warnings) {
+      const batch = w.batch_number ?? ''
+      const days = w.days_until_expiration
+      if (w.level === 'critical') {
+        toast.error(t('receiving.warningExpiryCritical', { batch, days }), { duration: 8000 })
+      } else if (w.level === 'warning') {
+        toast.warning(t('receiving.warningExpirySoon', { batch, days }), { duration: 6000 })
+      } else {
+        toast.info(t('receiving.warningExpiryInfo', { batch, days }))
+      }
+    }
   }
 
   const handleReceiveAll = async () => {
-    if (receiveList.length === 0) return
+    if (queue.length === 0) return
 
     setSubmitting(true)
     try {
-      const payload = receiveList.length === 1
-        ? {
-            item_id: receiveList[0].item_id,
-            quantity: receiveList[0].quantity,
-            expiration_date: receiveList[0].expiration_date,
-            manufacturing_date: receiveList[0].manufacturing_date || undefined,
-            batch_number: receiveList[0].batch_number,
-            notes: receiveList[0].notes,
-          }
-        : {
-            items: receiveList.map(item => ({
-              item_id: item.item_id,
-              quantity: item.quantity,
-              expiration_date: item.expiration_date,
-              manufacturing_date: item.manufacturing_date || undefined,
-              batch_number: item.batch_number,
-              notes: item.notes,
-            })),
-          }
-
-      if (!isOnline()) {
-        await addPendingOperation(
-          'receive',
-          receiveList.length === 1 ? '/api/v1/receiving/' : '/api/v1/receiving/multiple',
-          'POST',
-          payload
-        )
-        toast.info(t('receiving.offlineQueued'))
-        setReceiveList([])
-        return
-      }
-
-      if (receiveList.length === 1) {
-        await receivingApi.receive(payload as any)
-      } else {
-        await receivingApi.receiveMultiple(payload as any)
-      }
-
+      const response = await receivingApi.receiveAllPending()
       toast.success(t('receiving.success'))
-      setReceiveList([])
+      showWarnings(response.warnings || [])
+      // WS clear event will also empty the queue, but wipe locally in case
+      // this tab is the only listener.
+      setQueue([])
     } catch (error: any) {
-      console.error('Failed to receive items:', error)
+      console.error('Failed to receive pending queue:', error)
       toast.error(error.response?.data?.detail || t('receiving.error'))
+      await loadQueue()
     } finally {
       setSubmitting(false)
     }
@@ -260,6 +274,15 @@ export function ReceivingPage() {
 
   const fieldClass = (name: string) =>
     autoFilledFields.has(name) ? 'ring-2 ring-primary/40 transition-all' : ''
+
+  const formatAddedAt = (iso: string) => {
+    try {
+      const d = new Date(iso)
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    } catch {
+      return ''
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -359,7 +382,6 @@ export function ReceivingPage() {
               </div>
             </div>
 
-            {/* Item info banner */}
             {selectedItem && (
               <div className="p-3 rounded-lg bg-primary/5 border border-primary/20 text-sm flex gap-4 text-muted-foreground">
                 <span>{t('items.supplier')}: {selectedItem.supplier}</span>
@@ -409,15 +431,27 @@ export function ReceivingPage() {
               </div>
             </div>
 
-            {/* Batch number */}
-            <div className="space-y-2">
-              <Label htmlFor="batch_number">{t('receiving.batchNumber')}</Label>
-              <Input
-                id="batch_number"
-                {...register('batch_number')}
-                placeholder={t('receiving.batchNumberPlaceholder')}
-                className={fieldClass('batch_number')}
-              />
+            {/* Batch numbers */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="batch_number">{t('receiving.batchNumber')}</Label>
+                <Input
+                  id="batch_number"
+                  {...register('batch_number')}
+                  placeholder={t('receiving.batchNumberPlaceholder')}
+                  className={fieldClass('batch_number')}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="supplier_batch_number">{t('receiving.supplierBatchNumber')}</Label>
+                <Input
+                  id="supplier_batch_number"
+                  {...register('supplier_batch_number')}
+                  placeholder={t('receiving.supplierBatchPlaceholder')}
+                  className={fieldClass('supplier_batch_number')}
+                />
+              </div>
             </div>
 
             {/* Notes */}
@@ -431,77 +465,101 @@ export function ReceivingPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full">
-              <Plus className="w-4 h-4 me-2" />
+            <Button type="submit" className="w-full" disabled={adding}>
+              {adding ? (
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 me-2" />
+              )}
               {t('receiving.addToList')}
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      {/* Receive List */}
-      {receiveList.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between flex-wrap gap-4">
-              <CardTitle className="text-lg">{t('receiving.listTitle', { count: receiveList.length })}</CardTitle>
-              <Button
-                onClick={handleReceiveAll}
-                disabled={submitting}
-                className="touch-manipulation"
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 me-2 animate-spin" />
-                    {t('receiving.recording')}
-                  </>
-                ) : (
-                  <>
-                    <PackagePlus className="w-4 h-4 me-2" />
-                    {t('receiving.receiveAll')}
-                  </>
-                )}
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
+      {/* Shared Pending Queue */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <CardTitle className="text-lg">
+              {t('receiving.listTitle', { count: queue.length })}
+            </CardTitle>
+            <Button
+              onClick={handleReceiveAll}
+              disabled={submitting || queue.length === 0}
+              className="touch-manipulation"
+            >
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                  {t('receiving.recording')}
+                </>
+              ) : (
+                <>
+                  <PackagePlus className="w-4 h-4 me-2" />
+                  {t('receiving.receiveAll')}
+                </>
+              )}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {queue.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              {t('receiving.queueEmpty')}
+            </p>
+          ) : (
             <div className="space-y-3">
-              {receiveList.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between p-4 rounded-lg border bg-card"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-2 flex-wrap">
-                      <Badge variant="secondary" className="font-mono">
-                        {item.item_sku}
-                      </Badge>
-                      <span className="font-medium truncate">{item.item_name}</span>
-                    </div>
-                    <div className="flex gap-4 flex-wrap text-sm text-muted-foreground">
-                      <span>{t('picking.quantityLabel')}: {item.quantity}</span>
-                      <span>{t('picking.expirationLabel')}: {item.expiration_date}</span>
-                      {item.manufacturing_date && <span>{t('receiving.manufacturingShort')}: {item.manufacturing_date}</span>}
-                      {item.batch_number && <span>{t('receiving.batchShort')}: {item.batch_number}</span>}
-                    </div>
-                    {item.notes && (
-                      <p className="text-sm text-muted-foreground mt-1 truncate">{item.notes}</p>
-                    )}
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemoveFromList(item.id)}
-                    className="text-destructive flex-shrink-0 touch-manipulation"
+              {queue.map((row) => {
+                const adderName = row.added_by_full_name || row.added_by_username
+                return (
+                  <div
+                    key={row.id}
+                    className="flex items-center justify-between p-4 rounded-lg border bg-card"
                   >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ))}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
+                        <Badge variant="secondary" className="font-mono">
+                          {row.item_sku}
+                        </Badge>
+                        <span className="font-medium truncate">{row.item_name}</span>
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          <User className="w-3 h-3" />
+                          {t('receiving.addedBy', { name: adderName })} · {formatAddedAt(row.created_at)}
+                        </span>
+                      </div>
+                      <div className="flex gap-4 flex-wrap text-sm text-muted-foreground">
+                        <span>{t('picking.quantityLabel')}: {row.quantity}</span>
+                        <span>{t('picking.expirationLabel')}: {row.expiration_date}</span>
+                        {row.manufacturing_date && (
+                          <span>{t('receiving.manufacturingShort')}: {row.manufacturing_date}</span>
+                        )}
+                        {row.batch_number && (
+                          <span>{t('receiving.batchShort')}: {row.batch_number}</span>
+                        )}
+                        {row.supplier_batch_number && (
+                          <span>{t('receiving.supplierBatchShort')}: {row.supplier_batch_number}</span>
+                        )}
+                      </div>
+                      {row.notes && (
+                        <p className="text-sm text-muted-foreground mt-1 truncate">{row.notes}</p>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveFromList(row.id)}
+                      className="text-destructive flex-shrink-0 touch-manipulation"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )
+              })}
             </div>
-          </CardContent>
-        </Card>
-      )}
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

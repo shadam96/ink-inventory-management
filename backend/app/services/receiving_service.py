@@ -207,14 +207,15 @@ class ReceivingService:
                 quantity_available=quantity,
                 receipt_date=date.today(),
                 expiration_date=expiration_date,
+                manufacturing_date=receipt.get("manufacturing_date"),
                 location_id=receipt.get("location_id"),
                 status=BatchStatus.ACTIVE,
                 notes=receipt.get("notes"),
             )
-            
+
             self.db.add(batch)
             await self.db.flush()
-            
+
             movement = Movement(
                 batch_id=batch.id,
                 user_id=user_id,
@@ -223,7 +224,7 @@ class ReceivingService:
                 quantity_before=Decimal("0"),
                 quantity_after=quantity,
                 reference_number=grn_number,
-                notes=f"קבלת סחורה: {item.sku}",
+                notes=f"קבלת סחורה: {item.sku} - {item.name}",
                 timestamp=datetime.now(timezone.utc),
             )
             
@@ -244,7 +245,7 @@ class ReceivingService:
         Returns warning info if applicable
         """
         days_until = (expiration_date - date.today()).days
-        
+
         if days_until < 30:
             return {
                 "level": "critical",
@@ -263,6 +264,46 @@ class ReceivingService:
                 "message": f"תאריך תפוגה תוך {days_until} ימים",
                 "days_until_expiration": days_until,
             }
-        
+
         return None
+
+    async def record_short_expiry_alert(self, batch) -> Optional[dict]:
+        """If `batch` has a critical/warning expiry window, persist an Alert
+        row and return the warning payload (with batch_number attached).
+
+        Returns the info dict for `info`-level windows too — those are shown
+        to the user in the HTTP response but not persisted, to avoid spamming
+        the alert center on routine receipts.
+        """
+        from app.models.alert import AlertSeverity, AlertType
+        from app.services.alert_service import AlertService
+
+        info = self.validate_expiration_warning(batch.expiration_date)
+        if info is None:
+            return None
+
+        payload = {**info, "batch_number": batch.batch_number}
+
+        if info["level"] in ("critical", "warning"):
+            alert_service = AlertService(self.db)
+            alert_type = (
+                AlertType.EXPIRATION_CRITICAL
+                if info["level"] == "critical"
+                else AlertType.EXPIRATION_WARNING
+            )
+            severity = (
+                AlertSeverity.CRITICAL
+                if info["level"] == "critical"
+                else AlertSeverity.WARNING
+            )
+            await alert_service.create_alert(
+                alert_type=alert_type,
+                severity=severity,
+                title=f"קבלת אצווה עם תפוגה קרובה: {batch.batch_number}",
+                message=info["message"],
+                batch_id=batch.id,
+                item_id=batch.item_id,
+            )
+
+        return payload
 

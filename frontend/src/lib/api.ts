@@ -150,19 +150,40 @@ export const receivingApi = {
     const response = await api.post('/receiving/receive', data)
     return response.data
   },
-  
+
   receiveMultiple: async (data: ReceiveMultipleData) => {
     const response = await api.post('/receiving/receive-multiple', data)
     return response.data
   },
-  
+
   validateBarcode: async (barcode: string) => {
     const response = await api.post('/receiving/validate-barcode', { barcode })
     return response.data
   },
-  
+
   generateBatchNumber: async () => {
     const response = await api.get('/receiving/generate-batch-number')
+    return response.data
+  },
+
+  // Shared pending-receipt queue
+  listPending: async (): Promise<PendingReceiptItem[]> => {
+    const response = await api.get('/receiving/pending')
+    return response.data
+  },
+
+  addPending: async (data: PendingReceiptCreate): Promise<PendingReceiptItem> => {
+    const response = await api.post('/receiving/pending', data)
+    return response.data
+  },
+
+  removePending: async (id: string) => {
+    const response = await api.delete(`/receiving/pending/${id}`)
+    return response.data
+  },
+
+  receiveAllPending: async (): Promise<ReceiveAllPendingResponse> => {
+    const response = await api.post('/receiving/pending/receive-all')
     return response.data
   },
 }
@@ -368,6 +389,56 @@ export interface ReceiveItemData {
 
 export interface ReceiveMultipleData {
   items: ReceiveItemData[]
+}
+
+export interface PendingReceiptCreate {
+  item_id: string
+  quantity: number | string
+  expiration_date: string
+  manufacturing_date?: string
+  batch_number?: string
+  supplier_batch_number?: string
+  location_id?: string
+  notes?: string
+}
+
+export interface PendingReceiptItem {
+  id: string
+  item_id: string
+  quantity: string
+  expiration_date: string
+  manufacturing_date: string | null
+  batch_number: string | null
+  supplier_batch_number: string | null
+  location_id: string | null
+  notes: string | null
+  added_by_user_id: string
+  added_by_username: string
+  added_by_full_name: string | null
+  created_at: string
+  item_sku: string
+  item_name: string
+}
+
+export interface ReceiveWarning {
+  level: 'info' | 'warning' | 'critical'
+  message: string
+  days_until_expiration: number
+  batch_number?: string
+}
+
+export interface ReceiveAllPendingResponse {
+  grn_number: string
+  batches_created: number
+  total_quantity: number
+  items: Array<{
+    batch_id: string
+    batch_number: string
+    item_id: string
+    quantity: number
+    expiration_date: string
+  }>
+  warnings: ReceiveWarning[]
 }
 
 export interface ExecutePickData {

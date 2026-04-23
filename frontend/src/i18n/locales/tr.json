@@ -141,7 +141,18 @@
     "recording": "Kaydediliyor...",
     "receiveAll": "Tümünü Kabul Et",
     "manufacturingShort": "Üretim",
-    "batchShort": "Parti"
+    "batchShort": "Parti",
+    "supplierBatchNumber": "Tedarikçi Parti Numarası",
+    "supplierBatchPlaceholder": "İsteğe bağlı — tedarikçi etiketinden veya QR'dan",
+    "supplierBatchShort": "Tedarikçi partisi",
+    "queueEmpty": "Liste boş. Başlamak için ürün tarayın veya ekleyin.",
+    "addedBy": "{{name}} tarafından eklendi",
+    "queueLoadError": "Bekleyen liste yüklenemedi",
+    "addError": "Listeye eklenemedi",
+    "removeError": "Kaldırılamadı",
+    "warningExpiryCritical": "Kritik son kullanma: {{batch}} partisi {{days}} gün içinde sona eriyor",
+    "warningExpirySoon": "Kısa son kullanma: {{batch}} partisi {{days}} gün içinde sona eriyor",
+    "warningExpiryInfo": "Not: {{batch}} partisi {{days}} gün içinde sona eriyor"
   },
   "picking": {
     "title": "Toplama",

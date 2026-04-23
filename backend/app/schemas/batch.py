@@ -53,12 +53,13 @@ class BatchUpdate(BaseSchema):
 
 class BatchResponse(BatchBase, TimestampSchema):
     """Schema for batch response"""
-    
+
     id: UUID
     batch_number: str
     supplier_batch_number: Optional[str]
     quantity_available: Decimal
     receipt_date: date
+    manufacturing_date: Optional[date] = None
     location_id: Optional[UUID]
     status: BatchStatus
     notes: Optional[str]

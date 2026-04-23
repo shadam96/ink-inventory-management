@@ -141,7 +141,18 @@
     "recording": "Recording...",
     "receiveAll": "Receive All",
     "manufacturingShort": "Mfg",
-    "batchShort": "Batch"
+    "batchShort": "Batch",
+    "supplierBatchNumber": "Supplier Batch Number",
+    "supplierBatchPlaceholder": "Optional — from supplier's label or QR",
+    "supplierBatchShort": "Supplier batch",
+    "queueEmpty": "Queue is empty. Scan or add items to begin.",
+    "addedBy": "Added by {{name}}",
+    "queueLoadError": "Failed to load pending queue",
+    "addError": "Failed to add item to queue",
+    "removeError": "Failed to remove item",
+    "warningExpiryCritical": "Expiry critical: batch {{batch}} expires in {{days}} days",
+    "warningExpirySoon": "Short expiry: batch {{batch}} expires in {{days}} days",
+    "warningExpiryInfo": "Note: batch {{batch}} expires in {{days}} days"
   },
   "picking": {
     "title": "Picking",

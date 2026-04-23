@@ -141,7 +141,18 @@
     "recording": "Καταγραφή...",
     "receiveAll": "Παραλαβή Όλων",
     "manufacturingShort": "Παρ/γή",
-    "batchShort": "Παρτίδα"
+    "batchShort": "Παρτίδα",
+    "supplierBatchNumber": "Αριθμός Παρτίδας Προμηθευτή",
+    "supplierBatchPlaceholder": "Προαιρετικό — από ετικέτα ή QR του προμηθευτή",
+    "supplierBatchShort": "Παρτίδα προμηθευτή",
+    "queueEmpty": "Η λίστα είναι άδεια. Σαρώστε ή προσθέστε είδη για να ξεκινήσετε.",
+    "addedBy": "Προστέθηκε από {{name}}",
+    "queueLoadError": "Αποτυχία φόρτωσης λίστας εκκρεμών",
+    "addError": "Αποτυχία προσθήκης στη λίστα",
+    "removeError": "Αποτυχία αφαίρεσης",
+    "warningExpiryCritical": "Κρίσιμη λήξη: η παρτίδα {{batch}} λήγει σε {{days}} ημέρες",
+    "warningExpirySoon": "Σύντομη λήξη: η παρτίδα {{batch}} λήγει σε {{days}} ημέρες",
+    "warningExpiryInfo": "Σημείωση: η παρτίδα {{batch}} λήγει σε {{days}} ημέρες"
   },
   "picking": {
     "title": "Εκτέλεση Παραγγελίας",

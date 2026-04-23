@@ -141,7 +141,18 @@
     "recording": "מקליט...",
     "receiveAll": "קלוט הכל",
     "manufacturingShort": "ייצור",
-    "batchShort": "אצווה"
+    "batchShort": "אצווה",
+    "supplierBatchNumber": "מספר אצווה של הספק",
+    "supplierBatchPlaceholder": "אופציונלי — מהתווית או QR של הספק",
+    "supplierBatchShort": "אצוות ספק",
+    "queueEmpty": "הרשימה ריקה. סרוק או הוסף פריטים כדי להתחיל.",
+    "addedBy": "נוסף ע״י {{name}}",
+    "queueLoadError": "טעינת רשימת ההמתנה נכשלה",
+    "addError": "הוספת הפריט לרשימה נכשלה",
+    "removeError": "הסרת הפריט נכשלה",
+    "warningExpiryCritical": "אזהרה קריטית: אצווה {{batch}} פגה בעוד {{days}} ימים",
+    "warningExpirySoon": "תפוגה קרובה: אצווה {{batch}} פגה בעוד {{days}} ימים",
+    "warningExpiryInfo": "לידיעה: אצווה {{batch}} פגה בעוד {{days}} ימים"
   },
   "picking": {
     "title": "ליקוט",

@@ -13,6 +13,20 @@ vi.mock('@/lib/api', () => ({
     validateBarcode: vi.fn(),
     receive: vi.fn(),
     receiveMultiple: vi.fn(),
+    listPending: vi.fn().mockResolvedValue([]),
+    addPending: vi.fn(),
+    removePending: vi.fn(),
+    receiveAllPending: vi.fn(),
+  },
+}))
+
+vi.mock('@/lib/websocket', () => ({
+  websocketService: {
+    subscribe: vi.fn(() => () => {}),
+    isConnected: vi.fn(() => false),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    send: vi.fn(),
   },
 }))
 
