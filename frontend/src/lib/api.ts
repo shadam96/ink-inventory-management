@@ -235,6 +235,18 @@ export const dashboardApi = {
   },
 }
 
+// System settings API (FX rates)
+export const systemSettingsApi = {
+  get: async () => {
+    const response = await api.get('/settings/system')
+    return response.data as SystemSettings
+  },
+  update: async (payload: SystemSettingsUpdate) => {
+    const response = await api.put('/settings/system', payload)
+    return response.data as SystemSettings
+  },
+}
+
 // Alerts API
 export const alertsApi = {
   getSummary: async () => {
@@ -400,16 +412,33 @@ export interface DispatchDocumentResponse {
   message: string
 }
 
+/** Cost values keyed by the per-item currency they were entered in. */
+export type CurrencyTotals = Partial<Record<'ILS' | 'USD' | 'EUR', number>>
+
 export interface DashboardKPIs {
-  inventory_value: number
+  inventory_value_by_currency: CurrencyTotals
   items_in_stock: number
-  at_risk_value: number
+  at_risk_value_by_currency: CurrencyTotals
   at_risk_percentage: number
   low_stock_items: number
   critical_low_stock: number
   unread_alerts: number
   recent_receipts: number
   recent_dispatches: number
+}
+
+export interface SystemSettings {
+  /** Price of 1 USD in ILS. */
+  usd_to_ils: number
+  /** Price of 1 EUR in ILS. */
+  eur_to_ils: number
+  /** ISO-8601 timestamp of the last refresh (Frankfurter or manual). */
+  updated_at: string
+}
+
+export interface SystemSettingsUpdate {
+  usd_to_ils: number
+  eur_to_ils: number
 }
 
 export interface CreateDeliveryNoteData {

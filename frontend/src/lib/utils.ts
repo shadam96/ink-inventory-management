@@ -37,6 +37,38 @@ export function formatCurrency(
   }).format(value)
 }
 
+export interface FxRates {
+  /** Price of 1 USD in ILS. */
+  usd_to_ils: number
+  /** Price of 1 EUR in ILS. */
+  eur_to_ils: number
+}
+
+/**
+ * Convert a per-currency breakdown into a single amount in the display currency.
+ * Rates are anchored to ILS — inputs are summed in ILS first, then converted to
+ * the chosen display currency. Missing buckets are treated as zero.
+ */
+export function convertToDisplayCurrency(
+  amounts: Partial<Record<'ILS' | 'USD' | 'EUR', number>>,
+  displayCurrency: 'ILS' | 'USD' | 'EUR',
+  rates: FxRates,
+): number {
+  const inIls =
+    (amounts.ILS ?? 0) +
+    (amounts.USD ?? 0) * rates.usd_to_ils +
+    (amounts.EUR ?? 0) * rates.eur_to_ils
+
+  switch (displayCurrency) {
+    case 'ILS':
+      return inIls
+    case 'USD':
+      return inIls / rates.usd_to_ils
+    case 'EUR':
+      return inIls / rates.eur_to_ils
+  }
+}
+
 /**
  * Format a date as DD/MM/YYYY style appropriate to the current locale.
  */
