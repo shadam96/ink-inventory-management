@@ -69,6 +69,17 @@ export function convertToDisplayCurrency(
   }
 }
 
+/** Convert a single amount from one currency to another via ILS-anchored rates. */
+export function convertAmount(
+  amount: number,
+  from: 'ILS' | 'USD' | 'EUR',
+  to: 'ILS' | 'USD' | 'EUR',
+  rates: FxRates,
+): number {
+  if (from === to) return amount
+  return convertToDisplayCurrency({ [from]: amount }, to, rates)
+}
+
 /**
  * Format a date as DD/MM/YYYY style appropriate to the current locale.
  */
