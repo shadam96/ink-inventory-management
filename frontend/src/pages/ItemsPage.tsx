@@ -18,11 +18,13 @@ import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/layout/Header'
 import { SortableTableHead } from '@/components/SortableTableHead'
 import { ItemDialog } from '@/components/ItemDialog'
-import { formatCurrency, formatNumber } from '@/lib/utils'
-import { itemsApi, type Item, type CreateItemData } from '@/lib/api'
+import { formatCurrency, formatNumber, convertAmount } from '@/lib/utils'
+import { itemsApi, systemSettingsApi, type Item, type CreateItemData, type SystemSettings } from '@/lib/api'
+import { useUIStore } from '@/store/ui'
 
 export function ItemsPage() {
   const { t } = useTranslation()
+  const { currency: displayCurrency } = useUIStore()
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -32,11 +34,20 @@ export function ItemsPage() {
   const [editingItem, setEditingItem] = useState<Item | null>(null)
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+  const [fxRates, setFxRates] = useState<SystemSettings | null>(null)
   const pageSize = 20
 
   useEffect(() => {
     fetchItems()
   }, [page, search, sortBy, sortOrder])
+
+  // FX rates are fetched once on mount; the global display currency may change
+  // afterwards, but the underlying rates don't depend on it.
+  useEffect(() => {
+    systemSettingsApi.get().then(setFxRates).catch((e) => {
+      console.error('Failed to fetch FX rates:', e)
+    })
+  }, [])
 
   const handleSort = (key: string) => {
     if (sortBy === key) {
@@ -209,7 +220,12 @@ export function ItemsPage() {
                       <Badge variant="secondary">{item.unit_of_measure}</Badge>
                     </TableCell>
                     <TableCell className="text-start font-mono">
-                      {formatCurrency(item.cost_price, item.currency)}
+                      {fxRates
+                        ? formatCurrency(
+                            convertAmount(item.cost_price, item.currency, displayCurrency, fxRates),
+                            displayCurrency,
+                          )
+                        : formatCurrency(item.cost_price, item.currency)}
                     </TableCell>
                     <TableCell className="text-start">
                       {formatNumber(item.reorder_point)}

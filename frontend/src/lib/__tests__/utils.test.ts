@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cn, formatDate, formatCurrency, formatNumber, daysUntilExpiration, getExpirationStatus, convertToDisplayCurrency } from '../utils'
+import { cn, formatDate, formatCurrency, formatNumber, daysUntilExpiration, getExpirationStatus, convertToDisplayCurrency, convertAmount } from '../utils'
 
 describe('cn utility', () => {
   it('should merge class names', () => {
@@ -109,6 +109,28 @@ describe('convertToDisplayCurrency', () => {
 
   it('round-trips a USD bucket back to USD via ILS', () => {
     expect(convertToDisplayCurrency({ USD: 42 }, 'USD', rates)).toBeCloseTo(42)
+  })
+})
+
+describe('convertAmount', () => {
+  const rates = { usd_to_ils: 4, eur_to_ils: 5 }
+
+  it('returns the amount untouched when from === to', () => {
+    expect(convertAmount(100, 'USD', 'USD', rates)).toBe(100)
+  })
+
+  it('converts USD to ILS via the configured rate', () => {
+    expect(convertAmount(50, 'USD', 'ILS', rates)).toBe(200)
+  })
+
+  it('converts ILS to EUR via the configured rate', () => {
+    // 100 ILS / 5 ILS-per-EUR = 20 EUR
+    expect(convertAmount(100, 'ILS', 'EUR', rates)).toBe(20)
+  })
+
+  it('round-trips a cross-currency conversion through ILS', () => {
+    // 10 EUR → ILS (50) → USD (12.5)
+    expect(convertAmount(10, 'EUR', 'USD', rates)).toBe(12.5)
   })
 })
 
