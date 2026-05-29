@@ -29,21 +29,16 @@ export function SettingsPage() {
     setTheme,
     setCurrency,
     setAppName,
-    setAppIcon
+    setAppIcon,
   } = useUIStore()
 
-  const [localAppName, setLocalAppName] = useState(appName)
-  const [localAppIcon, setLocalAppIcon] = useState(appIcon)
-  const [localTheme, setLocalTheme] = useState(theme)
-  const [localCurrency, setLocalCurrency] = useState(currency)
-  
-  // Notification emails
+  // Notification emails — persisted to the server immediately on add/remove
+  // (optimistic update + revert on failure). No explicit save button.
   const [notificationEmails, setNotificationEmails] = useState<string[]>([])
   const [newEmail, setNewEmail] = useState('')
-  const [savingEmail, setSavingEmail] = useState(false)
   const [loadingEmail, setLoadingEmail] = useState(true)
 
-  // Test email
+  // Test email is an action, not a setting — kept as a one-shot button.
   const [testEmail, setTestEmail] = useState('')
   const [sendingTest, setSendingTest] = useState(false)
 
@@ -64,6 +59,18 @@ export function SettingsPage() {
 
   const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 
+  const persistEmails = async (next: string[], previous: string[]) => {
+    try {
+      await api.put('/settings/notifications', {
+        email_notifications_enabled: next.length > 0,
+        notification_emails: next,
+      })
+    } catch (error: any) {
+      setNotificationEmails(previous)
+      toast.error(error.response?.data?.detail || t('settings.notificationEmailsSaveFailed'))
+    }
+  }
+
   const addEmail = () => {
     const trimmed = newEmail.trim()
     if (!trimmed || !isValidEmail(trimmed)) {
@@ -74,12 +81,18 @@ export function SettingsPage() {
       toast.error(t('settings.emailDuplicate'))
       return
     }
-    setNotificationEmails(prev => [...prev, trimmed])
+    const previous = notificationEmails
+    const next = [...notificationEmails, trimmed]
+    setNotificationEmails(next)
     setNewEmail('')
+    void persistEmails(next, previous)
   }
 
   const removeEmail = (email: string) => {
-    setNotificationEmails(prev => prev.filter(e => e !== email))
+    const previous = notificationEmails
+    const next = notificationEmails.filter(e => e !== email)
+    setNotificationEmails(next)
+    void persistEmails(next, previous)
   }
 
   const sendTestEmail = async () => {
@@ -96,44 +109,6 @@ export function SettingsPage() {
       toast.error(error.response?.data?.detail || t('settings.testEmailFailed'))
     } finally {
       setSendingTest(false)
-    }
-  }
-
-  const saveNotificationEmails = async () => {
-    setSavingEmail(true)
-    try {
-      await api.put('/settings/notifications', {
-        email_notifications_enabled: notificationEmails.length > 0,
-        notification_emails: notificationEmails,
-      })
-      toast.success(t('settings.notificationEmailsSaved'))
-    } catch (error: any) {
-      toast.error(error.response?.data?.detail || t('settings.notificationEmailsSaveFailed'))
-    } finally {
-      setSavingEmail(false)
-    }
-  }
-
-  const handleSave = () => {
-    setAppName(localAppName)
-    setAppIcon(localAppIcon)
-    setTheme(localTheme)
-    setCurrency(localCurrency)
-    
-    // Apply theme immediately
-    applyTheme(localTheme)
-    
-    toast.success(t('settings.saved'))
-  }
-
-  const applyTheme = (themeValue: 'light' | 'dark' | 'system') => {
-    const root = document.documentElement
-    
-    if (themeValue === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
-      root.classList.toggle('dark', systemTheme === 'dark')
-    } else {
-      root.classList.toggle('dark', themeValue === 'dark')
     }
   }
 
@@ -157,8 +132,8 @@ export function SettingsPage() {
             <Label htmlFor="appName">{t('settings.appName')}</Label>
             <Input
               id="appName"
-              value={localAppName}
-              onChange={(e) => setLocalAppName(e.target.value)}
+              value={appName}
+              onChange={(e) => setAppName(e.target.value)}
               placeholder={t('settings.appNamePlaceholder')}
             />
           </div>
@@ -166,7 +141,7 @@ export function SettingsPage() {
           {/* App Icon */}
           <div className="space-y-3">
             <Label>{t('settings.appIcon')}</Label>
-            <RadioGroup value={localAppIcon} onValueChange={(value: any) => setLocalAppIcon(value)}>
+            <RadioGroup value={appIcon} onValueChange={(value: any) => setAppIcon(value)}>
               <div className="grid grid-cols-2 gap-4">
                 {(Object.keys(iconMap) as Array<keyof typeof iconMap>).map((iconKey) => {
                   const Icon = iconMap[iconKey]
@@ -174,11 +149,11 @@ export function SettingsPage() {
                     <div
                       key={iconKey}
                       className={`flex items-center gap-3 border rounded-lg p-4 cursor-pointer transition-all ${
-                        localAppIcon === iconKey
+                        appIcon === iconKey
                           ? 'border-primary bg-primary/5'
                           : 'border-border hover:border-primary/50'
                       }`}
-                      onClick={() => setLocalAppIcon(iconKey)}
+                      onClick={() => setAppIcon(iconKey)}
                     >
                       <RadioGroupItem value={iconKey} id={iconKey} />
                       <div className="flex items-center gap-3">
@@ -210,7 +185,7 @@ export function SettingsPage() {
           {/* Theme */}
           <div className="space-y-3">
             <Label>{t('settings.theme')}</Label>
-            <RadioGroup value={localTheme} onValueChange={(value: any) => setLocalTheme(value)}>
+            <RadioGroup value={theme} onValueChange={(value: any) => setTheme(value)}>
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <RadioGroupItem value="light" id="light" />
@@ -237,7 +212,7 @@ export function SettingsPage() {
           {/* Currency */}
           <div className="space-y-3">
             <Label>{t('settings.currency')}</Label>
-            <RadioGroup value={localCurrency} onValueChange={(value: any) => setLocalCurrency(value)}>
+            <RadioGroup value={currency} onValueChange={(value: any) => setCurrency(value)}>
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <RadioGroupItem value="ILS" id="ILS" />
@@ -342,15 +317,6 @@ export function SettingsPage() {
                 </Button>
               </div>
 
-              {/* Save */}
-              <Button
-                onClick={saveNotificationEmails}
-                disabled={savingEmail}
-                className="w-full"
-              >
-                {savingEmail ? t('common.saving') : t('settings.saveNotifications')}
-              </Button>
-
               {/* Test email */}
               <div className="pt-4 mt-2 border-t space-y-2">
                 <Label className="text-sm">{t('settings.testEmailTitle')}</Label>
@@ -380,13 +346,6 @@ export function SettingsPage() {
           )}
         </CardContent>
       </Card>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} size="lg">
-          {t('common.save')}
-        </Button>
-      </div>
     </div>
   )
 }
