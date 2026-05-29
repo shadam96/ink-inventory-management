@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,11 +23,6 @@ class SystemSettingsResponse(BaseModel):
     usd_to_ils: float
     eur_to_ils: float
     updated_at: datetime
-
-
-class SystemSettingsUpdate(BaseModel):
-    usd_to_ils: float = Field(gt=0)
-    eur_to_ils: float = Field(gt=0)
 
 
 def _serialize(row: SystemSettings) -> SystemSettingsResponse:
@@ -130,26 +125,12 @@ async def get_system_settings(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get system-wide settings (FX rates)."""
+    """Get system-wide settings (FX rates).
+
+    Rates are refreshed by a daily scheduler job (see app.tasks.scheduler);
+    there is no client-facing write endpoint.
+    """
     row = await _get_or_create_singleton(db)
-    return _serialize(row)
-
-
-@router.put("/system", response_model=SystemSettingsResponse)
-async def update_system_settings(
-    payload: SystemSettingsUpdate,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Update system-wide FX rates (admin/manager only)."""
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-
-    row = await _get_or_create_singleton(db)
-    row.usd_to_ils = Decimal(str(payload.usd_to_ils))
-    row.eur_to_ils = Decimal(str(payload.eur_to_ils))
-    await db.commit()
-    await db.refresh(row)
     return _serialize(row)
 
 
