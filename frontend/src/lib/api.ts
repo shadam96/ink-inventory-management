@@ -235,14 +235,10 @@ export const dashboardApi = {
   },
 }
 
-// System settings API (FX rates)
+// System settings API (FX rates — read-only; the daily scheduler is the writer).
 export const systemSettingsApi = {
   get: async () => {
     const response = await api.get('/settings/system')
-    return response.data as SystemSettings
-  },
-  update: async (payload: SystemSettingsUpdate) => {
-    const response = await api.put('/settings/system', payload)
     return response.data as SystemSettings
   },
 }
@@ -432,13 +428,8 @@ export interface SystemSettings {
   usd_to_ils: number
   /** Price of 1 EUR in ILS. */
   eur_to_ils: number
-  /** ISO-8601 timestamp of the last refresh (Frankfurter or manual). */
+  /** ISO-8601 timestamp of the last Frankfurter refresh. */
   updated_at: string
-}
-
-export interface SystemSettingsUpdate {
-  usd_to_ils: number
-  eur_to_ils: number
 }
 
 export interface CreateDeliveryNoteData {
