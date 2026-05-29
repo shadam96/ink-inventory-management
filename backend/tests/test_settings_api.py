@@ -114,3 +114,68 @@ async def test_send_test_email_invalid_email(
     )
 
     assert response.status_code == 422  # Validation error
+
+
+@pytest.mark.asyncio
+async def test_get_system_settings_seeds_defaults(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """First read after a fresh DB seeds and returns defaults (3.7 / 4.0)."""
+    response = await client.get("/api/v1/settings/system", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["usd_to_ils"] == 3.7
+    assert data["eur_to_ils"] == 4.0
+    assert "updated_at" in data
+
+
+@pytest.mark.asyncio
+async def test_update_system_settings_requires_elevated_role(
+    client: AsyncClient,
+    viewer_headers: dict,
+):
+    """Viewers can read FX rates but not change them."""
+    response = await client.put(
+        "/api/v1/settings/system",
+        headers=viewer_headers,
+        json={"usd_to_ils": 4.1, "eur_to_ils": 4.5},
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_update_system_settings_persists(
+    client: AsyncClient,
+    admin_headers: dict,
+):
+    """Admin update is reflected on the next GET."""
+    new_rates = {"usd_to_ils": 4.25, "eur_to_ils": 4.75}
+    put_response = await client.put(
+        "/api/v1/settings/system", headers=admin_headers, json=new_rates,
+    )
+    assert put_response.status_code == 200
+    put_body = put_response.json()
+    assert put_body["usd_to_ils"] == 4.25
+    assert put_body["eur_to_ils"] == 4.75
+
+    get_response = await client.get(
+        "/api/v1/settings/system", headers=admin_headers,
+    )
+    get_body = get_response.json()
+    assert get_body["usd_to_ils"] == 4.25
+    assert get_body["eur_to_ils"] == 4.75
+
+
+@pytest.mark.asyncio
+async def test_update_system_settings_rejects_non_positive(
+    client: AsyncClient,
+    admin_headers: dict,
+):
+    """Pydantic validation prevents zero/negative rates from being saved."""
+    response = await client.put(
+        "/api/v1/settings/system",
+        headers=admin_headers,
+        json={"usd_to_ils": 0, "eur_to_ils": 4.0},
+    )
+    assert response.status_code == 422

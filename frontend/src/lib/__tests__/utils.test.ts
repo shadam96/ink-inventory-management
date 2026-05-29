@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cn, formatDate, formatCurrency, formatNumber, daysUntilExpiration, getExpirationStatus } from '../utils'
+import { cn, formatDate, formatCurrency, formatNumber, daysUntilExpiration, getExpirationStatus, convertToDisplayCurrency } from '../utils'
 
 describe('cn utility', () => {
   it('should merge class names', () => {
@@ -74,6 +74,41 @@ describe('daysUntilExpiration', () => {
     pastDate.setDate(pastDate.getDate() - 10)
     const days = daysUntilExpiration(pastDate.toISOString())
     expect(days).toBeLessThan(0)
+  })
+})
+
+describe('convertToDisplayCurrency', () => {
+  const rates = { usd_to_ils: 4, eur_to_ils: 5 }
+
+  it('returns ILS bucket unchanged when displaying in ILS', () => {
+    expect(convertToDisplayCurrency({ ILS: 100 }, 'ILS', rates)).toBe(100)
+  })
+
+  it('converts USD into ILS at the configured rate', () => {
+    // 50 USD * 4 ILS/USD = 200 ILS
+    expect(convertToDisplayCurrency({ USD: 50 }, 'ILS', rates)).toBe(200)
+  })
+
+  it('sums distinct currencies into one display currency', () => {
+    // 100 ILS + 50 USD ($200 ILS-equivalent) + 10 EUR (50 ILS-equivalent) = 350 ILS
+    expect(
+      convertToDisplayCurrency({ ILS: 100, USD: 50, EUR: 10 }, 'ILS', rates),
+    ).toBe(350)
+  })
+
+  it('converts a mixed bucket into USD by routing through ILS', () => {
+    // Same 350 ILS → divided by usd_to_ils (4) = 87.5 USD
+    expect(
+      convertToDisplayCurrency({ ILS: 100, USD: 50, EUR: 10 }, 'USD', rates),
+    ).toBe(87.5)
+  })
+
+  it('treats missing buckets as zero', () => {
+    expect(convertToDisplayCurrency({}, 'EUR', rates)).toBe(0)
+  })
+
+  it('round-trips a USD bucket back to USD via ILS', () => {
+    expect(convertToDisplayCurrency({ USD: 42 }, 'USD', rates)).toBeCloseTo(42)
   })
 })
 

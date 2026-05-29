@@ -122,16 +122,22 @@ function AdminPickingView() {
       setTotalAvailable(0)
       setCanFulfill(true)
     }
-    setSelectedBatchId(null)
   }, [selectedItemId, requestedQuantity, itemInStock])
+
+  // Reset batch selection only when the picked item changes. The click
+  // handler in BatchSuggestionsList auto-fills the quantity field, so
+  // clearing on requestedQuantity change would wipe the pick the
+  // operator just made.
+  useEffect(() => {
+    setSelectedBatchId(null)
+  }, [selectedItemId, itemInStock])
 
   async function fetchItems() {
     try {
       const response = await itemsApi.list({ page_size: 100 })
-      // Only list items with pickable stock. The backend already excludes
-      // expired batches from total_quantity_available, so this filter is
-      // enough to hide items no operator can actually dispatch.
-      setItems(response.items.filter(i => (i.total_quantity_available ?? 0) > 0))
+      // Surface every item so the operator can see what exists; out-of-stock
+      // ones are rendered as disabled options below to make the reason visible.
+      setItems(response.items)
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
@@ -293,11 +299,15 @@ function AdminPickingView() {
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 >
                   <option value="">{t('picking.selectItemPlaceholder')}</option>
-                  {items.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.sku} - {item.name}
-                    </option>
-                  ))}
+                  {items.map((item) => {
+                    const isOOS = (item.total_quantity_available ?? 0) <= 0
+                    return (
+                      <option key={item.id} value={item.id} disabled={isOOS}>
+                        {item.sku} - {item.name}
+                        {isOOS ? ` — ${t('picking.outOfStock')}` : ''}
+                      </option>
+                    )
+                  })}
                 </select>
                 {errors.item_id && (
                   <p className="text-sm text-destructive">{t(errors.item_id.message ?? '')}</p>
@@ -509,7 +519,7 @@ function CustomerPickingView() {
   async function fetchItems() {
     try {
       const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items.filter(i => (i.total_quantity_available ?? 0) > 0))
+      setItems(response.items)
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
@@ -614,11 +624,15 @@ function CustomerPickingView() {
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               >
                 <option value="">{t('picking.selectItemPlaceholder')}</option>
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.sku} - {item.name}
-                  </option>
-                ))}
+                {items.map((item) => {
+                  const isOOS = (item.total_quantity_available ?? 0) <= 0
+                  return (
+                    <option key={item.id} value={item.id} disabled={isOOS}>
+                      {item.sku} - {item.name}
+                      {isOOS ? ` — ${t('picking.outOfStock')}` : ''}
+                    </option>
+                  )
+                })}
               </select>
               {errors.item_id && (
                 <p className="text-sm text-destructive">{t(errors.item_id.message ?? '')}</p>

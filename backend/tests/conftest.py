@@ -109,6 +109,33 @@ async def admin_user(db_session: AsyncSession) -> User:
 
 
 @pytest_asyncio.fixture
+async def viewer_user(db_session: AsyncSession) -> User:
+    """Create a viewer-role test user (no write permissions on settings)."""
+    user = User(
+        id=uuid4(),
+        username="vieweruser",
+        email="viewer@example.com",
+        full_name="Viewer User",
+        hashed_password=get_password_hash("viewerpassword123"),
+        role=UserRole.VIEWER,
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
+async def viewer_headers(viewer_user: User) -> dict:
+    """Get authorization headers for viewer user"""
+    from app.core.security import create_access_token
+
+    token = create_access_token(subject=viewer_user.id, role=viewer_user.role.value)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
 async def auth_headers(test_user: User) -> dict:
     """Get authorization headers for test user"""
     from app.core.security import create_access_token

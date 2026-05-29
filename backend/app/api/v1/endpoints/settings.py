@@ -1,9 +1,14 @@
 """Settings API endpoints"""
+from datetime import datetime
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, get_db
+from app.models.system_settings import SystemSettings
 from app.models.user import User, UserRole
 from app.schemas.user import NotificationSettingsUpdate, NotificationSettingsResponse
 from app.services.email_service import email_service
@@ -11,6 +16,39 @@ from app.core.config import settings
 
 
 router = APIRouter()
+
+
+class SystemSettingsResponse(BaseModel):
+    """FX rates anchored to ILS (price of 1 unit of foreign currency in ILS)."""
+    usd_to_ils: float
+    eur_to_ils: float
+    updated_at: datetime
+
+
+class SystemSettingsUpdate(BaseModel):
+    usd_to_ils: float = Field(gt=0)
+    eur_to_ils: float = Field(gt=0)
+
+
+def _serialize(row: SystemSettings) -> SystemSettingsResponse:
+    return SystemSettingsResponse(
+        usd_to_ils=float(row.usd_to_ils),
+        eur_to_ils=float(row.eur_to_ils),
+        updated_at=row.updated_at,
+    )
+
+
+async def _get_or_create_singleton(db: AsyncSession) -> SystemSettings:
+    """Returns the singleton row, creating it with defaults if the boot-time
+    migration seed somehow missed (defensive for fresh test databases)."""
+    result = await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+    row = result.scalar_one_or_none()
+    if row is None:
+        row = SystemSettings(id=1, usd_to_ils=Decimal("3.7"), eur_to_ils=Decimal("4.0"))
+        db.add(row)
+        await db.commit()
+        await db.refresh(row)
+    return row
 
 
 class TestEmailRequest(BaseModel):
@@ -85,6 +123,34 @@ async def update_notification_settings(
         notification_emails=emails,
         email_notifications_enabled=current_user.email_notifications_enabled,
     )
+
+
+@router.get("/system", response_model=SystemSettingsResponse)
+async def get_system_settings(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get system-wide settings (FX rates)."""
+    row = await _get_or_create_singleton(db)
+    return _serialize(row)
+
+
+@router.put("/system", response_model=SystemSettingsResponse)
+async def update_system_settings(
+    payload: SystemSettingsUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update system-wide FX rates (admin/manager only)."""
+    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+
+    row = await _get_or_create_singleton(db)
+    row.usd_to_ils = Decimal(str(payload.usd_to_ils))
+    row.eur_to_ils = Decimal(str(payload.eur_to_ils))
+    await db.commit()
+    await db.refresh(row)
+    return _serialize(row)
 
 
 @router.post("/email/test")

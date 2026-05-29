@@ -6,9 +6,10 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Droplets, Package, Boxes, Warehouse, Mail, Plus, X, Send } from 'lucide-react'
+import { Droplets, Package, Boxes, Warehouse, Mail, Plus, X, Send, Languages, ArrowLeftRight } from 'lucide-react'
 import { toast } from 'sonner'
-import api from '@/lib/api'
+import api, { systemSettingsApi } from '@/lib/api'
+import { SUPPORTED_LANGUAGES, resolveLanguage } from '@/i18n/config'
 
 const iconMap = {
   droplets: Droplets,
@@ -18,16 +19,17 @@ const iconMap = {
 }
 
 export function SettingsPage() {
-  const { t } = useTranslation()
-  const { 
-    theme, 
-    currency, 
-    appName, 
+  const { t, i18n } = useTranslation()
+  const currentLanguage = resolveLanguage(i18n.language).code
+  const {
+    theme,
+    currency,
+    appName,
     appIcon,
-    setTheme, 
+    setTheme,
     setCurrency,
     setAppName,
-    setAppIcon 
+    setAppIcon
   } = useUIStore()
 
   const [localAppName, setLocalAppName] = useState(appName)
@@ -45,9 +47,46 @@ export function SettingsPage() {
   const [testEmail, setTestEmail] = useState('')
   const [sendingTest, setSendingTest] = useState(false)
 
+  // FX rates (anchored to ILS).
+  const [usdToIls, setUsdToIls] = useState<string>('')
+  const [eurToIls, setEurToIls] = useState<string>('')
+  const [fxUpdatedAt, setFxUpdatedAt] = useState<string | null>(null)
+  const [savingFx, setSavingFx] = useState(false)
+
   useEffect(() => {
     fetchNotificationSettings()
+    fetchFxRates()
   }, [])
+
+  const fetchFxRates = async () => {
+    try {
+      const rates = await systemSettingsApi.get()
+      setUsdToIls(String(rates.usd_to_ils))
+      setEurToIls(String(rates.eur_to_ils))
+      setFxUpdatedAt(rates.updated_at)
+    } catch (error) {
+      console.error('Failed to fetch FX rates:', error)
+    }
+  }
+
+  const saveFxRates = async () => {
+    const usd = parseFloat(usdToIls)
+    const eur = parseFloat(eurToIls)
+    if (!(usd > 0) || !(eur > 0)) {
+      toast.error(t('settings.fxInvalid'))
+      return
+    }
+    setSavingFx(true)
+    try {
+      const updated = await systemSettingsApi.update({ usd_to_ils: usd, eur_to_ils: eur })
+      setFxUpdatedAt(updated.updated_at)
+      toast.success(t('settings.fxSaved'))
+    } catch (error: any) {
+      toast.error(error.response?.data?.detail || t('settings.fxSaveFailed'))
+    } finally {
+      setSavingFx(false)
+    }
+  }
 
   const fetchNotificationSettings = async () => {
     try {
@@ -258,6 +297,86 @@ export function SettingsPage() {
               </div>
             </RadioGroup>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Language */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Languages className="w-5 h-5" />
+            {t('settings.language')}
+          </CardTitle>
+          <CardDescription>{t('settings.languageDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <RadioGroup
+            value={currentLanguage}
+            onValueChange={(value) => i18n.changeLanguage(value)}
+          >
+            <div className="space-y-2">
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <div key={lang.code} className="flex items-center gap-3">
+                  <RadioGroupItem value={lang.code} id={`lang-${lang.code}`} />
+                  <Label htmlFor={`lang-${lang.code}`} className="cursor-pointer">
+                    {lang.label}
+                  </Label>
+                </div>
+              ))}
+            </div>
+          </RadioGroup>
+        </CardContent>
+      </Card>
+
+      {/* FX rates */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ArrowLeftRight className="w-5 h-5" />
+            {t('settings.fxRates')}
+          </CardTitle>
+          <CardDescription>{t('settings.fxRatesDescription')}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="usd_to_ils">{t('settings.usdToIls')}</Label>
+              <Input
+                id="usd_to_ils"
+                type="number"
+                step="0.0001"
+                min={0}
+                value={usdToIls}
+                onChange={(e) => setUsdToIls(e.target.value)}
+                placeholder="3.7"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="eur_to_ils">{t('settings.eurToIls')}</Label>
+              <Input
+                id="eur_to_ils"
+                type="number"
+                step="0.0001"
+                min={0}
+                value={eurToIls}
+                onChange={(e) => setEurToIls(e.target.value)}
+                placeholder="4.0"
+              />
+            </div>
+          </div>
+          <Button onClick={saveFxRates} disabled={savingFx} className="w-full">
+            {savingFx ? t('common.saving') : t('settings.saveFxRates')}
+          </Button>
+          {fxUpdatedAt && (
+            <p className="text-xs text-muted-foreground">
+              {t('settings.fxLastUpdated', {
+                when: new Intl.DateTimeFormat(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                }).format(new Date(fxUpdatedAt)),
+              })}
+            </p>
+          )}
         </CardContent>
       </Card>
 
