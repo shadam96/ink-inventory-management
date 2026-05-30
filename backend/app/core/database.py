@@ -16,12 +16,20 @@ class Base(DeclarativeBase):
     pass
 
 
-# Create async engine
+# Create async engine.
+#
+# `statement_cache_size=0` disables asyncpg's prepared-statement cache. Required
+# when the connection goes through a transaction-pooling proxy (Neon's pooler,
+# PgBouncer) because cached statement names are invalidated as the pooler
+# rotates backend connections, surfacing as "prepared statement does not exist"
+# errors mid-request. The cost is a few ms per query, which is irrelevant for
+# this app's traffic and a good trade for a hard-to-debug intermittent failure.
 engine = create_async_engine(
     settings.database_url,
     echo=settings.db_echo,
     poolclass=NullPool if settings.is_development else None,
     pool_pre_ping=True,
+    connect_args={"statement_cache_size": 0},
 )
 
 # Create async session factory
