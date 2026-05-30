@@ -60,7 +60,7 @@ interface ItemDialogProps {
 export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogProps) {
   const { t } = useTranslation()
   const isEdit = !!item
-  const { currency: defaultCurrency, setCurrency } = useUIStore()
+  const { currency: defaultCurrency } = useUIStore()
 
   const {
     register,
@@ -242,12 +242,9 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                   name="currency"
                   control={control}
                   render={({ field }) => (
-                    <Select 
-                      value={field.value} 
-                      onValueChange={(value) => {
-                        field.onChange(value)
-                        setCurrency(value as 'ILS' | 'USD' | 'EUR')
-                      }}
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
                     >
                       <SelectTrigger className="w-[120px]">
                         <SelectValue />

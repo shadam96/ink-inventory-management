@@ -23,8 +23,8 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Header } from '@/components/layout/Header'
-import { formatCurrency, formatNumber } from '@/lib/utils'
-import { dashboardApi, type DashboardKPIs } from '@/lib/api'
+import { formatCurrency, formatNumber, convertToDisplayCurrency } from '@/lib/utils'
+import { dashboardApi, systemSettingsApi, type DashboardKPIs, type SystemSettings } from '@/lib/api'
 import { useUIStore } from '@/store/ui'
 
 interface KPICardProps {
@@ -81,19 +81,22 @@ export function DashboardPage() {
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
   const [riskData, setRiskData] = useState<any>(null)
   const [distribution, setDistribution] = useState<any[]>([])
+  const [fxRates, setFxRates] = useState<SystemSettings | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [kpisRes, riskRes, distRes] = await Promise.all([
+        const [kpisRes, riskRes, distRes, fxRes] = await Promise.all([
           dashboardApi.getKpis(),
           dashboardApi.getExpirationRisk(),
           dashboardApi.getInventoryDistribution(),
+          systemSettingsApi.get(),
         ])
         setKpis(kpisRes)
         setRiskData(riskRes)
         setDistribution(distRes.items || [])
+        setFxRates(fxRes)
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error)
       } finally {
@@ -102,6 +105,13 @@ export function DashboardPage() {
     }
     fetchData()
   }, [])
+
+  const inventoryValue = fxRates
+    ? convertToDisplayCurrency(kpis?.inventory_value_by_currency ?? {}, currency, fxRates)
+    : 0
+  const atRiskValue = fxRates
+    ? convertToDisplayCurrency(kpis?.at_risk_value_by_currency ?? {}, currency, fxRates)
+    : 0
 
   const riskChartData = riskData ? [
     { name: t('dashboard.riskSafe'), value: riskData.risk_levels.safe.value, color: RISK_COLORS.safe },
@@ -134,13 +144,13 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
         <KPICard
           title={t('dashboard.inventoryValue')}
-          value={formatCurrency(kpis?.inventory_value || 0, currency)}
+          value={formatCurrency(inventoryValue, currency)}
           subtitle={t('dashboard.itemsCount', { count: kpis?.items_in_stock || 0 })}
           icon={<Package className="w-6 h-6" />}
         />
         <KPICard
           title={t('dashboard.atRisk')}
-          value={formatCurrency(kpis?.at_risk_value || 0, currency)}
+          value={formatCurrency(atRiskValue, currency)}
           subtitle={t('dashboard.percentOfInventory', { percent: kpis?.at_risk_percentage?.toFixed(1) || 0 })}
           icon={<AlertTriangle className="w-6 h-6" />}
           variant={kpis?.at_risk_percentage && kpis.at_risk_percentage > 20 ? 'danger' : 'warning'}

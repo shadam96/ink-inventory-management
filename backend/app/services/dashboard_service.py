@@ -22,33 +22,44 @@ class DashboardService:
         self.db = db
     
     async def get_inventory_value(self) -> Dict[str, Any]:
-        """Calculate total inventory value"""
+        """Calculate inventory value bucketed by per-item currency.
+
+        Items declare their own currency on creation. Summing raw cost prices
+        across currencies would be nonsense, so the dashboard receives a
+        per-currency breakdown and applies FX conversion client-side using the
+        rates from SystemSettings.
+        """
         result = await self.db.execute(
             select(Item).options(selectinload(Item.batches))
         )
         items = result.scalars().all()
-        
+
         today = date.today()
-        total_value = Decimal("0")
+        totals_by_currency: Dict[str, Decimal] = {}
         total_quantity = Decimal("0")
         items_count = 0
-        
+
         for item in items:
             active_qty = sum(
-                b.quantity_available 
-                for b in item.batches 
+                b.quantity_available
+                for b in item.batches
                 if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
             )
             if active_qty > 0:
                 items_count += 1
                 total_quantity += active_qty
-                total_value += active_qty * item.cost_price
-        
+                ccy = item.currency or "ILS"
+                totals_by_currency[ccy] = (
+                    totals_by_currency.get(ccy, Decimal("0"))
+                    + active_qty * item.cost_price
+                )
+
         return {
-            "total_value": float(total_value),
+            "totals_by_currency": {
+                ccy: float(amount) for ccy, amount in totals_by_currency.items()
+            },
             "total_quantity": float(total_quantity),
             "items_with_stock": items_count,
-            "currency": "ILS",
         }
     
     async def get_inventory_distribution(self) -> List[Dict[str, Any]]:
@@ -233,27 +244,53 @@ class DashboardService:
             "movements_count": len(movements),
         }
     
+    async def _at_risk_value_by_currency(self) -> Dict[str, float]:
+        """Sum cost-value of batches expiring within 60 days, bucketed by item currency."""
+        today = date.today()
+        result = await self.db.execute(
+            select(Batch)
+            .options(selectinload(Batch.item))
+            .where(
+                Batch.status == BatchStatus.ACTIVE,
+                Batch.quantity_available > 0,
+            )
+        )
+        batches = result.scalars().all()
+
+        totals: Dict[str, Decimal] = {}
+        for batch in batches:
+            days_until = (batch.expiration_date - today).days
+            if days_until < 0 or days_until > 60:
+                continue
+            item = batch.item
+            if not item:
+                continue
+            ccy = item.currency or "ILS"
+            totals[ccy] = (
+                totals.get(ccy, Decimal("0"))
+                + batch.quantity_available * item.cost_price
+            )
+        return {ccy: float(amount) for ccy, amount in totals.items()}
+
     async def get_kpi_summary(self) -> Dict[str, Any]:
         """Get all KPIs for dashboard"""
         inventory = await self.get_inventory_value()
         risk_map = await self.get_expiration_risk_map()
         low_stock = await self.get_low_stock_items()
         activity = await self.get_recent_activity()
-        
+        at_risk_by_ccy = await self._at_risk_value_by_currency()
+
         # Unread alerts count
         result = await self.db.execute(
             select(func.count(Alert.id))
             .where(Alert.is_read == False, Alert.is_dismissed == False)
         )
         unread_alerts = result.scalar() or 0
-        
+
         return {
-            "inventory_value": inventory["total_value"],
+            "inventory_value_by_currency": inventory["totals_by_currency"],
             "items_in_stock": inventory["items_with_stock"],
-            "at_risk_value": (
-                risk_map["risk_levels"]["critical"]["value"] +
-                risk_map["risk_levels"]["warning"]["value"]
-            ),
+            "at_risk_value_by_currency": at_risk_by_ccy,
             "at_risk_percentage": (
                 risk_map["risk_levels"]["critical"]["percentage"] +
                 risk_map["risk_levels"]["warning"]["percentage"]

@@ -7,6 +7,7 @@ from app.models.movement import Movement
 from app.models.customer import Customer, CustomerMachine
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
 from app.models.alert import Alert
+from app.models.system_settings import SystemSettings
 
 __all__ = [
     "User",
@@ -19,6 +20,7 @@ __all__ = [
     "DeliveryNote",
     "DeliveryNoteItem",
     "Alert",
+    "SystemSettings",
 ]
 
 

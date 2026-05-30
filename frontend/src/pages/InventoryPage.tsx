@@ -27,11 +27,21 @@ import {
   formatDate,
   daysUntilExpiration,
   getExpirationStatus,
+  convertAmount,
+  convertToDisplayCurrency,
 } from '@/lib/utils'
-import { inventoryApi, type InventoryRow, type InventoryTotalCost } from '@/lib/api'
+import {
+  inventoryApi,
+  systemSettingsApi,
+  type InventoryRow,
+  type InventoryTotalCost,
+  type SystemSettings,
+} from '@/lib/api'
+import { useUIStore } from '@/store/ui'
 
 export function InventoryPage() {
   const { t } = useTranslation()
+  const { currency: displayCurrency } = useUIStore()
   const [rows, setRows] = useState<InventoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -44,12 +54,19 @@ export function InventoryPage() {
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
   const [totalCost, setTotalCost] = useState<InventoryTotalCost['totals']>({})
+  const [fxRates, setFxRates] = useState<SystemSettings | null>(null)
   const pageSize = 20
 
   useEffect(() => {
     const id = setTimeout(() => setDebouncedSearch(search), 250)
     return () => clearTimeout(id)
   }, [search])
+
+  useEffect(() => {
+    systemSettingsApi.get().then(setFxRates).catch((e) => {
+      console.error('Failed to fetch FX rates:', e)
+    })
+  }, [])
 
   useEffect(() => {
     fetchInventory()
@@ -200,13 +217,33 @@ export function InventoryPage() {
                           <ReceiptDateCell dates={row.receipt_dates} />
                         </TableCell>
                         <TableCell className="text-start font-mono">
-                          {formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR')}
+                          {fxRates
+                            ? formatCurrency(
+                                convertAmount(
+                                  row.cost_price,
+                                  row.currency as 'ILS' | 'USD' | 'EUR',
+                                  displayCurrency,
+                                  fxRates,
+                                ),
+                                displayCurrency,
+                              )
+                            : formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR')}
                         </TableCell>
                         <TableCell className="text-left font-mono font-medium">
-                          {formatCurrency(
-                            row.quantity_available * row.cost_price,
-                            row.currency as 'ILS' | 'USD' | 'EUR'
-                          )}
+                          {fxRates
+                            ? formatCurrency(
+                                convertAmount(
+                                  row.quantity_available * row.cost_price,
+                                  row.currency as 'ILS' | 'USD' | 'EUR',
+                                  displayCurrency,
+                                  fxRates,
+                                ),
+                                displayCurrency,
+                              )
+                            : formatCurrency(
+                                row.quantity_available * row.cost_price,
+                                row.currency as 'ILS' | 'USD' | 'EUR',
+                              )}
                         </TableCell>
                         <TableCell>
                           <StatusBadge status={row.status} />
@@ -247,13 +284,22 @@ export function InventoryPage() {
           <span className="text-sm font-medium text-muted-foreground">
             {t('inventory.grandTotal')}:
           </span>
-          <div className="flex flex-wrap items-center gap-3">
-            {Object.entries(totalCost).map(([currency, value]) => (
-              <span key={currency} className="font-mono font-semibold text-base">
-                {formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR')}
-              </span>
-            ))}
-          </div>
+          <span className="font-mono font-semibold text-base">
+            {fxRates
+              ? formatCurrency(
+                  convertToDisplayCurrency(
+                    totalCost as Partial<Record<'ILS' | 'USD' | 'EUR', number>>,
+                    displayCurrency,
+                    fxRates,
+                  ),
+                  displayCurrency,
+                )
+              : Object.entries(totalCost)
+                  .map(([currency, value]) =>
+                    formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR'),
+                  )
+                  .join(' + ')}
+          </span>
         </div>
       )}
 

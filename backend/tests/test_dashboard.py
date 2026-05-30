@@ -90,18 +90,50 @@ class TestDashboardService:
         }
     
     async def test_get_inventory_value(self, db_session, sample_items_with_batches):
-        """Test calculating inventory value"""
+        """Test calculating inventory value, bucketed by per-item currency."""
         service = DashboardService(db_session)
-        
+
         result = await service.get_inventory_value()
-        
-        # Item1: 50 * 200 = 10,000
-        # Item2: (40 + 60) * 100 = 10,000
-        # Total: 20,000
-        assert result["total_value"] == 20000.0
+
+        # Both fixture items default to ILS — totals collapse into one bucket.
+        # Item1: 50 * 200 = 10,000; Item2: (40 + 60) * 100 = 10,000 → ILS 20,000.
+        assert result["totals_by_currency"] == {"ILS": 20000.0}
         assert result["total_quantity"] == 150.0  # 50 + 40 + 60
         assert result["items_with_stock"] == 2
-        assert result["currency"] == "ILS"
+
+    async def test_get_inventory_value_buckets_distinct_currencies(
+        self, db_session, sample_items_with_batches
+    ):
+        """A USD-priced item must not be summed with ILS items."""
+        # Add a USD item with active stock.
+        usd_item = Item(
+            sku="DASH-INK-USD",
+            name="Imported Ink",
+            supplier="US Supplier",
+            unit_of_measure="ליטר",
+            cost_price=Decimal("50.00"),
+            currency="USD",
+            min_stock=0,
+            reorder_point=0,
+        )
+        db_session.add(usd_item)
+        await db_session.flush()
+        db_session.add(
+            Batch(
+                batch_number="DASH-BT-USD",
+                item_id=usd_item.id,
+                expiration_date=date.today() + timedelta(days=180),
+                receipt_date=date.today(),
+                quantity_received=Decimal("10"),
+                quantity_available=Decimal("10"),
+                status=BatchStatus.ACTIVE,
+            )
+        )
+        await db_session.flush()
+
+        result = await DashboardService(db_session).get_inventory_value()
+
+        assert result["totals_by_currency"] == {"ILS": 20000.0, "USD": 500.0}
     
     async def test_get_inventory_distribution(self, db_session, sample_items_with_batches):
         """Test inventory distribution"""
@@ -228,21 +260,21 @@ class TestDashboardService:
     async def test_get_kpi_summary(self, db_session, sample_items_with_batches):
         """Test getting complete KPI summary"""
         service = DashboardService(db_session)
-        
+
         kpis = await service.get_kpi_summary()
-        
+
         # Verify all KPIs present
-        assert "inventory_value" in kpis
+        assert "inventory_value_by_currency" in kpis
         assert "items_in_stock" in kpis
-        assert "at_risk_value" in kpis
+        assert "at_risk_value_by_currency" in kpis
         assert "at_risk_percentage" in kpis
         assert "low_stock_items" in kpis
         assert "unread_alerts" in kpis
         assert "recent_receipts" in kpis
         assert "recent_dispatches" in kpis
-        
+
         # Verify values are reasonable
-        assert kpis["inventory_value"] > 0
+        assert sum(kpis["inventory_value_by_currency"].values()) > 0
         assert kpis["items_in_stock"] >= 2
 
 
@@ -277,22 +309,22 @@ class TestDashboardAPI:
             "/api/v1/dashboard/kpis",
             headers={"Authorization": f"Bearer {auth_token}"}
         )
-        
+
         assert response.status_code == 200
         data = response.json()
-        assert "inventory_value" in data
-    
+        assert "inventory_value_by_currency" in data
+
     async def test_get_inventory_value_api(self, client, auth_token):
         """Test getting inventory value via API"""
         response = await client.get(
             "/api/v1/dashboard/inventory-value",
             headers={"Authorization": f"Bearer {auth_token}"}
         )
-        
+
         assert response.status_code == 200
         data = response.json()
-        assert "total_value" in data
-        assert "currency" in data
+        assert "totals_by_currency" in data
+        assert "items_with_stock" in data
     
     async def test_get_inventory_distribution_api(self, client, auth_token):
         """Test getting inventory distribution via API"""

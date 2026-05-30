@@ -114,3 +114,19 @@ async def test_send_test_email_invalid_email(
     )
 
     assert response.status_code == 422  # Validation error
+
+
+@pytest.mark.asyncio
+async def test_get_system_settings_seeds_defaults(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """First read after a fresh DB seeds and returns defaults (3.7 / 4.0)."""
+    response = await client.get("/api/v1/settings/system", headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["usd_to_ils"] == 3.7
+    assert data["eur_to_ils"] == 4.0
+    assert "updated_at" in data
+
+
