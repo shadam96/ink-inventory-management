@@ -1,4 +1,5 @@
 """Application configuration using Pydantic Settings"""
+import logging
 from functools import lru_cache
 from typing import List
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -6,19 +7,31 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+logger = logging.getLogger(__name__)
+
+
+# Query-string parameters that asyncpg's URL parser passes through to
+# ``asyncpg.connect()``. Anything else in the URL becomes an unknown kwarg
+# at connect time and raises TypeError. libpq supports a much larger set
+# (channel_binding, application_name, connect_timeout, options, gssencmode,
+# keepalives, sslrootcert, …) — none of those are accepted by asyncpg via
+# the URL, so we strip them. The connection still negotiates SSL / channel
+# binding / etc. correctly at the protocol level; the URL params are just
+# metadata libpq would have used.
+_ASYNCPG_URL_PARAM_ALLOWLIST = frozenset({"ssl", "target_session_attrs"})
+
 
 def normalize_database_url(db_url: str) -> str:
     """Normalize a Postgres connection URL for the asyncpg driver.
 
-    Two transforms keep us compatible with whatever string Neon, Railway, or
-    Render hand the operator:
+    Transforms applied so that any operator-pasted string (Neon, Railway,
+    Render, raw psql) just works:
 
     - ``postgresql://`` → ``postgresql+asyncpg://`` so SQLAlchemy picks the
       async dialect.
-    - ``sslmode=…`` → ``ssl=…`` because asyncpg rejects ``sslmode`` as an
-      unknown kwarg (it's a psycopg2-only parameter name). Neon's connection
-      string picker hands out the psycopg2 form by default — rewriting it
-      here means pasted URLs work without each operator remembering to edit.
+    - ``sslmode=…`` → ``ssl=…`` (asyncpg's parameter name).
+    - Drops any other libpq-only query params that asyncpg doesn't accept,
+      logging a warning so a real misconfiguration isn't silently lost.
     """
     if not db_url:
         return db_url
@@ -27,11 +40,28 @@ def normalize_database_url(db_url: str) -> str:
         db_url = "postgresql+asyncpg://" + db_url[len("postgresql://"):]
 
     parts = urlsplit(db_url)
-    if parts.query:
-        pairs = parse_qsl(parts.query, keep_blank_values=True)
-        rewritten = [("ssl", v) if k == "sslmode" else (k, v) for k, v in pairs]
-        if rewritten != pairs:
-            db_url = urlunsplit(parts._replace(query=urlencode(rewritten)))
+    if not parts.query:
+        return db_url
+
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    kept: list[tuple[str, str]] = []
+    dropped: list[str] = []
+    for key, value in pairs:
+        normalized_key = "ssl" if key == "sslmode" else key
+        if normalized_key in _ASYNCPG_URL_PARAM_ALLOWLIST:
+            kept.append((normalized_key, value))
+        else:
+            dropped.append(key)
+
+    if dropped:
+        logger.warning(
+            "Dropped libpq-only query params from DATABASE_URL (asyncpg doesn't "
+            "accept these via URL): %s",
+            ", ".join(sorted(set(dropped))),
+        )
+
+    if kept != pairs:
+        db_url = urlunsplit(parts._replace(query=urlencode(kept)))
 
     return db_url
 
