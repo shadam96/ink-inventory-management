@@ -1,8 +1,39 @@
 """Application configuration using Pydantic Settings"""
 from functools import lru_cache
 from typing import List
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def normalize_database_url(db_url: str) -> str:
+    """Normalize a Postgres connection URL for the asyncpg driver.
+
+    Two transforms keep us compatible with whatever string Neon, Railway, or
+    Render hand the operator:
+
+    - ``postgresql://`` → ``postgresql+asyncpg://`` so SQLAlchemy picks the
+      async dialect.
+    - ``sslmode=…`` → ``ssl=…`` because asyncpg rejects ``sslmode`` as an
+      unknown kwarg (it's a psycopg2-only parameter name). Neon's connection
+      string picker hands out the psycopg2 form by default — rewriting it
+      here means pasted URLs work without each operator remembering to edit.
+    """
+    if not db_url:
+        return db_url
+
+    if db_url.startswith("postgresql://"):
+        db_url = "postgresql+asyncpg://" + db_url[len("postgresql://"):]
+
+    parts = urlsplit(db_url)
+    if parts.query:
+        pairs = parse_qsl(parts.query, keep_blank_values=True)
+        rewritten = [("ssl", v) if k == "sslmode" else (k, v) for k, v in pairs]
+        if rewritten != pairs:
+            db_url = urlunsplit(parts._replace(query=urlencode(rewritten)))
+
+    return db_url
 
 
 class Settings(BaseSettings):
@@ -41,10 +72,9 @@ class Settings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def parse_database_url(cls, values):
-        # Railway/Render/Neon give postgresql:// but SQLAlchemy async needs postgresql+asyncpg://
         db_url = values.get("database_url", "")
-        if isinstance(db_url, str) and db_url.startswith("postgresql://"):
-            values["database_url"] = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        if isinstance(db_url, str):
+            values["database_url"] = normalize_database_url(db_url)
         return values
     
     # Alert Thresholds (days before expiration)
