@@ -86,6 +86,7 @@ class DashboardService:
                     "name": item.name,
                     "quantity": float(active_qty),
                     "value": value,
+                    "currency": item.currency or "ILS",
                     "unit": item.unit_of_measure,
                 })
         
@@ -94,9 +95,15 @@ class DashboardService:
         return distribution
     
     async def get_expiration_risk_map(self) -> Dict[str, Any]:
-        """Get expiration risk breakdown (for gauge/risk map)"""
+        """Get expiration risk breakdown (for gauge/risk map), bucketed by item currency.
+
+        Items declare their own currency — summing raw cost values across
+        currencies would be nonsense (see get_inventory_value). Each risk level's
+        value is kept as a per-currency breakdown; callers convert to their
+        chosen display currency using SystemSettings FX rates.
+        """
         today = date.today()
-        
+
         result = await self.db.execute(
             select(Batch)
             .options(selectinload(Batch.item))
@@ -106,20 +113,22 @@ class DashboardService:
             )
         )
         batches = result.scalars().all()
-        
-        risk_levels = {
-            "expired": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},
-            "critical": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},  # 0-30 days
-            "warning": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},   # 31-60 days
-            "caution": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},   # 61-90 days
-            "safe": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},      # 90+ days
+
+        risk_levels: Dict[str, Dict[str, Any]] = {
+            "expired": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
+            "critical": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},  # 0-30 days
+            "warning": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 31-60 days
+            "caution": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 61-90 days
+            "safe": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},      # 90+ days
         }
-        
+
         for batch in batches:
             days_until = (batch.expiration_date - today).days
-            cost = batch.item.cost_price if batch.item else Decimal("0")
+            item = batch.item
+            ccy = (item.currency if item else None) or "ILS"
+            cost = item.cost_price if item else Decimal("0")
             value = batch.quantity_available * cost
-            
+
             if days_until < 0:
                 level = "expired"
             elif days_until <= 30:
@@ -130,30 +139,40 @@ class DashboardService:
                 level = "caution"
             else:
                 level = "safe"
-            
-            risk_levels[level]["quantity"] += batch.quantity_available
-            risk_levels[level]["value"] += value
-            risk_levels[level]["batches"] += 1
-        
-        # Convert to float for JSON
-        for level in risk_levels:
-            risk_levels[level]["quantity"] = float(risk_levels[level]["quantity"])
-            risk_levels[level]["value"] = float(risk_levels[level]["value"])
-        
-        # Calculate percentages
-        total_value = sum(r["value"] for r in risk_levels.values())
-        if total_value > 0:
-            for level in risk_levels:
-                risk_levels[level]["percentage"] = round(
-                    risk_levels[level]["value"] / total_value * 100, 1
-                )
-        else:
-            for level in risk_levels:
-                risk_levels[level]["percentage"] = 0
-        
+
+            bucket = risk_levels[level]
+            bucket["quantity"] += batch.quantity_available
+            bucket["value_by_currency"][ccy] = bucket["value_by_currency"].get(ccy, Decimal("0")) + value
+            bucket["batches"] += 1
+
+        # Percentage is a coarse ratio between risk levels, not a displayed
+        # amount, so it's computed on the raw currency-agnostic sum (same basis
+        # as before this fix) rather than pulling in FX conversion.
+        raw_totals = {
+            level: sum(bucket["value_by_currency"].values(), Decimal("0"))
+            for level, bucket in risk_levels.items()
+        }
+        total_raw = sum(raw_totals.values(), Decimal("0"))
+
+        for level, bucket in risk_levels.items():
+            bucket["quantity"] = float(bucket["quantity"])
+            bucket["value_by_currency"] = {
+                ccy: float(v) for ccy, v in bucket["value_by_currency"].items()
+            }
+            bucket["percentage"] = (
+                round(float(raw_totals[level] / total_raw * 100), 1)
+                if total_raw > 0
+                else 0
+            )
+
+        total_value_by_currency: Dict[str, float] = {}
+        for bucket in risk_levels.values():
+            for ccy, v in bucket["value_by_currency"].items():
+                total_value_by_currency[ccy] = total_value_by_currency.get(ccy, 0.0) + v
+
         return {
             "risk_levels": risk_levels,
-            "total_value": float(total_value),
+            "total_value_by_currency": total_value_by_currency,
             "color_codes": {
                 "expired": "#000000",   # Black
                 "critical": "#DC2626",  # Red

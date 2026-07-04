@@ -154,27 +154,79 @@ class TestDashboardService:
     async def test_get_expiration_risk_map(self, db_session, sample_items_with_batches):
         """Test expiration risk map"""
         service = DashboardService(db_session)
-        
+
         result = await service.get_expiration_risk_map()
-        
+
         risk_levels = result["risk_levels"]
-        
+
         # Should have all risk levels
         assert "expired" in risk_levels
         assert "critical" in risk_levels
         assert "warning" in risk_levels
         assert "caution" in risk_levels
         assert "safe" in risk_levels
-        
+
         # Should have color codes
         assert "color_codes" in result
-        
+
         # Critical should have value (batch2 with 15 days)
         assert risk_levels["critical"]["batches"] >= 1
-        
+
         # Safe should have value (batch1 with 180 days)
         assert risk_levels["safe"]["batches"] >= 1
-    
+
+    async def test_get_inventory_distribution_includes_currency(
+        self, db_session, sample_items_with_batches
+    ):
+        """Each distribution entry must carry its own item's currency so callers
+        can convert instead of mislabeling raw values under one currency."""
+        service = DashboardService(db_session)
+
+        distribution = await service.get_inventory_distribution()
+
+        assert len(distribution) == 2
+        assert all(d["currency"] == "ILS" for d in distribution)
+
+    async def test_get_expiration_risk_map_buckets_distinct_currencies(
+        self, db_session, sample_items_with_batches
+    ):
+        """A USD-priced item's value must not be summed into the ILS bucket."""
+        # Add a USD item with stock safely inside the "safe" window (180 days),
+        # alongside the fixture's existing ILS item in the same bucket.
+        usd_item = Item(
+            sku="DASH-RISK-USD",
+            name="Imported Safe-Window Ink",
+            supplier="US Supplier",
+            unit_of_measure="ליטר",
+            cost_price=Decimal("50.00"),
+            currency="USD",
+            min_stock=0,
+            reorder_point=0,
+        )
+        db_session.add(usd_item)
+        await db_session.flush()
+        db_session.add(
+            Batch(
+                batch_number="DASH-RISK-BT-USD",
+                item_id=usd_item.id,
+                expiration_date=date.today() + timedelta(days=180),  # Safe, same bucket as batch1
+                receipt_date=date.today(),
+                quantity_received=Decimal("10"),
+                quantity_available=Decimal("10"),
+                status=BatchStatus.ACTIVE,
+            )
+        )
+        await db_session.flush()
+
+        result = await DashboardService(db_session).get_expiration_risk_map()
+
+        safe_bucket = result["risk_levels"]["safe"]
+        # batch1: 50 * 200 ILS = 10,000 ILS; usd batch: 10 * 50 = 500 USD.
+        assert safe_bucket["value_by_currency"] == {"ILS": 10000.0, "USD": 500.0}
+        assert result["total_value_by_currency"]["USD"] == 500.0
+        # Total ILS also includes batch2/batch3 (critical/warning): 10,000 + 10,000.
+        assert result["total_value_by_currency"]["ILS"] == 20000.0
+
     async def test_get_low_stock_items(self, db_session):
         """Test getting low stock items"""
         service = DashboardService(db_session)

@@ -23,7 +23,7 @@ import {
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Header } from '@/components/layout/Header'
-import { formatCurrency, formatNumber, convertToDisplayCurrency } from '@/lib/utils'
+import { formatCurrency, formatNumber, convertToDisplayCurrency, convertAmount } from '@/lib/utils'
 import { dashboardApi, systemSettingsApi, type DashboardKPIs, type SystemSettings } from '@/lib/api'
 import { useUIStore } from '@/store/ui'
 
@@ -113,18 +113,20 @@ export function DashboardPage() {
     ? convertToDisplayCurrency(kpis?.at_risk_value_by_currency ?? {}, currency, fxRates)
     : 0
 
-  const riskChartData = riskData ? [
-    { name: t('dashboard.riskSafe'), value: riskData.risk_levels.safe.value, color: RISK_COLORS.safe },
-    { name: t('dashboard.riskCaution'), value: riskData.risk_levels.caution.value, color: RISK_COLORS.caution },
-    { name: t('dashboard.riskWarning'), value: riskData.risk_levels.warning.value, color: RISK_COLORS.warning },
-    { name: t('dashboard.riskCritical'), value: riskData.risk_levels.critical.value, color: RISK_COLORS.critical },
-    { name: t('dashboard.riskExpired'), value: riskData.risk_levels.expired.value, color: RISK_COLORS.expired },
+  const riskChartData = (riskData && fxRates) ? [
+    { name: t('dashboard.riskSafe'), value: convertToDisplayCurrency(riskData.risk_levels.safe.value_by_currency, currency, fxRates), color: RISK_COLORS.safe },
+    { name: t('dashboard.riskCaution'), value: convertToDisplayCurrency(riskData.risk_levels.caution.value_by_currency, currency, fxRates), color: RISK_COLORS.caution },
+    { name: t('dashboard.riskWarning'), value: convertToDisplayCurrency(riskData.risk_levels.warning.value_by_currency, currency, fxRates), color: RISK_COLORS.warning },
+    { name: t('dashboard.riskCritical'), value: convertToDisplayCurrency(riskData.risk_levels.critical.value_by_currency, currency, fxRates), color: RISK_COLORS.critical },
+    { name: t('dashboard.riskExpired'), value: convertToDisplayCurrency(riskData.risk_levels.expired.value_by_currency, currency, fxRates), color: RISK_COLORS.expired },
   ].filter(d => d.value > 0) : []
 
-  const distributionChartData = distribution.slice(0, 8).map(item => ({
-    name: item.sku,
-    value: item.value,
-  }))
+  const distributionChartData = fxRates
+    ? distribution.slice(0, 8).map(item => ({
+        name: item.sku,
+        value: convertAmount(item.value, item.currency, currency, fxRates),
+      }))
+    : []
 
   if (loading) {
     return (
