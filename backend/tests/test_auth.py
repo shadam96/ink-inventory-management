@@ -6,8 +6,8 @@ from app.models.user import User
 
 
 @pytest.mark.asyncio
-async def test_register_user(client: AsyncClient):
-    """Test user registration"""
+async def test_register_user(client: AsyncClient, admin_headers: dict):
+    """Test user registration by an admin"""
     response = await client.post(
         "/api/v1/auth/register",
         json={
@@ -17,6 +17,7 @@ async def test_register_user(client: AsyncClient):
             "password": "securepassword123",
             "role": "viewer",
         },
+        headers=admin_headers,
     )
     assert response.status_code == 201
     data = response.json()
@@ -27,7 +28,7 @@ async def test_register_user(client: AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_register_duplicate_username(client: AsyncClient, test_user: User):
+async def test_register_duplicate_username(client: AsyncClient, test_user: User, admin_headers: dict):
     """Test registration with duplicate username fails"""
     response = await client.post(
         "/api/v1/auth/register",
@@ -37,9 +38,43 @@ async def test_register_duplicate_username(client: AsyncClient, test_user: User)
             "full_name": "Another User",
             "password": "securepassword123",
         },
+        headers=admin_headers,
     )
     assert response.status_code == 400
     assert "כבר קיים" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_requires_admin(client: AsyncClient):
+    """Test registration without authentication fails"""
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "sneakyuser",
+            "email": "sneaky@example.com",
+            "full_name": "Sneaky User",
+            "password": "securepassword123",
+            "role": "admin",
+        },
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_register_requires_admin_role(client: AsyncClient, auth_headers: dict):
+    """Test registration by a non-admin (manager) fails"""
+    response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "username": "sneakyuser2",
+            "email": "sneaky2@example.com",
+            "full_name": "Sneaky User 2",
+            "password": "securepassword123",
+            "role": "admin",
+        },
+        headers=auth_headers,
+    )
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio

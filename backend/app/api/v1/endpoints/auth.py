@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import AdminUser, CurrentUser, DbSession
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -118,8 +118,10 @@ async def get_current_user_info(
 async def register_user(
     user_data: UserCreate,
     db: DbSession,
+    admin: AdminUser,
 ) -> UserResponse:
-    """Register a new user (for initial setup - should be protected in production)"""
+    """Create a new user. Admin-only: the initial admin account is created via
+    create_admin.py, not this endpoint."""
     # Check if username exists
     result = await db.execute(
         select(User).where(User.username == user_data.username)
