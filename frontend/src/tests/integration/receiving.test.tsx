@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { BrowserRouter } from 'react-router-dom'
 import { ReceivingPage } from '@/pages/ReceivingPage'
 import * as api from '@/lib/api'
+import * as offline from '@/lib/offline'
 
 vi.mock('@/lib/api', () => ({
   itemsApi: {
@@ -21,6 +22,11 @@ vi.mock('react-i18next', () => ({
     t: (key: string) => key,
     i18n: { language: 'he' },
   }),
+}))
+
+vi.mock('@/lib/offline', () => ({
+  isOnline: vi.fn(),
+  addPendingOperation: vi.fn(),
 }))
 
 describe('Receiving Operations', () => {
@@ -184,6 +190,58 @@ describe('Receiving Operations', () => {
     })
     expect(screen.getByLabelText(/receiving\.expirationDate/i)).toHaveValue('')
     expect(screen.getByLabelText(/receiving\.quantity/i)).toHaveValue(1)
+  })
+
+  it('should queue an offline receive with a path relative to the api baseURL, not prefixed with /api/v1', async () => {
+    const user = userEvent.setup()
+
+    // Seed the persisted receive-list (ReceivingPage reads it from
+    // localStorage on init) with one item pending submission.
+    localStorage.setItem(
+      'receiveList',
+      JSON.stringify([
+        {
+          id: 'test-item-1',
+          item_id: '1',
+          item_name: mockItems[0].name,
+          item_sku: mockItems[0].sku,
+          quantity: 10,
+          expiration_date: '2027-01-01',
+          manufacturing_date: '',
+          batch_number: 'BATCH-A',
+          notes: '',
+        },
+      ])
+    )
+
+    vi.mocked(offline.isOnline).mockReturnValue(false)
+
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    const receiveAllButton = await screen.findByRole('button', {
+      name: /receiving\.receiveAll/i,
+    })
+    await user.click(receiveAllButton)
+
+    await waitFor(() => {
+      expect(offline.addPendingOperation).toHaveBeenCalled()
+    })
+
+    // api's baseURL already includes /api/v1 (see lib/api.ts), so the
+    // queued path must be relative - matching what receivingApi.receive
+    // actually posts to - not doubled with an /api/v1 prefix.
+    expect(offline.addPendingOperation).toHaveBeenCalledWith(
+      'receive',
+      '/receiving/receive',
+      'POST',
+      expect.any(Object)
+    )
+
+    localStorage.removeItem('receiveList')
   })
 
   it('should call receive API when receiving all items', async () => {

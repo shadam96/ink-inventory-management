@@ -242,9 +242,13 @@ export function ReceivingPage() {
           }
 
       if (!isOnline()) {
+        // Must match the relative paths receivingApi actually posts to
+        // (api's baseURL already includes /api/v1, so prefixing it here
+        // would double it and 404 on replay - see receivingApi.receive /
+        // receiveMultiple in lib/api.ts).
         await addPendingOperation(
           'receive',
-          receiveList.length === 1 ? '/api/v1/receiving/' : '/api/v1/receiving/multiple',
+          receiveList.length === 1 ? '/receiving/receive' : '/receiving/receive-multiple',
           'POST',
           payload
         )

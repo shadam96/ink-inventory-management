@@ -1,8 +1,13 @@
 """Tests for inventory/item endpoints"""
+from datetime import date, timedelta
+from decimal import Decimal
+
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.user import User
 
@@ -177,6 +182,80 @@ async def test_delete_item(
     response = await client.delete(f"/api/v1/items/{item.id}", headers=auth_headers)
     assert response.status_code == 200
     assert response.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_delete_item_with_active_batch_blocked(
+    client: AsyncClient, auth_headers: dict, db_session: AsyncSession
+):
+    """Deleting an item with an ACTIVE batch is rejected."""
+    item = Item(
+        sku="INK-ACTIVE-001",
+        name="Black Ink",
+        supplier="Supplier A",
+        unit_of_measure="KG",
+    )
+    db_session.add(item)
+    await db_session.flush()
+
+    db_session.add(
+        Batch(
+            batch_number="BT-ACTIVE-001",
+            item_id=item.id,
+            expiration_date=date.today() + timedelta(days=90),
+            receipt_date=date.today(),
+            quantity_received=Decimal("10"),
+            quantity_available=Decimal("10"),
+            status=BatchStatus.ACTIVE,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.delete(f"/api/v1/items/{item.id}", headers=auth_headers)
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_delete_item_with_depleted_batch_blocked(
+    client: AsyncClient, auth_headers: dict, db_session: AsyncSession
+):
+    """Deleting an item is rejected even when its only batch is DEPLETED
+    (not active) - a depleted batch still carries historical Movement
+    records that must not be silently cascade-deleted. This is the fix:
+    previously only ACTIVE batches were checked, so an item with solely
+    depleted/expired batches could be deleted, cascading through the ORM
+    relationship and destroying that batch's movement history even though
+    the DB's ondelete=RESTRICT FK was meant to prevent exactly this."""
+    item = Item(
+        sku="INK-DEPLETED-001",
+        name="Black Ink",
+        supplier="Supplier A",
+        unit_of_measure="KG",
+    )
+    db_session.add(item)
+    await db_session.flush()
+
+    db_session.add(
+        Batch(
+            batch_number="BT-DEPLETED-001",
+            item_id=item.id,
+            expiration_date=date.today() + timedelta(days=90),
+            receipt_date=date.today(),
+            quantity_received=Decimal("10"),
+            quantity_available=Decimal("0"),
+            status=BatchStatus.DEPLETED,
+        )
+    )
+    await db_session.commit()
+
+    response = await client.delete(f"/api/v1/items/{item.id}", headers=auth_headers)
+    assert response.status_code == 400
+
+    # The item and its (depleted) batch must both still exist.
+    result = await db_session.execute(select(Item).where(Item.id == item.id))
+    assert result.scalar_one_or_none() is not None
+    result = await db_session.execute(select(Batch).where(Batch.item_id == item.id))
+    assert result.scalar_one_or_none() is not None
 
 
 @pytest.mark.asyncio

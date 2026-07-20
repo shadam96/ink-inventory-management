@@ -73,11 +73,15 @@ class Item(BaseModel):
     )
     
     # Relationships
+    # No delete/delete-orphan cascade here: batches.item_id has
+    # ondelete="RESTRICT" precisely so an Item with historical batches
+    # (and their Movement audit trail) can't be deleted. An ORM-level
+    # delete cascade would silently destroy that history by deleting the
+    # batches before the DB ever gets to enforce RESTRICT.
     batches: Mapped[List["Batch"]] = relationship(
         "Batch",
         back_populates="item",
         lazy="selectin",
-        cascade="all, delete-orphan"
     )
     delivery_note_items: Mapped[List["DeliveryNoteItem"]] = relationship(
         "DeliveryNoteItem",

@@ -219,26 +219,28 @@ async def delete_item(
     db: DbSession,
     current_user: ManagerUser,
 ) -> MessageResponse:
-    """Delete an item (only if no active batches)"""
+    """Delete an item (only if it has no batches at all - including
+    depleted/expired ones, since those still carry historical Movement
+    records that must not be silently destroyed)."""
     result = await db.execute(
         select(Item)
         .options(selectinload(Item.batches))
         .where(Item.id == item_id)
     )
     item = result.scalar_one_or_none()
-    
+
     if item is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="פריט לא נמצא",
         )
-    
-    # Check for active batches
-    active_batches = [b for b in item.batches if b.status == BatchStatus.ACTIVE]
-    if active_batches:
+
+    # Block deletion if the item has ANY batches, not just active ones -
+    # depleted/expired batches still carry historical Movement records.
+    if item.batches:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"לא ניתן למחוק פריט עם {len(active_batches)} אצוות פעילות",  # Cannot delete item with active batches
+            detail=f"לא ניתן למחוק פריט עם {len(item.batches)} אצוות (כולל היסטוריות)",  # Cannot delete item with batches (including historical ones)
         )
     
     await db.delete(item)

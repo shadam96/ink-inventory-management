@@ -236,7 +236,10 @@ function AdminPickingView() {
       }
 
       if (!isOnline()) {
-        await addPendingOperation('pick', '/api/v1/picking/dispatch', 'POST', payload)
+        // Relative to api's baseURL (which already includes /api/v1) - see
+        // pickingApi.dispatch in lib/api.ts. Prefixing /api/v1 here would
+        // double it and 404 every replay attempt.
+        await addPendingOperation('pick', '/picking/dispatch', 'POST', payload)
         toast.info(t('picking.offlineQueued'))
         reset()
         setSuggestions([])

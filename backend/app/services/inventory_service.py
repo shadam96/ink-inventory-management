@@ -145,14 +145,21 @@ class InventoryService:
         reason: str,
     ) -> Movement:
         """Adjust batch quantity (e.g., after physical count)"""
+        # Lock the row here (not just inside record_movement) so the delta
+        # below is computed from the same value record_movement will see.
+        # Without this lock, a concurrent movement on this batch between
+        # this read and record_movement's own locked re-read could change
+        # quantity_available in between, and record_movement would apply
+        # this stale delta on top of the *new* value - producing a final
+        # quantity that doesn't match the caller's intended new_quantity.
         result = await self.db.execute(
-            select(Batch).where(Batch.id == batch_id)
+            select(Batch).where(Batch.id == batch_id).with_for_update()
         )
         batch = result.scalar_one_or_none()
-        
+
         if not batch:
             raise ValueError(f"אצווה {batch_id} לא נמצאה")
-        
+
         adjustment = new_quantity - batch.quantity_available
         
         return await self.record_movement(

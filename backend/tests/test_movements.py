@@ -11,6 +11,7 @@ from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.user import User
+from app.services.inventory_service import InventoryService
 
 
 @pytest.fixture
@@ -72,6 +73,36 @@ async def item_with_movements(
     
     await db_session.commit()
     return item, batch, movements
+
+
+@pytest.mark.asyncio
+async def test_adjust_quantity_sets_exact_target(
+    db_session: AsyncSession,
+    test_user: User,
+    item_with_movements: tuple[Item, Batch, list[Movement]],
+):
+    """adjust_quantity must land the batch on exactly new_quantity.
+
+    Regression test for the fix that made the initial read use
+    with_for_update(): the row lock must be acquired starting from this
+    read (not just inside record_movement's internal re-read) so the
+    delta is computed against the same value record_movement will apply
+    it to under concurrent access."""
+    _, batch, _ = item_with_movements
+    assert batch.quantity_available == Decimal("70")
+
+    service = InventoryService(db_session)
+    movement = await service.adjust_quantity(
+        batch_id=batch.id,
+        new_quantity=Decimal("55"),
+        user_id=test_user.id,
+        reason="Physical count",
+    )
+    await db_session.commit()
+
+    assert movement.quantity_after == Decimal("55")
+    await db_session.refresh(batch)
+    assert batch.quantity_available == Decimal("55")
 
 
 @pytest.mark.asyncio
