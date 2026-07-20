@@ -17,8 +17,8 @@ Status column: ✅ **Fixed** in this pass · ⬜ **Open**
 |---|--------|------|-------|
 | 1 | ✅ Fixed | `backend/app/api/v1/endpoints/auth.py:117` | `/register` has no auth dependency and accepts a client-supplied `role`, letting anyone self-provision an **ADMIN** account. |
 | 2 | ✅ Fixed | `backend/app/api/v1/endpoints/websocket.py:48` | Connections with a missing/invalid JWT are accepted as `"anonymous"` instead of rejected, and `broadcast()` sends live inventory/alert/batch data to every connection, including anonymous ones. |
-| 3 | ⬜ Open | `backend/app/api/v1/endpoints/delivery_notes.py:179` | `get_delivery_note` / `list_delivery_notes` / `get_delivery_note_pdf` never check that a note's `customer_id` matches the requesting CUSTOMER-role user's own `customer_id` — an IDOR. `inventory_view.py` scopes correctly for the same role; this endpoint doesn't. |
-| 4 | ⬜ Open | `backend/app/api/v1/endpoints/picking.py:347` | `consume_item` is reachable by CUSTOMER-role users but never verifies the target `batch_id` belongs to that customer's allocated stock — lets a customer dispatch from another customer's consignment stock. |
+| 3 | ✅ Fixed | `backend/app/api/v1/endpoints/delivery_notes.py:179` | `get_delivery_note` / `list_delivery_notes` / `get_delivery_note_pdf` never check that a note's `customer_id` matches the requesting CUSTOMER-role user's own `customer_id` — an IDOR. `inventory_view.py` scopes correctly for the same role; this endpoint doesn't. |
+| 4 | ✅ Fixed | `backend/app/api/v1/endpoints/picking.py:347` | `consume_item` is reachable by CUSTOMER-role users but never verifies the target `batch_id` belongs to that customer's allocated stock — lets a customer dispatch from another customer's consignment stock. |
 | 5 | ⬜ Open | `backend/app/api/v1/endpoints/auth.py:29` | `/auth/login` has no rate limiting or lockout — unlimited online password-guessing against any known username. |
 | 6 | ⬜ Open | `backend/app/main.py:96` + `core/config.py:81` | Global exception handler leaks raw exception text whenever `settings.is_development` is true, which is the **default** unless `ENVIRONMENT` is explicitly set — a forgotten env var leaks internal errors to any client on a 500. |
 | 7 | ⬜ Open | `frontend/src/hooks/useWebSocket.ts:14` | The WebSocket singleton is never disconnected on logout, so a different user logging in on the same tab/device reuses the previous user's still-open, authenticated socket. |
@@ -77,11 +77,17 @@ Status column: ✅ **Fixed** in this pass · ⬜ **Open**
 
 ---
 
-## Fixed in this pass (top 3 by severity)
+## Fixed so far
 
+**Pass 1 (top 3 by severity):**
 1. **#1 — Open admin self-registration** (`auth.py`)
 2. **#2 — Unauthenticated WebSocket broadcast** (`websocket.py` / `core/websocket.py`)
 3. **#9 — Enum case mismatch breaking customer-role & consumption-tracking** (migration + models)
+
+**Pass 2 (next 3 by severity):**
+4. **#3 — Delivery-note IDOR** (`delivery_notes.py`) — `get_delivery_note`, `list_delivery_notes`, and `get_delivery_note_pdf` now reject/scope access for CUSTOMER-role users to their own `customer_id`, matching the pattern already used in `inventory_view.py`. Tests added in `test_delivery_notes.py`.
+5. **#4 — Picking consume_item IDOR** (`picking.py`) — `consume_item` now verifies, for CUSTOMER-role callers, that the target batch was actually dispatched to their `customer_id` via a `DeliveryNoteItem`/`DeliveryNote` join, returning 403 otherwise. Tests added in `test_picking.py`.
+6. **#26 — Barcode-scan stale data leakage** (`ReceivingPage.tsx`) — `applyParsedData` now clears `expiration_date`/`manufacturing_date`/`quantity`/`batch_number` back to defaults for any field the current scan doesn't provide, instead of only setting fields present in `parsed_data`. Also fixed a null-vs-undefined bug introduced while writing this fix (the backend can return `parsed_data: null`, which a naive default parameter doesn't catch). Regression test added in `receiving.test.tsx`.
 
 See commit history / diff for the actual changes. Everything else in this
 document remains open and is prioritized roughly in the order listed within

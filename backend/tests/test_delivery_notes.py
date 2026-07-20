@@ -10,9 +10,9 @@ from app.models.item import Item
 from app.models.batch import Batch, BatchStatus
 from app.models.customer import Customer
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem, DeliveryNoteStatus
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.services.document_service import DocumentService
-from app.core.security import get_password_hash
+from app.core.security import get_password_hash, create_access_token
 
 
 class TestDocumentService:
@@ -378,3 +378,124 @@ class TestDeliveryNotesAPI:
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
         assert response.content[:4] == b'%PDF'
+
+
+class TestDeliveryNotesCustomerScoping:
+    """A CUSTOMER-role user must only ever see their own delivery notes -
+    this is the IDOR fix for get/list/pdf on delivery_notes.py."""
+
+    @pytest.fixture
+    async def two_customers_with_notes(self, client, db_session):
+        """Two customers, each with one delivery note, plus a CUSTOMER-role
+        user account tied to customer A."""
+        warehouse_user = User(
+            username="dn_scope_warehouse",
+            email="dn_scope_warehouse@test.com",
+            hashed_password=get_password_hash("testpass123"),
+            full_name="Warehouse",
+            role=UserRole.WAREHOUSE_WORKER,
+            is_active=True,
+        )
+        db_session.add(warehouse_user)
+
+        customer_a = Customer(name="Customer A", address="1 A St")
+        customer_b = Customer(name="Customer B", address="1 B St")
+        db_session.add_all([customer_a, customer_b])
+
+        item = Item(
+            sku="DN-SCOPE-001",
+            name="Scope Test Ink",
+            supplier="Test Supplier",
+            unit_of_measure="kg",
+            cost_price=Decimal("10.00"),
+        )
+        db_session.add(item)
+        await db_session.flush()
+
+        batch = Batch(
+            batch_number="DN-SCOPE-BT-001",
+            item_id=item.id,
+            expiration_date=date.today() + timedelta(days=90),
+            receipt_date=date.today(),
+            quantity_received=Decimal("100.00"),
+            quantity_available=Decimal("100.00"),
+            status=BatchStatus.ACTIVE,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+
+        service = DocumentService(db_session)
+        dn_a = await service.create_delivery_note(
+            customer_id=customer_a.id,
+            items=[{"batch_id": batch.id, "quantity": Decimal("5")}],
+            user_id=warehouse_user.id,
+        )
+        dn_b = await service.create_delivery_note(
+            customer_id=customer_b.id,
+            items=[{"batch_id": batch.id, "quantity": Decimal("5")}],
+            user_id=warehouse_user.id,
+        )
+
+        customer_a_user = User(
+            username="dn_scope_customer_a",
+            email="dn_scope_customer_a@test.com",
+            hashed_password="x",
+            full_name="Customer A User",
+            role=UserRole.CUSTOMER,
+            customer_id=customer_a.id,
+            is_active=True,
+        )
+        db_session.add(customer_a_user)
+        await db_session.commit()
+        await db_session.refresh(customer_a_user)
+
+        token = create_access_token(
+            subject=customer_a_user.id, role=customer_a_user.role.value
+        )
+        return {
+            "headers": {"Authorization": f"Bearer {token}"},
+            "dn_a": dn_a,
+            "dn_b": dn_b,
+        }
+
+    async def test_customer_can_view_own_delivery_note(
+        self, client, two_customers_with_notes
+    ):
+        ctx = two_customers_with_notes
+        response = await client.get(
+            f"/api/v1/delivery-notes/{ctx['dn_a'].id}", headers=ctx["headers"]
+        )
+        assert response.status_code == 200
+
+    async def test_customer_cannot_view_other_customers_delivery_note(
+        self, client, two_customers_with_notes
+    ):
+        ctx = two_customers_with_notes
+        response = await client.get(
+            f"/api/v1/delivery-notes/{ctx['dn_b'].id}", headers=ctx["headers"]
+        )
+        assert response.status_code == 404
+
+    async def test_customer_cannot_download_other_customers_pdf(
+        self, client, two_customers_with_notes
+    ):
+        ctx = two_customers_with_notes
+        response = await client.get(
+            f"/api/v1/delivery-notes/{ctx['dn_b'].id}/pdf", headers=ctx["headers"]
+        )
+        assert response.status_code == 404
+
+    async def test_customer_list_only_shows_own_notes(
+        self, client, two_customers_with_notes
+    ):
+        ctx = two_customers_with_notes
+        response = await client.get(
+            "/api/v1/delivery-notes",
+            headers=ctx["headers"],
+            params={"customer_id": str(ctx["dn_b"].customer_id)},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        ids = {item["id"] for item in data["items"]}
+        assert str(ctx["dn_a"].id) in ids
+        assert str(ctx["dn_b"].id) not in ids

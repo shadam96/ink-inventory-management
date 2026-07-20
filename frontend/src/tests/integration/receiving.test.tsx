@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BrowserRouter } from 'react-router-dom'
 import { ReceivingPage } from '@/pages/ReceivingPage'
@@ -133,6 +133,57 @@ describe('Receiving Operations', () => {
 
     // This would require filling the form and clicking add
     // Simplified test - actual implementation would be more detailed
+  })
+
+  it('should clear auto-filled fields from a previous scan when the next scan has no parsed_data', async () => {
+    const user = userEvent.setup()
+
+    // First scan: item A's barcode encodes an expiration date + quantity.
+    vi.mocked(api.receivingApi.validateBarcode).mockResolvedValueOnce({
+      valid: true,
+      item: mockItems[0],
+      parsed_data: { expiration_date: '2027-06-15', quantity: 50 },
+    })
+
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    // The i18n mock echoes translation keys verbatim rather than rendering
+    // the hardcoded Hebrew text, and the barcode submit button has no
+    // accessible name - so select the input by its (mocked) placeholder key
+    // and submit its form directly instead of clicking the icon-only button.
+    const barcodeInput = screen.getByPlaceholderText('receiving.enterBarcode')
+
+    await user.type(barcodeInput, 'BARCODE-A')
+    fireEvent.submit(barcodeInput.closest('form')!)
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/receiving\.expirationDate/i)).toHaveValue('2027-06-15')
+    })
+    expect(screen.getByLabelText(/receiving\.quantity/i)).toHaveValue(50)
+
+    // Second scan: item B's barcode has no embedded expiration/quantity at
+    // all. Previously, applyParsedData was only called for scans WITH
+    // parsed_data, so item A's leftover expiration_date/quantity stayed in
+    // the form and would have been submitted attached to item B's receipt.
+    vi.mocked(api.receivingApi.validateBarcode).mockResolvedValueOnce({
+      valid: true,
+      item: mockItems[1],
+      parsed_data: null,
+    })
+
+    await user.clear(barcodeInput)
+    await user.type(barcodeInput, 'BARCODE-B')
+    fireEvent.submit(barcodeInput.closest('form')!)
+
+    await waitFor(() => {
+      expect(api.receivingApi.validateBarcode).toHaveBeenCalledWith('BARCODE-B')
+    })
+    expect(screen.getByLabelText(/receiving\.expirationDate/i)).toHaveValue('')
+    expect(screen.getByLabelText(/receiving\.quantity/i)).toHaveValue(1)
   })
 
   it('should call receive API when receiving all items', async () => {

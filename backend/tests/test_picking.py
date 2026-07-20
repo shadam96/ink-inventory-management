@@ -7,9 +7,12 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import create_access_token
 from app.models.batch import Batch, BatchStatus
+from app.models.customer import Customer
+from app.models.delivery_note import DeliveryNote, DeliveryNoteItem, DeliveryNoteStatus
 from app.models.item import Item
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 @pytest.fixture
@@ -255,6 +258,105 @@ async def test_dispatch_atomic_rollback(
     )
     
     assert response.status_code == 400
+
+
+@pytest.fixture
+async def customer_with_allocated_batch(
+    db_session: AsyncSession,
+    item_with_stock: tuple[Item, list[Batch]],
+) -> tuple[User, str, Batch, Batch]:
+    """A CUSTOMER-role user with one batch dispatched to them (allocated)
+    and a second batch (from the same item_with_stock fixture) that was
+    never dispatched to them - i.e. not theirs."""
+    item, batches = item_with_stock
+    allocated_batch, other_batch = batches[0], batches[1]
+
+    customer = Customer(name="Consume Test Customer", address="1 Test St")
+    db_session.add(customer)
+    await db_session.flush()
+
+    warehouse_user = User(
+        username="consume_test_warehouse",
+        email="consume_warehouse@test.com",
+        hashed_password="x",
+        full_name="Warehouse",
+        role=UserRole.WAREHOUSE_WORKER,
+        is_active=True,
+    )
+    db_session.add(warehouse_user)
+    await db_session.flush()
+
+    dn = DeliveryNote(
+        customer_id=customer.id,
+        created_by=warehouse_user.id,
+        delivery_note_number="DN-TEST-CONSUME-001",
+        status=DeliveryNoteStatus.ISSUED,
+        is_consignment=True,
+    )
+    db_session.add(dn)
+    await db_session.flush()
+
+    db_session.add(
+        DeliveryNoteItem(
+            delivery_note_id=dn.id,
+            item_id=item.id,
+            batch_id=allocated_batch.id,
+            quantity=Decimal("10"),
+        )
+    )
+
+    customer_user = User(
+        username="consume_test_customer",
+        email="consume_customer@test.com",
+        hashed_password="x",
+        full_name="Customer",
+        role=UserRole.CUSTOMER,
+        customer_id=customer.id,
+        is_active=True,
+    )
+    db_session.add(customer_user)
+    await db_session.commit()
+    await db_session.refresh(customer_user)
+
+    token = create_access_token(subject=customer_user.id, role=customer_user.role.value)
+    return customer_user, f"Bearer {token}", allocated_batch, other_batch
+
+
+@pytest.mark.asyncio
+async def test_consume_own_allocated_batch_succeeds(
+    client: AsyncClient,
+    customer_with_allocated_batch: tuple[User, str, Batch, Batch],
+):
+    """A customer can consume from a batch that was dispatched to them."""
+    _, token, allocated_batch, _ = customer_with_allocated_batch
+
+    response = await client.post(
+        "/api/v1/picking/consume",
+        headers={"Authorization": token},
+        json={"batch_id": str(allocated_batch.id), "quantity": "5"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_consume_other_customers_batch_forbidden(
+    client: AsyncClient,
+    customer_with_allocated_batch: tuple[User, str, Batch, Batch],
+):
+    """A customer cannot consume from a batch never dispatched to them -
+    this is the IDOR fix: previously any picking-authorized user could
+    consume from any batch_id."""
+    _, token, _, other_batch = customer_with_allocated_batch
+
+    response = await client.post(
+        "/api/v1/picking/consume",
+        headers={"Authorization": token},
+        json={"batch_id": str(other_batch.id), "quantity": "5"},
+    )
+
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio

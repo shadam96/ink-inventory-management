@@ -12,10 +12,25 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, WarehouseUser, ManagerUser
 from app.models.delivery_note import DeliveryNote, DeliveryNoteStatus
+from app.models.user import User, UserRole
 from app.services.document_service import DocumentService
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
+
+
+def _assert_customer_can_view(dn: DeliveryNote, current_user: User) -> None:
+    """Raise 404 if a CUSTOMER-role user is trying to access another
+    customer's delivery note. Staff roles (admin/manager/warehouse) are
+    unrestricted. Returns 404 rather than 403 so a customer probing IDs
+    can't distinguish "not yours" from "doesn't exist"."""
+    if current_user.role != UserRole.CUSTOMER:
+        return
+    if not current_user.customer_id or dn.customer_id != current_user.customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="תעודת משלוח לא נמצאה",
+        )
 
 
 class DeliveryNoteItemInput(BaseModel):
@@ -85,9 +100,13 @@ async def list_delivery_notes(
     else:
         query = query.order_by(DeliveryNote.created_at.desc())
     
-    if customer_id:
+    if current_user.role == UserRole.CUSTOMER:
+        # A customer can only ever see their own delivery notes, regardless
+        # of what customer_id they pass in.
+        query = query.where(DeliveryNote.customer_id == current_user.customer_id)
+    elif customer_id:
         query = query.where(DeliveryNote.customer_id == customer_id)
-    
+
     if status_filter:
         query = query.where(DeliveryNote.status == status_filter)
     
@@ -191,7 +210,9 @@ async def get_delivery_note(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="תעודת משלוח לא נמצאה",
         )
-    
+
+    _assert_customer_can_view(dn, current_user)
+
     items = []
     for item in dn.items:
         items.append({
@@ -265,14 +286,19 @@ async def get_delivery_note_pdf(
 ) -> Response:
     """Generate and download delivery note PDF"""
     service = DocumentService(db)
-    
+
+    dn = await service.get_delivery_note_with_details(delivery_note_id)
+    if not dn:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="תעודת משלוח לא נמצאה",
+        )
+    _assert_customer_can_view(dn, current_user)
+
     try:
         pdf_bytes = await service.generate_delivery_note_pdf(delivery_note_id)
-        
-        # Get DN number for filename
-        dn = await service.get_delivery_note_with_details(delivery_note_id)
-        filename = f"{dn.delivery_note_number}.pdf" if dn else "delivery_note.pdf"
-        
+        filename = f"{dn.delivery_note_number}.pdf"
+
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",

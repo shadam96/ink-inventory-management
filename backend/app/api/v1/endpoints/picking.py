@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.api.deps import DbSession, PickingUser, WarehouseUser
 from app.services.fefo_engine import FEFOEngine
 from app.services.inventory_service import InventoryService
+from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
 from app.models.movement import Movement, MovementType
 from app.models.user import UserRole
 
@@ -355,8 +356,24 @@ async def consume_item(
 
     Any picking-authorized user can call this endpoint.  When the caller
     has the CUSTOMER role, their linked customer_id is recorded
-    automatically.
+    automatically, and the batch must belong to stock already dispatched
+    to that customer (i.e. it appears on one of their delivery notes) -
+    a customer cannot consume from another customer's stock.
     """
+    if current_user.role == UserRole.CUSTOMER:
+        allocated = await db.execute(
+            select(DeliveryNoteItem.id)
+            .join(DeliveryNote, DeliveryNoteItem.delivery_note_id == DeliveryNote.id)
+            .where(DeliveryNoteItem.batch_id == request.batch_id)
+            .where(DeliveryNote.customer_id == current_user.customer_id)
+            .limit(1)
+        )
+        if allocated.first() is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="המנה אינה שייכת ללקוח זה",  # This batch does not belong to this customer
+            )
+
     fefo = FEFOEngine(db)
     inventory = InventoryService(db)
 

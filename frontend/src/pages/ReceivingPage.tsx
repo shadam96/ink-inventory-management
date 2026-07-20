@@ -98,23 +98,36 @@ export function ReceivingPage() {
     }
   }
 
-  const applyParsedData = (parsedData: any) => {
+  // parsedData only carries the fields the *current* scan's barcode encodes.
+  // Any field it omits must be cleared back to its default rather than left
+  // as-is, otherwise a value auto-filled by a previous scan (e.g. item A's
+  // expiration date/quantity) silently leaks into the next item's receipt.
+  const applyParsedData = (parsedData: Record<string, any> | null | undefined) => {
+    const data = parsedData || {}
     const filled = new Set<string>()
-    if (parsedData.expiration_date) {
-      setValue('expiration_date', parsedData.expiration_date, { shouldValidate: true })
+    if (data.expiration_date) {
+      setValue('expiration_date', data.expiration_date, { shouldValidate: true })
       filled.add('expiration_date')
+    } else {
+      setValue('expiration_date', '')
     }
-    if (parsedData.manufacturing_date) {
-      setValue('manufacturing_date', parsedData.manufacturing_date, { shouldValidate: true })
+    if (data.manufacturing_date) {
+      setValue('manufacturing_date', data.manufacturing_date, { shouldValidate: true })
       filled.add('manufacturing_date')
+    } else {
+      setValue('manufacturing_date', '')
     }
-    if (parsedData.quantity) {
-      setValue('quantity', parsedData.quantity, { shouldValidate: true })
+    if (data.quantity) {
+      setValue('quantity', data.quantity, { shouldValidate: true })
       filled.add('quantity')
+    } else {
+      setValue('quantity', 1)
     }
-    if (parsedData.supplier_batch_number) {
-      setValue('batch_number', parsedData.supplier_batch_number, { shouldValidate: true })
+    if (data.supplier_batch_number) {
+      setValue('batch_number', data.supplier_batch_number, { shouldValidate: true })
       filled.add('batch_number')
+    } else {
+      setValue('batch_number', '')
     }
     setAutoFilledFields(filled)
     // Clear highlight after 3 seconds
@@ -129,8 +142,8 @@ export function ReceivingPage() {
         setValue('item_id', result.item.id, { shouldValidate: true })
         setBarcode('')
 
+        applyParsedData(result.parsed_data)
         if (result.parsed_data) {
-          applyParsedData(result.parsed_data)
           toast.success(t('receiving.itemFoundFilled', { name: result.item.name, sku: result.item.sku }))
         } else {
           toast.success(t('receiving.itemFound', { name: result.item.name, sku: result.item.sku }))
@@ -153,8 +166,8 @@ export function ReceivingPage() {
         setValue('item_id', result.item.id, { shouldValidate: true })
         setBarcode('')
 
+        applyParsedData(result.parsed_data)
         if (result.parsed_data) {
-          applyParsedData(result.parsed_data)
           toast.success(t('receiving.itemFoundFilled', { name: result.item.name, sku: result.item.sku }))
         } else {
           toast.success(t('receiving.itemFound', { name: result.item.name, sku: result.item.sku }))
