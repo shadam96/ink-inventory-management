@@ -126,6 +126,7 @@
     "error": "Mal kabul sırasında hata oluştu",
     "itemRequired": "Ürün gereklidir",
     "quantityPositive": "Miktar pozitif olmalıdır",
+    "quantityInteger": "Miktar tam sayı olmalıdır",
     "expirationDateRequired": "Son kullanma tarihi gereklidir",
     "itemFound": "Bulundu: {{name}} ({{sku}})",
     "itemFoundFilled": "Bulundu ve dolduruldu: {{name}} ({{sku}})",

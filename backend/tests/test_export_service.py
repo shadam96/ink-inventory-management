@@ -92,10 +92,40 @@ def test_export_batches_excel(export_service, sample_batches):
 def test_export_batches_csv(export_service, sample_batches):
     """Test CSV export for batches"""
     response = export_service.export_batches_csv(sample_batches)
-    
+
     assert response is not None
     assert response.media_type == 'text/csv'
     assert 'batches_export' in response.headers['content-disposition']
+
+
+@pytest.mark.asyncio
+async def test_export_batches_csv_shows_zero_for_expiring_today(sample_items):
+    """Regression test: `days_until_expiry or ""` treated a batch expiring
+    today (days_until_expiry == 0) as falsy, writing an empty cell -
+    indistinguishable from a missing expiration date."""
+    item = sample_items[0]
+    batch = Batch(
+        id=uuid4(),
+        item_id=item.id,
+        batch_number="BATCH-TODAY",
+        quantity_received=Decimal("10.0"),
+        quantity_available=Decimal("10.0"),
+        receipt_date=date.today(),
+        expiration_date=date.today(),
+        status=BatchStatus.ACTIVE,
+        created_at=datetime.now(),
+    )
+    batch.item = item
+
+    response = ExportService.export_batches_csv([batch])
+
+    body = b""
+    async for chunk in response.body_iterator:
+        body += chunk if isinstance(chunk, bytes) else chunk.encode()
+    csv_text = body.decode()
+
+    data_row = csv_text.splitlines()[1]
+    assert ",0," in data_row
 
 
 def test_export_empty_items(export_service):

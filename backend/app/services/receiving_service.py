@@ -4,7 +4,8 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.batch import Batch, BatchStatus
@@ -12,40 +13,50 @@ from app.models.item import Item
 from app.models.location import Location
 from app.models.movement import Movement, MovementType
 from app.schemas.batch import BatchCreate
+from app.services.sequence_service import generate_sequential_number
 
 
 class ReceivingService:
     """Service for goods receipt operations"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
     async def generate_batch_number(self, prefix: str = "GR") -> str:
         """Generate unique batch number: GR-YYMMDD-XXX"""
-        date_str = datetime.now().strftime("%y%m%d")
-        prefix_pattern = f"{prefix}-{date_str}-%"
-        
-        # Find highest sequence for today
-        result = await self.db.execute(
-            select(func.max(Batch.batch_number))
-            .where(Batch.batch_number.like(prefix_pattern))
-        )
-        last_batch = result.scalar()
-        
-        if last_batch:
-            try:
-                last_seq = int(last_batch.split("-")[-1])
-                next_seq = last_seq + 1
-            except (ValueError, IndexError):
-                next_seq = 1
-        else:
-            next_seq = 1
-        
-        return f"{prefix}-{date_str}-{next_seq:03d}"
-    
+        return await generate_sequential_number(self.db, Batch.batch_number, prefix, pad_width=3)
+
     async def generate_grn_number(self) -> str:
         """Generate Goods Receipt Note number"""
         return await self.generate_batch_number(prefix="GRN")
+
+    async def _create_batch_with_generated_number(
+        self,
+        prefix: str = "GR",
+        max_attempts: int = 5,
+        **batch_kwargs,
+    ) -> Batch:
+        """Create and flush a Batch whose batch_number is auto-generated,
+        retrying with a freshly generated number if a concurrent request
+        already claimed the one we picked (batch_number is unique). Uses a
+        SAVEPOINT so only this insert is rolled back on conflict, not the
+        whole transaction - receive_multiple may have already flushed
+        earlier items in the same session."""
+        last_error: Optional[IntegrityError] = None
+        for _ in range(max_attempts):
+            batch_number = await self.generate_batch_number(prefix)
+            batch = Batch(batch_number=batch_number, **batch_kwargs)
+            try:
+                async with self.db.begin_nested():
+                    self.db.add(batch)
+                    await self.db.flush()
+                return batch
+            except IntegrityError as exc:
+                last_error = exc
+                self.db.expunge(batch)
+        raise ValueError(
+            "לא ניתן ליצור מספר אצווה ייחודי, נסה שוב"  # Could not generate a unique batch number, please retry
+        ) from last_error
     
     async def validate_item(self, item_id: UUID) -> Item:
         """Validate item exists"""
@@ -108,24 +119,11 @@ class ReceivingService:
         if quantity <= 0:
             raise ValueError("כמות חייבת להיות חיובית")  # Quantity must be positive
         
-        # Generate batch number if not provided
-        if not batch_number:
-            batch_number = await self.generate_batch_number()
-        else:
-            # Check uniqueness
-            result = await self.db.execute(
-                select(Batch).where(Batch.batch_number == batch_number)
-            )
-            if result.scalar_one_or_none():
-                raise ValueError(f"מספר אצווה {batch_number} כבר קיים")  # Batch number already exists
-        
         # Generate GRN number
         grn_number = await self.generate_grn_number()
-        
-        # Create batch
-        batch = Batch(
+
+        batch_kwargs = dict(
             item_id=item_id,
-            batch_number=batch_number,
             supplier_batch_number=supplier_batch_number,
             quantity_received=quantity,
             quantity_available=quantity,
@@ -136,10 +134,26 @@ class ReceivingService:
             status=BatchStatus.ACTIVE,
             notes=notes,
         )
-        
-        self.db.add(batch)
-        await self.db.flush()
-        
+
+        if not batch_number:
+            # Auto-generated numbers retry on a concurrent collision
+            # instead of raising an unhandled IntegrityError.
+            batch = await self._create_batch_with_generated_number(
+                prefix="GR", **batch_kwargs
+            )
+        else:
+            # Explicitly-supplied numbers are checked up front - a
+            # collision here is a real "already exists" error, not an
+            # internal generation race to retry.
+            result = await self.db.execute(
+                select(Batch).where(Batch.batch_number == batch_number)
+            )
+            if result.scalar_one_or_none():
+                raise ValueError(f"מספר אצווה {batch_number} כבר קיים")  # Batch number already exists
+            batch = Batch(batch_number=batch_number, **batch_kwargs)
+            self.db.add(batch)
+            await self.db.flush()
+
         # Create receipt movement
         movement = Movement(
             batch_id=batch.id,
@@ -192,20 +206,14 @@ class ReceivingService:
                     f"תאריך תפוגה לא תקין עבור פריט {item.sku}"
                 )
             
-            # Generate batch number if needed
-            batch_number = receipt.get("batch_number")
-            if not batch_number:
-                batch_number = await self.generate_batch_number()
-
             quantity = Decimal(str(receipt["quantity"]))
             if quantity <= 0:
                 raise ValueError(
                     f"כמות חייבת להיות חיובית עבור פריט {item.sku}"
                 )  # Quantity must be positive for item {sku}
 
-            batch = Batch(
+            batch_kwargs = dict(
                 item_id=receipt["item_id"],
-                batch_number=batch_number,
                 supplier_batch_number=receipt.get("supplier_batch_number"),
                 quantity_received=quantity,
                 quantity_available=quantity,
@@ -215,10 +223,19 @@ class ReceivingService:
                 status=BatchStatus.ACTIVE,
                 notes=receipt.get("notes"),
             )
-            
-            self.db.add(batch)
-            await self.db.flush()
-            
+
+            batch_number = receipt.get("batch_number")
+            if not batch_number:
+                # Auto-generated numbers retry on a concurrent collision
+                # instead of raising an unhandled IntegrityError.
+                batch = await self._create_batch_with_generated_number(
+                    prefix="GR", **batch_kwargs
+                )
+            else:
+                batch = Batch(batch_number=batch_number, **batch_kwargs)
+                self.db.add(batch)
+                await self.db.flush()
+
             movement = Movement(
                 batch_id=batch.id,
                 user_id=user_id,

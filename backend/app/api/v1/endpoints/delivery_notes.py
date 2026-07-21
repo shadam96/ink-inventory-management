@@ -11,6 +11,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, DbSession, WarehouseUser, ManagerUser
+from app.api.error_handling import translate_value_error
 from app.models.delivery_note import DeliveryNote, DeliveryNoteStatus
 from app.models.user import User, UserRole
 from app.services.document_service import DocumentService
@@ -156,6 +157,7 @@ async def list_delivery_notes(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@translate_value_error()
 async def create_delivery_note(
     request: CreateDeliveryNoteRequest,
     db: DbSession,
@@ -163,36 +165,29 @@ async def create_delivery_note(
 ) -> dict:
     """Create a new delivery note"""
     service = DocumentService(db)
-    
-    try:
-        items_data = [
-            {"batch_id": item.batch_id, "quantity": item.quantity}
-            for item in request.items
-        ]
-        
-        dn = await service.create_delivery_note(
-            customer_id=request.customer_id,
-            items=items_data,
-            user_id=current_user.id,
-            is_consignment=request.is_consignment,
-            notes=request.notes,
-            issue_date=request.issue_date,
-        )
-        
-        await db.commit()
-        
-        return {
-            "id": str(dn.id),
-            "delivery_note_number": dn.delivery_note_number,
-            "status": dn.status.value,
-            "items_count": len(request.items),
-        }
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+    items_data = [
+        {"batch_id": item.batch_id, "quantity": item.quantity}
+        for item in request.items
+    ]
+
+    dn = await service.create_delivery_note(
+        customer_id=request.customer_id,
+        items=items_data,
+        user_id=current_user.id,
+        is_consignment=request.is_consignment,
+        notes=request.notes,
+        issue_date=request.issue_date,
+    )
+
+    await db.commit()
+
+    return {
+        "id": str(dn.id),
+        "delivery_note_number": dn.delivery_note_number,
+        "status": dn.status.value,
+        "items_count": len(request.items),
+    }
 
 
 @router.get("/{delivery_note_id}")
@@ -247,6 +242,7 @@ async def get_delivery_note(
 
 
 @router.put("/{delivery_note_id}/status")
+@translate_value_error()
 async def update_delivery_note_status(
     delivery_note_id: UUID,
     request: UpdateStatusRequest,
@@ -255,30 +251,24 @@ async def update_delivery_note_status(
 ) -> dict:
     """Update delivery note status"""
     service = DocumentService(db)
-    
-    try:
-        dn = await service.update_delivery_note_status(
-            delivery_note_id=delivery_note_id,
-            new_status=request.status,
-        )
-        await db.commit()
-        
-        return {
-            "id": str(dn.id),
-            "delivery_note_number": dn.delivery_note_number,
-            "status": dn.status.value,
-            "issue_date": dn.issue_date.isoformat() if dn.issue_date else None,
-            "delivery_date": dn.delivery_date.isoformat() if dn.delivery_date else None,
-        }
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+    dn = await service.update_delivery_note_status(
+        delivery_note_id=delivery_note_id,
+        new_status=request.status,
+    )
+    await db.commit()
+
+    return {
+        "id": str(dn.id),
+        "delivery_note_number": dn.delivery_note_number,
+        "status": dn.status.value,
+        "issue_date": dn.issue_date.isoformat() if dn.issue_date else None,
+        "delivery_date": dn.delivery_date.isoformat() if dn.delivery_date else None,
+    }
 
 
 @router.get("/{delivery_note_id}/pdf")
+@translate_value_error(status.HTTP_404_NOT_FOUND)
 async def get_delivery_note_pdf(
     delivery_note_id: UUID,
     db: DbSession,
@@ -295,20 +285,13 @@ async def get_delivery_note_pdf(
         )
     _assert_customer_can_view(dn, current_user)
 
-    try:
-        pdf_bytes = await service.generate_delivery_note_pdf(delivery_note_id)
-        filename = f"{dn.delivery_note_number}.pdf"
+    pdf_bytes = await service.generate_delivery_note_pdf(delivery_note_id)
+    filename = f"{dn.delivery_note_number}.pdf"
 
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
-        )
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
-        )
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api.deps import DbSession, PickingUser, WarehouseUser
+from app.api.error_handling import translate_value_error
 from app.services.fefo_engine import FEFOEngine
 from app.services.inventory_service import InventoryService
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
@@ -157,6 +158,7 @@ async def validate_pick(
 
 
 @router.post("/execute-pick")
+@translate_value_error()
 async def execute_pick(
     request: BatchPickRequest,
     db: DbSession,
@@ -186,35 +188,29 @@ async def execute_pick(
             },
         )
     
-    try:
-        movement = await inventory.record_movement(
-            batch_id=request.batch_id,
-            movement_type=MovementType.DISPATCH,
-            quantity=request.quantity,
-            user_id=current_user.id,
-            reference_number=reference_number,
-            notes=notes,
-        )
-        
-        await db.commit()
-        
-        return {
-            "success": True,
-            "movement_id": str(movement.id),
-            "batch_id": str(request.batch_id),
-            "quantity": float(request.quantity),
-            "quantity_remaining": float(movement.quantity_after),
-            "warnings": validation.warnings,
-        }
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    movement = await inventory.record_movement(
+        batch_id=request.batch_id,
+        movement_type=MovementType.DISPATCH,
+        quantity=request.quantity,
+        user_id=current_user.id,
+        reference_number=reference_number,
+        notes=notes,
+    )
+
+    await db.commit()
+
+    return {
+        "success": True,
+        "movement_id": str(movement.id),
+        "batch_id": str(request.batch_id),
+        "quantity": float(request.quantity),
+        "quantity_remaining": float(movement.quantity_after),
+        "warnings": validation.warnings,
+    }
 
 
 @router.post("/dispatch", response_model=DispatchResponse)
+@translate_value_error()
 async def create_dispatch(
     request: DispatchRequest,
     db: DbSession,
@@ -258,40 +254,33 @@ async def create_dispatch(
     movements = []
     total_quantity = Decimal("0")
     
-    try:
-        for item in request.items:
-            movement = await inventory.record_movement(
-                batch_id=item.batch_id,
-                movement_type=MovementType.DISPATCH,
-                quantity=item.quantity,
-                user_id=current_user.id,
-                reference_number=ref_number,
-                notes=request.notes,
-            )
-            
-            movements.append({
-                "movement_id": str(movement.id),
-                "batch_id": str(item.batch_id),
-                "quantity": float(item.quantity),
-                "quantity_remaining": float(movement.quantity_after),
-            })
-            total_quantity += item.quantity
-        
-        await db.commit()
-        
-        return DispatchResponse(
-            success=True,
+    for item in request.items:
+        movement = await inventory.record_movement(
+            batch_id=item.batch_id,
+            movement_type=MovementType.DISPATCH,
+            quantity=item.quantity,
+            user_id=current_user.id,
             reference_number=ref_number,
-            items_dispatched=len(movements),
-            total_quantity=total_quantity,
-            movements=movements,
+            notes=request.notes,
         )
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+        movements.append({
+            "movement_id": str(movement.id),
+            "batch_id": str(item.batch_id),
+            "quantity": float(item.quantity),
+            "quantity_remaining": float(movement.quantity_after),
+        })
+        total_quantity += item.quantity
+
+    await db.commit()
+
+    return DispatchResponse(
+        success=True,
+        reference_number=ref_number,
+        items_dispatched=len(movements),
+        total_quantity=total_quantity,
+        movements=movements,
+    )
 
 
 @router.post(
@@ -346,6 +335,7 @@ async def generate_dispatch_document(
 
 
 @router.post("/consume")
+@translate_value_error()
 async def consume_item(
     request: ConsumeRequest,
     db: DbSession,
@@ -391,44 +381,37 @@ async def consume_item(
             },
         )
 
-    try:
-        # Build notes with customer context
-        notes_parts = []
-        if current_user.role == UserRole.CUSTOMER and current_user.customer_id:
-            notes_parts.append(f"customer:{current_user.customer_id}")
-        if request.notes:
-            notes_parts.append(request.notes)
+    # Build notes with customer context
+    notes_parts = []
+    if current_user.role == UserRole.CUSTOMER and current_user.customer_id:
+        notes_parts.append(f"customer:{current_user.customer_id}")
+    if request.notes:
+        notes_parts.append(request.notes)
 
-        from app.services.receiving_service import ReceivingService
-        receiving = ReceivingService(db)
-        ref_number = await receiving.generate_batch_number(prefix="CON")
+    from app.services.receiving_service import ReceivingService
+    receiving = ReceivingService(db)
+    ref_number = await receiving.generate_batch_number(prefix="CON")
 
-        movement = await inventory.record_movement(
-            batch_id=request.batch_id,
-            movement_type=MovementType.CONSUMPTION,
-            quantity=request.quantity,
-            user_id=current_user.id,
-            reference_number=ref_number,
-            notes=" | ".join(notes_parts) if notes_parts else None,
-        )
+    movement = await inventory.record_movement(
+        batch_id=request.batch_id,
+        movement_type=MovementType.CONSUMPTION,
+        quantity=request.quantity,
+        user_id=current_user.id,
+        reference_number=ref_number,
+        notes=" | ".join(notes_parts) if notes_parts else None,
+    )
 
-        await db.commit()
+    await db.commit()
 
-        return {
-            "success": True,
-            "movement_id": str(movement.id),
-            "batch_id": str(request.batch_id),
-            "quantity": float(request.quantity),
-            "quantity_remaining": float(movement.quantity_after),
-            "reference_number": ref_number,
-            "warnings": validation.warnings,
-        }
-
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    return {
+        "success": True,
+        "movement_id": str(movement.id),
+        "batch_id": str(request.batch_id),
+        "quantity": float(request.quantity),
+        "quantity_remaining": float(movement.quantity_after),
+        "reference_number": ref_number,
+        "warnings": validation.warnings,
+    }
 
 
 @router.get("/expiration-summary/{item_id}")

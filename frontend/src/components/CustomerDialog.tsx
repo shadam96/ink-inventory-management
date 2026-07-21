@@ -124,8 +124,15 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
     }
   }
 
+  // Block Escape/overlay-click dismissal while a save is in flight - see
+  // the matching comment in ItemDialog.tsx.
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (isSubmitting) return
+    onOpenChange(nextOpen)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>

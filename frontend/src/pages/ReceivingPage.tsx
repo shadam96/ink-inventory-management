@@ -19,7 +19,7 @@ import { addPendingOperation, isOnline } from '@/lib/offline'
 
 const receiveSchema = z.object({
   item_id: z.string().min(1, 'receiving.itemRequired'),
-  quantity: z.number().min(1, 'receiving.quantityPositive'),
+  quantity: z.number().int('receiving.quantityInteger').min(1, 'receiving.quantityPositive'),
   expiration_date: z.string().min(1, 'receiving.expirationDateRequired'),
   manufacturing_date: z.string().optional(),
   batch_number: z.string().optional(),

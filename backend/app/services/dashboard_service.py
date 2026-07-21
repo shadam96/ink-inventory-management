@@ -13,6 +13,7 @@ from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.alert import Alert
 from app.models.delivery_note import DeliveryNote, DeliveryNoteStatus
+from app.models.system_settings import SystemSettings
 
 
 class DashboardService:
@@ -107,19 +108,26 @@ class DashboardService:
         )
         batches = result.scalars().all()
         
-        risk_levels = {
-            "expired": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},
-            "critical": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},  # 0-30 days
-            "warning": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},   # 31-60 days
-            "caution": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},   # 61-90 days
-            "safe": {"quantity": Decimal("0"), "value": Decimal("0"), "batches": 0},      # 90+ days
+        # value_by_currency mirrors get_inventory_value's pattern: summing
+        # raw cost prices across currencies would be nonsense (an item
+        # priced in USD and one in ILS aren't the same "value"), so each
+        # level's value is bucketed by the item's own currency instead of
+        # mixed into one number. The frontend converts to a single display
+        # currency using SystemSettings FX rates, same as inventory_value.
+        risk_levels: Dict[str, Dict[str, Any]] = {
+            "expired": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
+            "critical": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},  # 0-30 days
+            "warning": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 31-60 days
+            "caution": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 61-90 days
+            "safe": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},      # 90+ days
         }
-        
+
         for batch in batches:
             days_until = (batch.expiration_date - today).days
             cost = batch.item.cost_price if batch.item else Decimal("0")
+            ccy = (batch.item.currency if batch.item else None) or "ILS"
             value = batch.quantity_available * cost
-            
+
             if days_until < 0:
                 level = "expired"
             elif days_until <= 30:
@@ -130,30 +138,32 @@ class DashboardService:
                 level = "caution"
             else:
                 level = "safe"
-            
-            risk_levels[level]["quantity"] += batch.quantity_available
-            risk_levels[level]["value"] += value
-            risk_levels[level]["batches"] += 1
-        
+
+            bucket = risk_levels[level]
+            bucket["quantity"] += batch.quantity_available
+            bucket["value_by_currency"][ccy] = bucket["value_by_currency"].get(ccy, Decimal("0")) + value
+            bucket["batches"] += 1
+
         # Convert to float for JSON
+        currency_totals: Dict[str, float] = {}
         for level in risk_levels:
             risk_levels[level]["quantity"] = float(risk_levels[level]["quantity"])
-            risk_levels[level]["value"] = float(risk_levels[level]["value"])
-        
-        # Calculate percentages
-        total_value = sum(r["value"] for r in risk_levels.values())
-        if total_value > 0:
-            for level in risk_levels:
-                risk_levels[level]["percentage"] = round(
-                    risk_levels[level]["value"] / total_value * 100, 1
-                )
-        else:
-            for level in risk_levels:
-                risk_levels[level]["percentage"] = 0
-        
+            risk_levels[level]["value_by_currency"] = {
+                ccy: float(amount) for ccy, amount in risk_levels[level]["value_by_currency"].items()
+            }
+            for ccy, amount in risk_levels[level]["value_by_currency"].items():
+                currency_totals[ccy] = currency_totals.get(ccy, 0.0) + amount
+
+        # No per-level "percentage" field: computing one accurately
+        # requires converting every currency to a common one first, and
+        # only the frontend has the FX rates to do that (via
+        # convertToDisplayCurrency, same as inventory_value_by_currency).
+        # The frontend derives pie-chart proportions from the converted
+        # values directly.
+
         return {
             "risk_levels": risk_levels,
-            "total_value": float(total_value),
+            "total_value_by_currency": currency_totals,
             "color_codes": {
                 "expired": "#000000",   # Black
                 "critical": "#DC2626",  # Red
@@ -244,41 +254,73 @@ class DashboardService:
             "movements_count": len(movements),
         }
     
-    async def _at_risk_value_by_currency(self) -> Dict[str, float]:
-        """Sum cost-value of batches expiring within 60 days, bucketed by item currency."""
-        today = date.today()
-        result = await self.db.execute(
-            select(Batch)
-            .options(selectinload(Batch.item))
-            .where(
-                Batch.status == BatchStatus.ACTIVE,
-                Batch.quantity_available > 0,
-            )
-        )
-        batches = result.scalars().all()
+    async def _get_fx_rates(self) -> tuple[Decimal, Decimal]:
+        """Returns (usd_to_ils, eur_to_ils) from the SystemSettings
+        singleton, falling back to its column defaults if the row is
+        somehow missing (defensive for fresh test databases)."""
+        result = await self.db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return Decimal("3.7"), Decimal("4.0")
+        return row.usd_to_ils, row.eur_to_ils
 
-        totals: Dict[str, Decimal] = {}
-        for batch in batches:
-            days_until = (batch.expiration_date - today).days
-            if days_until < 0 or days_until > 60:
-                continue
-            item = batch.item
-            if not item:
-                continue
-            ccy = item.currency or "ILS"
-            totals[ccy] = (
-                totals.get(ccy, Decimal("0"))
-                + batch.quantity_available * item.cost_price
-            )
-        return {ccy: float(amount) for ccy, amount in totals.items()}
+    @staticmethod
+    def _sum_in_ils(amounts_by_currency: Dict[str, float], usd_to_ils: Decimal, eur_to_ils: Decimal) -> Decimal:
+        rates = {"ILS": Decimal("1"), "USD": usd_to_ils, "EUR": eur_to_ils}
+        return sum(
+            (Decimal(str(amount)) * rates.get(ccy, Decimal("1")) for ccy, amount in amounts_by_currency.items()),
+            Decimal("0"),
+        )
 
     async def get_kpi_summary(self) -> Dict[str, Any]:
-        """Get all KPIs for dashboard"""
-        inventory = await self.get_inventory_value()
-        risk_map = await self.get_expiration_risk_map()
-        low_stock = await self.get_low_stock_items()
+        """Get all KPIs for dashboard.
+
+        Fetches Items+Batches once and derives inventory value, at-risk
+        value, and low-stock counts from that single dataset, instead of
+        calling get_inventory_value / get_low_stock_items /
+        (the old private at-risk helper) independently - each of those
+        used to re-run its own `select(Item).options(selectinload(...))`
+        over the same rows.
+        """
+        today = date.today()
+
+        result = await self.db.execute(
+            select(Item).options(selectinload(Item.batches))
+        )
+        items = result.scalars().all()
+
+        totals_by_currency: Dict[str, Decimal] = {}
+        at_risk_by_ccy: Dict[str, Decimal] = {}
+        items_with_stock = 0
+        low_stock_count = 0
+        critical_low_stock_count = 0
+
+        for item in items:
+            ccy = item.currency or "ILS"
+            active_qty = Decimal("0")
+
+            for batch in item.batches:
+                if batch.status != BatchStatus.ACTIVE or batch.expiration_date < today:
+                    continue
+                active_qty += batch.quantity_available
+                if (batch.expiration_date - today).days <= 60:
+                    at_risk_by_ccy[ccy] = (
+                        at_risk_by_ccy.get(ccy, Decimal("0")) + batch.quantity_available * item.cost_price
+                    )
+
+            if active_qty > 0:
+                items_with_stock += 1
+                totals_by_currency[ccy] = totals_by_currency.get(ccy, Decimal("0")) + active_qty * item.cost_price
+
+            if active_qty < item.reorder_point:
+                low_stock_count += 1
+                if active_qty < item.min_stock:
+                    critical_low_stock_count += 1
+
+        inventory_totals = {ccy: float(v) for ccy, v in totals_by_currency.items()}
+        at_risk_totals = {ccy: float(v) for ccy, v in at_risk_by_ccy.items()}
+
         activity = await self.get_recent_activity()
-        at_risk_by_ccy = await self._at_risk_value_by_currency()
 
         # Unread alerts count
         result = await self.db.execute(
@@ -287,16 +329,26 @@ class DashboardService:
         )
         unread_alerts = result.scalar() or 0
 
+        # at_risk_percentage needs a single ratio, which needs converting
+        # both sides to one currency first - previously this summed
+        # risk_map's per-level "percentage" fields, which were themselves
+        # computed from values mixed across currencies without conversion.
+        usd_to_ils, eur_to_ils = await self._get_fx_rates()
+        inventory_total_ils = self._sum_in_ils(inventory_totals, usd_to_ils, eur_to_ils)
+        at_risk_total_ils = self._sum_in_ils(at_risk_totals, usd_to_ils, eur_to_ils)
+        at_risk_percentage = (
+            round(float(at_risk_total_ils / inventory_total_ils) * 100, 1)
+            if inventory_total_ils > 0
+            else 0
+        )
+
         return {
-            "inventory_value_by_currency": inventory["totals_by_currency"],
-            "items_in_stock": inventory["items_with_stock"],
-            "at_risk_value_by_currency": at_risk_by_ccy,
-            "at_risk_percentage": (
-                risk_map["risk_levels"]["critical"]["percentage"] +
-                risk_map["risk_levels"]["warning"]["percentage"]
-            ),
-            "low_stock_items": len(low_stock),
-            "critical_low_stock": sum(1 for i in low_stock if i["is_critical"]),
+            "inventory_value_by_currency": inventory_totals,
+            "items_in_stock": items_with_stock,
+            "at_risk_value_by_currency": at_risk_totals,
+            "at_risk_percentage": at_risk_percentage,
+            "low_stock_items": low_stock_count,
+            "critical_low_stock": critical_low_stock_count,
             "unread_alerts": unread_alerts,
             "recent_receipts": activity["receipts_quantity"],
             "recent_dispatches": activity["dispatches_quantity"],

@@ -7,9 +7,9 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, get_db
+from app.api.deps import ManagerUser, get_current_active_user, get_db
 from app.models.system_settings import SystemSettings
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.schemas.user import NotificationSettingsUpdate, NotificationSettingsResponse
 from app.services.email_service import email_service
 from app.core.config import settings
@@ -137,14 +137,11 @@ async def get_system_settings(
 @router.post("/email/test")
 async def send_test_email(
     request: TestEmailRequest,
-    current_user: User = Depends(get_current_active_user)
+    current_user: ManagerUser,
 ):
     """
-    Send a test email to verify configuration (admin only)
+    Send a test email to verify configuration (admin/manager only)
     """
-    if current_user.role not in [UserRole.ADMIN, UserRole.MANAGER]:
-        raise HTTPException(status_code=403, detail="Not enough permissions")
-    
     if not email_service.is_configured:
         raise HTTPException(
             status_code=400,

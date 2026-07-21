@@ -174,7 +174,61 @@ class TestDashboardService:
         
         # Safe should have value (batch1 with 180 days)
         assert risk_levels["safe"]["batches"] >= 1
-    
+
+    async def test_expiration_risk_map_buckets_value_by_currency(self, db_session):
+        """Regression test: a level's value must be bucketed per item
+        currency (like inventory_value_by_currency), not summed together
+        into one meaningless mixed-currency number."""
+        item_ils = Item(
+            sku="DASH-CCY-ILS",
+            name="ILS Ink",
+            supplier="Supplier",
+            unit_of_measure="L",
+            cost_price=Decimal("100.00"),
+            currency="ILS",
+        )
+        item_usd = Item(
+            sku="DASH-CCY-USD",
+            name="USD Ink",
+            supplier="Supplier",
+            unit_of_measure="L",
+            cost_price=Decimal("50.00"),
+            currency="USD",
+        )
+        db_session.add_all([item_ils, item_usd])
+        await db_session.flush()
+
+        expiring_soon = date.today() + timedelta(days=10)
+        db_session.add_all([
+            Batch(
+                batch_number="DASH-CCY-BT-ILS",
+                item_id=item_ils.id,
+                expiration_date=expiring_soon,
+                receipt_date=date.today(),
+                quantity_received=Decimal("10"),
+                quantity_available=Decimal("10"),
+                status=BatchStatus.ACTIVE,
+            ),
+            Batch(
+                batch_number="DASH-CCY-BT-USD",
+                item_id=item_usd.id,
+                expiration_date=expiring_soon,
+                receipt_date=date.today(),
+                quantity_received=Decimal("10"),
+                quantity_available=Decimal("10"),
+                status=BatchStatus.ACTIVE,
+            ),
+        ])
+        await db_session.commit()
+
+        service = DashboardService(db_session)
+        result = await service.get_expiration_risk_map()
+
+        critical = result["risk_levels"]["critical"]
+        assert critical["value_by_currency"]["ILS"] == 1000.0  # 10 * 100
+        assert critical["value_by_currency"]["USD"] == 500.0   # 10 * 50
+        assert "value" not in critical
+
     async def test_get_low_stock_items(self, db_session):
         """Test getting low stock items"""
         service = DashboardService(db_session)
@@ -216,7 +270,17 @@ class TestDashboardService:
         assert our_item["reorder_point"] == 50
         assert our_item["shortage"] == 35.0
         assert our_item["is_critical"] is True  # Below min_stock of 20
-    
+
+        # Regression test: get_kpi_summary was refactored to compute
+        # inventory value / at-risk value / low-stock counts from a single
+        # shared Item+Batch fetch instead of calling get_inventory_value,
+        # get_low_stock_items, and the old at-risk helper independently
+        # (each re-querying and re-scanning the same rows). Its counts
+        # must still agree with the standalone get_low_stock_items() call.
+        kpis = await service.get_kpi_summary()
+        assert kpis["low_stock_items"] == len(low_stock)
+        assert kpis["critical_low_stock"] == sum(1 for i in low_stock if i["is_critical"])
+
     async def test_get_recent_activity(self, db_session, sample_items_with_batches):
         """Test getting recent activity"""
         service = DashboardService(db_session)

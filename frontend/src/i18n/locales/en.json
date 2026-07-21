@@ -126,6 +126,7 @@
     "error": "Error receiving goods",
     "itemRequired": "Item is required",
     "quantityPositive": "Quantity must be positive",
+    "quantityInteger": "Quantity must be a whole number",
     "expirationDateRequired": "Expiration date is required",
     "itemFound": "Found: {{name}} ({{sku}})",
     "itemFoundFilled": "Found and filled: {{name}} ({{sku}})",

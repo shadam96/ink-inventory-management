@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.deps import DbSession, WarehouseUser
+from app.api.error_handling import translate_value_error
 from app.services.receiving_service import ReceivingService
 from app.schemas.batch import BatchResponse
 from app.schemas.common import MessageResponse
@@ -67,6 +68,7 @@ class SingleReceiptResponse(BaseModel):
 
 
 @router.post("/receive", response_model=SingleReceiptResponse)
+@translate_value_error()
 async def receive_single_item(
     receipt: SingleReceiptRequest,
     db: DbSession,
@@ -77,45 +79,39 @@ async def receive_single_item(
     Creates a new batch and records the receipt movement.
     """
     service = ReceivingService(db)
-    
-    try:
-        batch, movement, grn_number = await service.receive_goods(
-            item_id=receipt.item_id,
-            quantity=receipt.quantity,
-            expiration_date=receipt.expiration_date,
-            user_id=current_user.id,
-            batch_number=receipt.batch_number,
-            supplier_batch_number=receipt.supplier_batch_number,
-            location_id=receipt.location_id,
-            notes=receipt.notes,
-            manufacturing_date=receipt.manufacturing_date,
-        )
-        
-        await db.commit()
-        
-        # Check for expiration warning
-        warning = service.validate_expiration_warning(receipt.expiration_date)
-        
-        return SingleReceiptResponse(
-            grn_number=grn_number,
-            batch_number=batch.batch_number,
-            batch_id=batch.id,
-            item_id=batch.item_id,
-            quantity=batch.quantity_received,
-            expiration_date=batch.expiration_date,
-            manufacturing_date=batch.manufacturing_date,
-            location_id=batch.location_id,
-            warning=warning,
-        )
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+    batch, movement, grn_number = await service.receive_goods(
+        item_id=receipt.item_id,
+        quantity=receipt.quantity,
+        expiration_date=receipt.expiration_date,
+        user_id=current_user.id,
+        batch_number=receipt.batch_number,
+        supplier_batch_number=receipt.supplier_batch_number,
+        location_id=receipt.location_id,
+        notes=receipt.notes,
+        manufacturing_date=receipt.manufacturing_date,
+    )
+
+    await db.commit()
+
+    # Check for expiration warning
+    warning = service.validate_expiration_warning(receipt.expiration_date)
+
+    return SingleReceiptResponse(
+        grn_number=grn_number,
+        batch_number=batch.batch_number,
+        batch_id=batch.id,
+        item_id=batch.item_id,
+        quantity=batch.quantity_received,
+        expiration_date=batch.expiration_date,
+        manufacturing_date=batch.manufacturing_date,
+        location_id=batch.location_id,
+        warning=warning,
+    )
 
 
 @router.post("/receive-multiple", response_model=GoodsReceiptResponse)
+@translate_value_error()
 async def receive_multiple_items(
     request: GoodsReceiptRequest,
     db: DbSession,
@@ -125,61 +121,54 @@ async def receive_multiple_items(
     Receive multiple items in a single GRN (Goods Receipt Note).
     """
     service = ReceivingService(db)
-    
-    try:
-        receipts_data = [
-            {
-                "item_id": item.item_id,
-                "quantity": item.quantity,
-                "expiration_date": item.expiration_date,
-                "batch_number": item.batch_number,
-                "supplier_batch_number": item.supplier_batch_number,
-                "location_id": item.location_id,
-                "notes": item.notes,
-            }
-            for item in request.items
-        ]
-        
-        batches, movements, grn_number = await service.receive_multiple(
-            receipts=receipts_data,
-            user_id=current_user.id,
-        )
-        
-        await db.commit()
-        
-        # Collect warnings
-        warnings = []
-        items_response = []
-        
-        for i, batch in enumerate(batches):
-            warning = service.validate_expiration_warning(batch.expiration_date)
-            if warning:
-                warning["batch_number"] = batch.batch_number
-                warnings.append(warning)
-            
-            items_response.append({
-                "batch_id": str(batch.id),
-                "batch_number": batch.batch_number,
-                "item_id": str(batch.item_id),
-                "quantity": float(batch.quantity_received),
-                "expiration_date": batch.expiration_date.isoformat(),
-            })
-        
-        total_quantity = sum(b.quantity_received for b in batches)
-        
-        return GoodsReceiptResponse(
-            grn_number=grn_number,
-            batches_created=len(batches),
-            total_quantity=total_quantity,
-            items=items_response,
-            warnings=warnings,
-        )
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+    receipts_data = [
+        {
+            "item_id": item.item_id,
+            "quantity": item.quantity,
+            "expiration_date": item.expiration_date,
+            "batch_number": item.batch_number,
+            "supplier_batch_number": item.supplier_batch_number,
+            "location_id": item.location_id,
+            "notes": item.notes,
+        }
+        for item in request.items
+    ]
+
+    batches, movements, grn_number = await service.receive_multiple(
+        receipts=receipts_data,
+        user_id=current_user.id,
+    )
+
+    await db.commit()
+
+    # Collect warnings
+    warnings = []
+    items_response = []
+
+    for i, batch in enumerate(batches):
+        warning = service.validate_expiration_warning(batch.expiration_date)
+        if warning:
+            warning["batch_number"] = batch.batch_number
+            warnings.append(warning)
+
+        items_response.append({
+            "batch_id": str(batch.id),
+            "batch_number": batch.batch_number,
+            "item_id": str(batch.item_id),
+            "quantity": float(batch.quantity_received),
+            "expiration_date": batch.expiration_date.isoformat(),
+        })
+
+    total_quantity = sum(b.quantity_received for b in batches)
+
+    return GoodsReceiptResponse(
+        grn_number=grn_number,
+        batches_created=len(batches),
+        total_quantity=total_quantity,
+        items=items_response,
+        warnings=warnings,
+    )
 
 
 def _parse_qr_data(scanned: str) -> dict | None:

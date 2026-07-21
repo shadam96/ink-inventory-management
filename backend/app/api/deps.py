@@ -35,9 +35,15 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     
     if user is None:
+        # A structurally valid, unexpired JWT whose subject no longer
+        # exists (e.g. the account was deleted after the token was
+        # issued) is an authentication failure, not a "resource not
+        # found" - 404 here could make frontend error handling treat it
+        # as a missing resource rather than prompting re-login.
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="משתמש לא נמצא",  # User not found
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.is_active:

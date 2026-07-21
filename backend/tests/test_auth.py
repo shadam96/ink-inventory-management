@@ -178,6 +178,21 @@ async def test_get_current_user(client: AsyncClient, test_user: User, auth_heade
 
 
 @pytest.mark.asyncio
+async def test_stale_token_for_deleted_user_returns_401(
+    client: AsyncClient, test_user: User, auth_headers: dict, db_session
+):
+    """A structurally valid, unexpired token whose user was deleted after
+    issuance is an authentication failure (401), not a 404 - the previous
+    404 could make frontend error handling treat this as a missing
+    resource instead of prompting re-login."""
+    await db_session.delete(test_user)
+    await db_session.commit()
+
+    response = await client.get("/api/v1/auth/me", headers=auth_headers)
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_get_current_user_unauthorized(client: AsyncClient):
     """Test getting current user without auth fails"""
     response = await client.get("/api/v1/auth/me")

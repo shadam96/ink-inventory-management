@@ -141,9 +141,18 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     }
   }
 
+  // Block Escape/overlay-click dismissal while a save is in flight -
+  // without this, closing mid-submit and reopening for a different item
+  // could let this request's success callback (above) reset/close the
+  // new, unrelated dialog instance once it eventually resolves.
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (isSubmitting) return
+    onOpenChange(nextOpen)
+  }
+
   return (
     <TooltipProvider>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>

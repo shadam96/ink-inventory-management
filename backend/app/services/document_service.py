@@ -29,37 +29,20 @@ from app.models.customer import Customer
 from app.models.batch import Batch
 from app.models.item import Item
 from app.models.user import User
+from app.services.sequence_service import generate_sequential_number
 
 
 class DocumentService:
     """Service for generating PDF documents"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
     async def generate_delivery_note_number(self) -> str:
         """Generate unique delivery note number: DN-YYMMDD-XXXX"""
-        from sqlalchemy import func
-        
-        date_str = datetime.now().strftime("%y%m%d")
-        prefix_pattern = f"DN-{date_str}-%"
-        
-        result = await self.db.execute(
-            select(func.max(DeliveryNote.delivery_note_number))
-            .where(DeliveryNote.delivery_note_number.like(prefix_pattern))
+        return await generate_sequential_number(
+            self.db, DeliveryNote.delivery_note_number, "DN", pad_width=4
         )
-        last_dn = result.scalar()
-        
-        if last_dn:
-            try:
-                last_seq = int(last_dn.split("-")[-1])
-                next_seq = last_seq + 1
-            except (ValueError, IndexError):
-                next_seq = 1
-        else:
-            next_seq = 1
-        
-        return f"DN-{date_str}-{next_seq:04d}"
     
     async def create_delivery_note(
         self,

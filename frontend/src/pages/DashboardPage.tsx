@@ -113,12 +113,15 @@ export function DashboardPage() {
     ? convertToDisplayCurrency(kpis?.at_risk_value_by_currency ?? {}, currency, fxRates)
     : 0
 
-  const riskChartData = riskData ? [
-    { name: t('dashboard.riskSafe'), value: riskData.risk_levels.safe.value, color: RISK_COLORS.safe },
-    { name: t('dashboard.riskCaution'), value: riskData.risk_levels.caution.value, color: RISK_COLORS.caution },
-    { name: t('dashboard.riskWarning'), value: riskData.risk_levels.warning.value, color: RISK_COLORS.warning },
-    { name: t('dashboard.riskCritical'), value: riskData.risk_levels.critical.value, color: RISK_COLORS.critical },
-    { name: t('dashboard.riskExpired'), value: riskData.risk_levels.expired.value, color: RISK_COLORS.expired },
+  // Each level's value is bucketed by currency (like inventory_value_by_currency) -
+  // summing raw amounts across currencies without conversion would be
+  // meaningless as soon as two items use different currencies.
+  const riskChartData = riskData && fxRates ? [
+    { name: t('dashboard.riskSafe'), value: convertToDisplayCurrency(riskData.risk_levels.safe.value_by_currency, currency, fxRates), color: RISK_COLORS.safe },
+    { name: t('dashboard.riskCaution'), value: convertToDisplayCurrency(riskData.risk_levels.caution.value_by_currency, currency, fxRates), color: RISK_COLORS.caution },
+    { name: t('dashboard.riskWarning'), value: convertToDisplayCurrency(riskData.risk_levels.warning.value_by_currency, currency, fxRates), color: RISK_COLORS.warning },
+    { name: t('dashboard.riskCritical'), value: convertToDisplayCurrency(riskData.risk_levels.critical.value_by_currency, currency, fxRates), color: RISK_COLORS.critical },
+    { name: t('dashboard.riskExpired'), value: convertToDisplayCurrency(riskData.risk_levels.expired.value_by_currency, currency, fxRates), color: RISK_COLORS.expired },
   ].filter(d => d.value > 0) : []
 
   const distributionChartData = distribution.slice(0, 8).map(item => ({

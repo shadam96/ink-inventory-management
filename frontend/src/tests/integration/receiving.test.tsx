@@ -141,6 +141,42 @@ describe('Receiving Operations', () => {
     // Simplified test - actual implementation would be more detailed
   })
 
+  it('should reject a fractional quantity instead of adding it to the receive list', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    await waitFor(() => {
+      expect(api.itemsApi.list).toHaveBeenCalled()
+    })
+
+    const itemSelect = document.getElementById('item_id') as HTMLSelectElement
+    await waitFor(() => {
+      expect(itemSelect.querySelector('option[value="1"]')).toBeInTheDocument()
+    })
+    await user.selectOptions(itemSelect, '1')
+
+    const quantityInput = document.getElementById('quantity') as HTMLInputElement
+    fireEvent.change(quantityInput, { target: { value: '2.5' } })
+
+    const expirationInput = document.getElementById('expiration_date') as HTMLInputElement
+    fireEvent.change(expirationInput, { target: { value: '2027-01-01' } })
+
+    const addButton = screen.getByRole('button', { name: /receiving\.addToList/i })
+    fireEvent.submit(addButton.closest('form')!)
+
+    await waitFor(() => {
+      expect(screen.getByText('receiving.quantityInteger')).toBeInTheDocument()
+    })
+
+    // The fractional-quantity item must not have been added to the list.
+    expect(screen.queryByText(/receiving\.listTitle/)).not.toBeInTheDocument()
+  })
+
   it('should clear auto-filled fields from a previous scan when the next scan has no parsed_data', async () => {
     const user = userEvent.setup()
 

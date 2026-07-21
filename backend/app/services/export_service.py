@@ -217,7 +217,7 @@ class ExportService:
                 batch.status.value,
                 batch.receipt_date.strftime("%Y-%m-%d") if batch.receipt_date else "",
                 batch.expiration_date.strftime("%Y-%m-%d") if batch.expiration_date else "",
-                days_until_expiry or "",
+                days_until_expiry if days_until_expiry is not None else "",
                 batch.location.location_code if batch.location else "",
                 batch.notes or "",
                 batch.created_at.strftime("%Y-%m-%d %H:%M") if batch.created_at else ""

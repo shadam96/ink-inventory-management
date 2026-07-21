@@ -13,6 +13,7 @@ from app.api.deps import CurrentUser, DbSession
 from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
+from app.models.user import UserRole
 from app.schemas.common import BaseSchema, PaginatedResponse
 
 router = APIRouter()
@@ -75,7 +76,7 @@ async def list_inventory(
     returned in the ``receipt_dates`` array.
     """
 
-    is_customer = current_user.role == "customer"
+    is_customer = current_user.role == UserRole.CUSTOMER
 
     # ------------------------------------------------------------------
     # Customer path — derive from delivery‑note items
@@ -176,7 +177,7 @@ async def get_inventory_total_cost(
     Total cost of active inventory (quantity_available * cost_price),
     grouped by currency.  Respects the same search filter as the list view.
     """
-    is_customer = current_user.role == "customer"
+    is_customer = current_user.role == UserRole.CUSTOMER
 
     if is_customer and current_user.customer_id:
         # Dedupe by batch_id first — the same Batch may be referenced by

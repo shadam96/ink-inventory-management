@@ -300,3 +300,45 @@ async def test_generate_batch_number(
     assert "batch_number" in data
     assert data["batch_number"].startswith("GR-")
 
+
+@pytest.mark.asyncio
+async def test_receive_goods_retries_on_batch_number_collision(
+    db_session: AsyncSession,
+    test_item: Item,
+    test_user: User,
+):
+    """Regression test for the fix: generate_batch_number's MAX(batch_number)
+    read has no row lock, so a concurrent request can already have taken
+    the number this call is about to generate. Previously this raised an
+    unhandled IntegrityError; now receive_goods retries with a freshly
+    generated number instead."""
+    service = ReceivingService(db_session)
+
+    # Simulate a concurrent receipt having already claimed the batch
+    # number this call is about to compute.
+    next_number = await service.generate_batch_number()
+    from app.models.batch import Batch, BatchStatus
+
+    colliding_batch = Batch(
+        item_id=test_item.id,
+        batch_number=next_number,
+        quantity_received=Decimal("1"),
+        quantity_available=Decimal("1"),
+        receipt_date=date.today(),
+        expiration_date=date.today() + timedelta(days=90),
+        status=BatchStatus.ACTIVE,
+    )
+    db_session.add(colliding_batch)
+    await db_session.commit()
+
+    batch, movement, grn_number = await service.receive_goods(
+        item_id=test_item.id,
+        quantity=Decimal("10"),
+        expiration_date=date.today() + timedelta(days=90),
+        user_id=test_user.id,
+    )
+    await db_session.commit()
+
+    assert batch.batch_number != next_number
+    assert batch.batch_number.startswith("GR-")
+

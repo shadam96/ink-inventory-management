@@ -126,6 +126,7 @@
     "error": "שגיאה בקליטת סחורה",
     "itemRequired": "פריט נדרש",
     "quantityPositive": "כמות חייבת להיות חיובית",
+    "quantityInteger": "כמות חייבת להיות מספר שלם",
     "expirationDateRequired": "תאריך תפוגה נדרש",
     "itemFound": "נמצא: {{name}} ({{sku}})",
     "itemFoundFilled": "נמצא ומולא: {{name}} ({{sku}})",
