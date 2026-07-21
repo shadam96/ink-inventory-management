@@ -2,6 +2,8 @@
 from typing import Optional
 from uuid import UUID
 
+from pydantic import model_validator
+
 from app.models.alert import AlertSeverity, AlertType
 from app.schemas.common import BaseSchema, TimestampSchema
 
@@ -34,12 +36,18 @@ class AlertUpdate(BaseSchema):
 
 class AlertCreate(BaseSchema):
     """Schema for creating an alert (internal use)"""
-    
+
     alert_type: AlertType
     severity: AlertSeverity
     title: str
     message: str
     batch_id: Optional[UUID] = None
     item_id: Optional[UUID] = None
+
+    @model_validator(mode="after")
+    def require_batch_or_item(self) -> "AlertCreate":
+        if self.batch_id is None and self.item_id is None:
+            raise ValueError("Alert must reference either a batch_id or an item_id")
+        return self
 
 

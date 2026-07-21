@@ -196,9 +196,13 @@ class ReceivingService:
             batch_number = receipt.get("batch_number")
             if not batch_number:
                 batch_number = await self.generate_batch_number()
-            
+
             quantity = Decimal(str(receipt["quantity"]))
-            
+            if quantity <= 0:
+                raise ValueError(
+                    f"כמות חייבת להיות חיובית עבור פריט {item.sku}"
+                )  # Quantity must be positive for item {sku}
+
             batch = Batch(
                 item_id=receipt["item_id"],
                 batch_number=batch_number,

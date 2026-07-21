@@ -68,9 +68,10 @@ class TestAlertService:
             severity=AlertSeverity.CRITICAL,
             title="Alert 2",
             message="Message 2",
+            item_id=sample_item.id,
         )
         await db_session.flush()
-        
+
         # Mark one as read
         alert2.is_read = True
         await db_session.flush()
@@ -80,10 +81,10 @@ class TestAlertService:
         assert len(unread) == 1
         assert unread[0].title == "Alert 1"
     
-    async def test_get_unread_count(self, db_session):
+    async def test_get_unread_count(self, db_session, sample_item):
         """Test counting unread alerts"""
         service = AlertService(db_session)
-        
+
         # Create alerts
         for i in range(5):
             await service.create_alert(
@@ -91,33 +92,35 @@ class TestAlertService:
                 severity=AlertSeverity.INFO,
                 title=f"Alert {i}",
                 message=f"Message {i}",
+                item_id=sample_item.id,
             )
         await db_session.flush()
-        
+
         count = await service.get_unread_count()
         assert count == 5
-    
-    async def test_mark_as_read(self, db_session):
+
+    async def test_mark_as_read(self, db_session, sample_item):
         """Test marking alert as read"""
         service = AlertService(db_session)
-        
+
         alert = await service.create_alert(
             alert_type=AlertType.LOW_STOCK,
             severity=AlertSeverity.INFO,
             title="Test Alert",
             message="Test message",
+            item_id=sample_item.id,
         )
         await db_session.flush()
-        
+
         await service.mark_as_read(alert.id)
         await db_session.refresh(alert)
-        
+
         assert alert.is_read is True
-    
-    async def test_mark_all_as_read(self, db_session):
+
+    async def test_mark_all_as_read(self, db_session, sample_item):
         """Test marking all alerts as read"""
         service = AlertService(db_session)
-        
+
         # Create unread alerts
         for i in range(3):
             await service.create_alert(
@@ -125,32 +128,34 @@ class TestAlertService:
                 severity=AlertSeverity.INFO,
                 title=f"Alert {i}",
                 message=f"Message {i}",
+                item_id=sample_item.id,
             )
         await db_session.flush()
-        
+
         count = await service.mark_all_as_read()
-        
+
         assert count == 3
-        
+
         # Verify all are read
         unread = await service.get_unread_count()
         assert unread == 0
-    
-    async def test_dismiss_alert(self, db_session):
+
+    async def test_dismiss_alert(self, db_session, sample_item):
         """Test dismissing an alert"""
         service = AlertService(db_session)
-        
+
         alert = await service.create_alert(
             alert_type=AlertType.LOW_STOCK,
             severity=AlertSeverity.INFO,
             title="Test Alert",
             message="Test message",
+            item_id=sample_item.id,
         )
         await db_session.flush()
-        
+
         await service.dismiss_alert(alert.id)
         await db_session.refresh(alert)
-        
+
         assert alert.is_dismissed is True
     
     async def test_check_expiring_batches(self, db_session, sample_item):
@@ -342,7 +347,21 @@ class TestAlertService:
 
 class TestAlertsAPI:
     """Test alerts API endpoints"""
-    
+
+    @pytest.fixture
+    async def sample_item(self, db_session):
+        """Create a sample item"""
+        item = Item(
+            sku="ALERT-API-INK-001",
+            name="Alert API Test Ink",
+            supplier="Test Supplier",
+            unit_of_measure="L",
+            cost_price=Decimal("75.00"),
+        )
+        db_session.add(item)
+        await db_session.flush()
+        return item
+
     @pytest.fixture
     async def auth_token(self, client, db_session):
         """Get auth token for manager user"""
@@ -376,7 +395,7 @@ class TestAlertsAPI:
         data = response.json()
         assert data["total_unread"] == 0
     
-    async def test_list_alerts(self, client, auth_token, db_session):
+    async def test_list_alerts(self, client, auth_token, db_session, sample_item):
         """Test listing alerts"""
         # Create some alerts
         service = AlertService(db_session)
@@ -386,6 +405,7 @@ class TestAlertsAPI:
                 severity=AlertSeverity.WARNING,
                 title=f"Test Alert {i}",
                 message=f"Test message {i}",
+                item_id=sample_item.id,
             )
         await db_session.commit()
         
@@ -398,7 +418,7 @@ class TestAlertsAPI:
         data = response.json()
         assert data["total"] == 3
     
-    async def test_mark_alert_read_api(self, client, auth_token, db_session):
+    async def test_mark_alert_read_api(self, client, auth_token, db_session, sample_item):
         """Test marking alert as read via API"""
         service = AlertService(db_session)
         alert = await service.create_alert(
@@ -406,6 +426,7 @@ class TestAlertsAPI:
             severity=AlertSeverity.INFO,
             title="Test Alert",
             message="Test message",
+            item_id=sample_item.id,
         )
         await db_session.commit()
         
@@ -417,7 +438,7 @@ class TestAlertsAPI:
         assert response.status_code == 200
         assert response.json()["success"] is True
     
-    async def test_mark_all_read_api(self, client, auth_token, db_session):
+    async def test_mark_all_read_api(self, client, auth_token, db_session, sample_item):
         """Test marking all alerts as read via API"""
         service = AlertService(db_session)
         for i in range(5):
@@ -426,6 +447,7 @@ class TestAlertsAPI:
                 severity=AlertSeverity.INFO,
                 title=f"Alert {i}",
                 message=f"Message {i}",
+                item_id=sample_item.id,
             )
         await db_session.commit()
         

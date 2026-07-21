@@ -48,6 +48,10 @@ class Batch(BaseModel):
             "quantity_available >= 0",
             name="check_quantity_non_negative"
         ),
+        CheckConstraint(
+            "quantity_received >= 0",
+            name="check_quantity_received_non_negative"
+        ),
         Index("ix_batches_expiration_status", "expiration_date", "status"),
         Index("ix_batches_item_status", "item_id", "status"),
     )

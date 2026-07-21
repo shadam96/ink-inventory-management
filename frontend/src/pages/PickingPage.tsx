@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -140,6 +140,7 @@ function AdminPickingView() {
       setItems(response.items)
     } catch (error) {
       console.error('Failed to fetch items:', error)
+      toast.error(t('picking.fetchItemsError'))
     }
   }
 
@@ -149,27 +150,41 @@ function AdminPickingView() {
       setCustomers(response.items || [])
     } catch (error) {
       console.error('Failed to fetch customers:', error)
+      toast.error(t('picking.fetchCustomersError'))
     }
   }
 
+  // Sequence guard: fetchSuggestions fires on every keystroke of
+  // requestedQuantity with no request cancellation, so a slower response
+  // for an earlier-typed quantity could otherwise arrive after and
+  // overwrite state set by a faster response to a later-typed quantity.
+  // Only the response matching the most recently issued request is
+  // applied.
+  const suggestionsRequestIdRef = useRef(0)
+
   async function fetchSuggestions() {
     if (!selectedItemId) return
+    const requestId = ++suggestionsRequestIdRef.current
     setLoading(true)
     try {
       const qty = requestedQuantity || 0
       const response = await pickingApi.suggestBatches(selectedItemId, qty)
+      if (requestId !== suggestionsRequestIdRef.current) return
       setSuggestions(response.suggestions || [])
       setFifoSuggestions(response.fifo_suggestions || [])
       setLifoSuggestions(response.lifo_suggestions || [])
       setTotalAvailable(response.total_available ?? 0)
       setCanFulfill(response.can_fulfill ?? true)
     } catch (error) {
+      if (requestId !== suggestionsRequestIdRef.current) return
       console.error('Failed to fetch suggestions:', error)
       setSuggestions([])
       setFifoSuggestions([])
       setLifoSuggestions([])
     } finally {
-      setLoading(false)
+      if (requestId === suggestionsRequestIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 
@@ -525,21 +540,31 @@ function CustomerPickingView() {
       setItems(response.items)
     } catch (error) {
       console.error('Failed to fetch items:', error)
+      toast.error(t('picking.fetchItemsError'))
     }
   }
 
+  // Sequence guard - see the matching comment in AdminPickingView's
+  // fetchSuggestions above.
+  const suggestionsRequestIdRef = useRef(0)
+
   async function fetchSuggestions() {
     if (!selectedItemId) return
+    const requestId = ++suggestionsRequestIdRef.current
     setLoading(true)
     try {
       const qty = requestedQuantity || 0
       const response = await pickingApi.suggestBatches(selectedItemId, qty)
+      if (requestId !== suggestionsRequestIdRef.current) return
       setSuggestions(response.suggestions || [])
     } catch (error: any) {
+      if (requestId !== suggestionsRequestIdRef.current) return
       console.error('Failed to fetch suggestions:', error)
       setSuggestions([])
     } finally {
-      setLoading(false)
+      if (requestId === suggestionsRequestIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 

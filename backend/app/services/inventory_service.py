@@ -91,9 +91,23 @@ class InventoryService:
         
         if not batch:
             raise ValueError(f"אצווה {batch_id} לא נמצאה")  # Batch not found
-        
+
+        # ADJUSTMENT is the only movement type allowed to carry a negative
+        # (or zero) quantity - it represents a signed delta from a physical
+        # count. Every other type represents a physical quantity of stock
+        # moving in one direction, so a non-positive value here is always
+        # invalid: a negative DISPATCH/CONSUMPTION/SCRAP would otherwise
+        # *increase* quantity_available (quantity_before - negative), while
+        # the stored Movement.quantity uses abs(quantity), masking the sign
+        # inversion from the audit trail. This is a defense-in-depth check;
+        # the HTTP layer (Pydantic Field(gt=0)) already guards this for
+        # requests that go through the picking/receiving endpoints, but
+        # this service function can also be called directly.
+        if movement_type != MovementType.ADJUSTMENT and quantity <= 0:
+            raise ValueError("כמות חייבת להיות חיובית")  # Quantity must be positive
+
         quantity_before = batch.quantity_available
-        
+
         # Calculate new quantity based on movement type
         if movement_type in (MovementType.RECEIPT,):
             quantity_after = quantity_before + quantity

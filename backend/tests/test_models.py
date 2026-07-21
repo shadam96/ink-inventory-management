@@ -4,8 +4,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.alert import Alert, AlertSeverity, AlertType
 from app.models.user import User, UserRole
 from app.models.item import Item
 from app.models.batch import Batch, BatchStatus
@@ -86,6 +88,51 @@ async def test_batch_creation(db_session: AsyncSession):
     assert batch.status == BatchStatus.ACTIVE
     assert not batch.is_expired
     assert batch.days_until_expiration == 365
+
+
+@pytest.mark.asyncio
+async def test_batch_rejects_negative_quantity_received(db_session: AsyncSession):
+    """Regression test: quantity_available already had a non-negative
+    CheckConstraint, but quantity_received itself didn't - a batch could
+    be persisted with a negative received quantity, corrupting FEFO
+    receiving totals and inventory-value reports."""
+    item = Item(
+        sku="INK-NEG-001",
+        name="Black Ink",
+        supplier="Supplier A",
+        unit_of_measure="KG",
+        cost_price=Decimal("50.00"),
+    )
+    db_session.add(item)
+    await db_session.flush()
+
+    batch = Batch(
+        item_id=item.id,
+        batch_number="GR-241212-002",
+        quantity_received=Decimal("-5.00"),
+        quantity_available=Decimal("0.00"),
+        receipt_date=date.today(),
+        expiration_date=date.today() + timedelta(days=365),
+    )
+    db_session.add(batch)
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+
+
+@pytest.mark.asyncio
+async def test_alert_requires_batch_or_item(db_session: AsyncSession):
+    """Regression test: an Alert with neither batch_id nor item_id set is
+    an orphan that can't be traced to anything - the CheckConstraint
+    should reject it at the DB level."""
+    alert = Alert(
+        alert_type=AlertType.LOW_STOCK,
+        severity=AlertSeverity.WARNING,
+        title="Orphan alert",
+        message="Should be rejected",
+    )
+    db_session.add(alert)
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
 
 
 @pytest.mark.asyncio

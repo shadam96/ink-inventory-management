@@ -30,6 +30,20 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   const audioCtxRef = useRef<AudioContext | null>(null)
   const mountedRef = useRef(true)
 
+  // Callers (PickingPage/ReceivingPage) pass fresh inline onScan/onClose
+  // functions on every render. Keeping the latest callback in a ref - and
+  // depending only on facingMode below - means an unrelated parent
+  // re-render while the scanner is open no longer tears down and
+  // restarts the camera.
+  const onScanRef = useRef(onScan)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onScanRef.current = onScan
+  }, [onScan])
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
+
   // Prepare AudioContext
   useEffect(() => {
     try {
@@ -98,12 +112,12 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
 
             setStatusMessage({ text: t('scanner.scanning', { code }), type: 'success' })
 
-            Promise.resolve(onScan({ code, format }))
+            Promise.resolve(onScanRef.current({ code, format }))
               .then((shouldClose) => {
                 if (!mountedRef.current) return
                 if (shouldClose) {
                   setStatusMessage({ text: `✓ ${code}`, type: 'success' })
-                  setTimeout(() => { if (mountedRef.current) onClose() }, 600)
+                  setTimeout(() => { if (mountedRef.current) onCloseRef.current() }, 600)
                 } else {
                   setStatusMessage({ text: t('scanner.notFound', { code }), type: 'error' })
                   setTimeout(() => {
@@ -144,10 +158,12 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         scanner.stop().catch(() => {})
       }
     }
-    // Intentional: re-run only on facing mode change. Adding `t` would
-    // restart the camera on every language change.
+    // Intentional: re-run only on facing mode change. onScan/onClose are
+    // read from refs (see above) so an unmemoized callback from the
+    // parent doesn't restart the camera, and adding `t` would restart it
+    // on every language change too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facingMode, onScan, onClose])
+  }, [facingMode])
 
   const switchCamera = async () => {
     try {

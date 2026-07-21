@@ -38,8 +38,18 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function StaffRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuthStore()
+export function StaffRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+  const token = localStorage.getItem('access_token')
+
+  // The persisted auth store only rehydrates isAuthenticated, not `user` -
+  // on a page reload, user starts null until ProtectedRoute's fetchUser()
+  // resolves. Rendering nothing during that window (instead of assuming
+  // "not a customer" and rendering/fetching staff-only data) avoids a
+  // customer-role user briefly seeing/fetching staff-only routes.
+  if (token && isAuthenticated && user === null) {
+    return null
+  }
 
   if (user?.role === 'customer') {
     return <Navigate to="/picking" replace />

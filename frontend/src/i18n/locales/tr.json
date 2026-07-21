@@ -166,6 +166,8 @@
     "quantityPositive": "Miktar pozitif olmalıdır",
     "customerRequired": "Müşteri gereklidir",
     "itemFound": "Bulundu: {{name}} ({{sku}})",
+    "fetchItemsError": "Ürünler yüklenemedi. Lütfen tekrar deneyin.",
+    "fetchCustomersError": "Müşteriler yüklenemedi. Lütfen tekrar deneyin.",
     "noBatchesAvailable": "Toplama için mevcut parti yok",
     "offlineQueued": "Çevrimdışısınız. Toplama kaydedildi ve yeniden bağlandığınızda senkronize edilecektir.",
     "dispatchError": "Toplama sırasında hata oluştu",

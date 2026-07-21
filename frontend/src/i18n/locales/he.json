@@ -166,6 +166,8 @@
     "quantityPositive": "כמות חייבת להיות חיובית",
     "customerRequired": "לקוח נדרש",
     "itemFound": "נמצא: {{name}} ({{sku}})",
+    "fetchItemsError": "טעינת הפריטים נכשלה. אנא נסה שוב.",
+    "fetchCustomersError": "טעינת הלקוחות נכשלה. אנא נסה שוב.",
     "noBatchesAvailable": "אין אצוות זמינות לליקוט",
     "offlineQueued": "אתה במצב אופליין. הליקוט נשמר ויסונכרן כשתחזור לרשת.",
     "dispatchError": "שגיאה בביצוע ליקוט",

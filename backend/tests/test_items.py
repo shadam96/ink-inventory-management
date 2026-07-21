@@ -36,6 +36,76 @@ async def test_create_item(client: AsyncClient, auth_headers: dict):
 
 
 @pytest.mark.asyncio
+async def test_create_item_rejects_min_stock_above_max_stock(
+    client: AsyncClient, auth_headers: dict
+):
+    """Regression test: min_stock/max_stock/reorder_point were each
+    validated independently (ge=0), so min_stock=100, max_stock=5 was
+    previously accepted and broke reorder-alert logic (is_below_reorder /
+    low-stock checks compare against a max_stock that's nonsensically
+    lower than the minimum)."""
+    response = await client.post(
+        "/api/v1/items",
+        headers=auth_headers,
+        json={
+            "sku": "INK-BADSTOCK-001",
+            "name": "Black Ink",
+            "supplier": "Supplier A",
+            "unit_of_measure": "KG",
+            "min_stock": 100,
+            "max_stock": 5,
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_item_rejects_reorder_point_above_max_stock(
+    client: AsyncClient, auth_headers: dict
+):
+    """Same cross-field gap for reorder_point vs max_stock."""
+    response = await client.post(
+        "/api/v1/items",
+        headers=auth_headers,
+        json={
+            "sku": "INK-BADREORDER-001",
+            "name": "Black Ink",
+            "supplier": "Supplier A",
+            "unit_of_measure": "KG",
+            "reorder_point": 200,
+            "max_stock": 100,
+        },
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_update_item_rejects_min_stock_above_max_stock(
+    client: AsyncClient, auth_headers: dict, db_session: AsyncSession
+):
+    """Same cross-field check applies to partial updates when both fields
+    being compared are present in the same request."""
+    item = Item(
+        sku="INK-UPDATESTOCK-001",
+        name="Black Ink",
+        supplier="Supplier A",
+        unit_of_measure="KG",
+        min_stock=5,
+        max_stock=100,
+    )
+    db_session.add(item)
+    await db_session.commit()
+    await db_session.refresh(item)
+
+    response = await client.put(
+        f"/api/v1/items/{item.id}",
+        headers=auth_headers,
+        json={"min_stock": 50, "max_stock": 10},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_create_duplicate_sku(
     client: AsyncClient, auth_headers: dict, db_session: AsyncSession
 ):

@@ -111,14 +111,18 @@ export async function removePendingOperation(id: string) {
   await database.delete('pendingOperations', id)
 }
 
-// Update retry count
-export async function incrementRetryCount(id: string) {
+// Update retry count. Returns the new count so callers can act on the
+// actual persisted value instead of a stale in-memory snapshot taken
+// before this increment.
+export async function incrementRetryCount(id: string): Promise<number | undefined> {
   const database = await initDB()
   const operation = await database.get('pendingOperations', id)
   if (operation) {
     operation.retryCount++
     await database.put('pendingOperations', operation)
+    return operation.retryCount
   }
+  return undefined
 }
 
 // Cache items locally
@@ -222,10 +226,13 @@ export async function syncPendingOperations(
       await removePendingOperation(operation.id)
       success++
     } catch (error) {
-      await incrementRetryCount(operation.id)
+      // Compare against the freshly persisted count, not
+      // operation.retryCount (a snapshot taken before this call) - using
+      // the stale value meant the real cutoff was 4 failed attempts, not
+      // the documented 3.
+      const newRetryCount = await incrementRetryCount(operation.id)
 
-      // Remove after 3 retries
-      if (operation.retryCount >= 3) {
+      if (newRetryCount !== undefined && newRetryCount >= 3) {
         await removePendingOperation(operation.id)
         failed++
       }

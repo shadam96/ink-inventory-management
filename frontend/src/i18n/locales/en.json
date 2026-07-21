@@ -166,6 +166,8 @@
     "quantityPositive": "Quantity must be positive",
     "customerRequired": "Customer is required",
     "itemFound": "Found: {{name}} ({{sku}})",
+    "fetchItemsError": "Failed to load items. Please try again.",
+    "fetchCustomersError": "Failed to load customers. Please try again.",
     "noBatchesAvailable": "No batches available for picking",
     "offlineQueued": "You are offline. The pick has been saved and will sync when you reconnect.",
     "dispatchError": "Error during picking",

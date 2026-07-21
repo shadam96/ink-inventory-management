@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.item import Item
 from app.models.location import Location
 from app.models.user import User
+from app.services.receiving_service import ReceivingService
 
 
 @pytest.fixture
@@ -191,6 +192,33 @@ async def test_receive_multiple_items(
     assert data["batches_created"] == 2
     assert float(data["total_quantity"]) == 175
     assert len(data["items"]) == 2
+
+
+@pytest.mark.asyncio
+async def test_receive_multiple_rejects_non_positive_quantity(
+    db_session: AsyncSession,
+    test_item: Item,
+    test_user: User,
+):
+    """Defense-in-depth regression test: receive_multiple's service layer
+    must reject a non-positive quantity itself, not just rely on the
+    Pydantic Field(gt=0) at the HTTP layer - any other/future caller of
+    this service method (scripts, other endpoints) needs the same
+    protection receive_goods already has."""
+    service = ReceivingService(db_session)
+    expiration_date = date.today() + timedelta(days=365)
+
+    with pytest.raises(ValueError, match="כמות חייבת להיות חיובית"):
+        await service.receive_multiple(
+            receipts=[
+                {
+                    "item_id": test_item.id,
+                    "quantity": "0",
+                    "expiration_date": expiration_date,
+                },
+            ],
+            user_id=test_user.id,
+        )
 
 
 @pytest.mark.asyncio
