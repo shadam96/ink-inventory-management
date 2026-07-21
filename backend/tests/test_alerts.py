@@ -2,6 +2,7 @@
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -317,7 +318,83 @@ class TestAlertService:
         )
         assert low_stock_alert is not None
         assert low_stock_alert.alert_type == AlertType.LOW_STOCK
-    
+
+    async def test_check_low_stock_does_not_duplicate_on_rerun(self, db_session):
+        """Regression test: the dedup guard previously checked
+        func.date(created_at) == today, which depends on the DB dialect
+        parsing the stored timestamp string (works on Postgres, not
+        reliably on SQLite) - switched to "no matching alert that isn't
+        yet dismissed", matching the fix already applied to
+        check_expiring_batches."""
+        item = Item(
+            sku="LOW-STOCK-RERUN-001",
+            name="Low Stock Rerun Item",
+            supplier="Test Supplier",
+            unit_of_measure="kg",
+            cost_price=Decimal("100.00"),
+            min_stock=10,
+            reorder_point=50,
+        )
+        db_session.add(item)
+        await db_session.flush()
+
+        db_session.add(Batch(
+            batch_number="LOW-BT-RERUN-001",
+            item_id=item.id,
+            expiration_date=date.today() + timedelta(days=180),
+            receipt_date=date.today(),
+            quantity_received=Decimal("20.00"),
+            quantity_available=Decimal("20.00"),
+            status=BatchStatus.ACTIVE,
+        ))
+        await db_session.commit()
+
+        service = AlertService(db_session)
+        first_run = await service.check_low_stock()
+        await db_session.flush()
+        second_run = await service.check_low_stock()
+
+        assert len([a for a in first_run if a.item_id == item.id]) == 1
+        assert len([a for a in second_run if a.item_id == item.id]) == 0
+
+    async def test_send_email_isolates_per_recipient_failures(self, db_session, sample_item):
+        """Regression test: _send_expiration_email / _send_low_stock_email
+        previously had no per-recipient try/except (unlike
+        _send_expired_batch_email / _send_dead_stock_email), so one
+        recipient's failure would silently stop every recipient after it
+        from being notified. All four now share _notify_recipients, which
+        isolates failures consistently."""
+        service = AlertService(db_session)
+        service._email_enabled = True
+
+        batch = Batch(
+            batch_number="EMAIL-BATCH-001",
+            item_id=sample_item.id,
+            expiration_date=date.today() + timedelta(days=10),
+            receipt_date=date.today(),
+            quantity_received=Decimal("10"),
+            quantity_available=Decimal("10"),
+            status=BatchStatus.ACTIVE,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+        batch.item = sample_item
+
+        with patch.object(
+            service, "_get_notification_recipients",
+            new=AsyncMock(return_value=["bad@example.com", "good@example.com"]),
+        ):
+            with patch("app.services.email_service.email_service.send_expiration_alert") as mock_send:
+                mock_send.side_effect = [Exception("SMTP failure"), None]
+
+                # Must not raise, and must still attempt the second
+                # recipient despite the first one failing.
+                await service._send_expiration_email(batch, days_left=10, severity=AlertSeverity.CRITICAL)
+
+                assert mock_send.call_count == 2
+                assert mock_send.call_args_list[0].kwargs["to"] == "bad@example.com"
+                assert mock_send.call_args_list[1].kwargs["to"] == "good@example.com"
+
     async def test_run_all_checks(self, db_session, sample_item):
         """Test running all alert checks"""
         service = AlertService(db_session)

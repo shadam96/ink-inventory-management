@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
+from app.services.expiration_classifier import classify_expiration
 
 
 @dataclass
@@ -65,25 +66,12 @@ class FEFOEngine:
     prioritizing those expiring soonest.
     """
     
-    # Warning thresholds (days)
-    CRITICAL_THRESHOLD = 30
-    WARNING_THRESHOLD = 60
-    CAUTION_THRESHOLD = 90
-    
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
     def _get_warning_level(self, days_until_expiration: int) -> str:
         """Determine warning level based on days until expiration"""
-        if days_until_expiration <= 0:
-            return "expired"
-        elif days_until_expiration <= self.CRITICAL_THRESHOLD:
-            return "critical"
-        elif days_until_expiration <= self.WARNING_THRESHOLD:
-            return "warning"
-        elif days_until_expiration <= self.CAUTION_THRESHOLD:
-            return "caution"
-        return "safe"
+        return classify_expiration(days_until_expiration)
     
     async def get_available_batches(
         self,

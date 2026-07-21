@@ -14,6 +14,8 @@ from app.models.movement import Movement, MovementType
 from app.models.alert import Alert
 from app.models.delivery_note import DeliveryNote, DeliveryNoteStatus
 from app.models.system_settings import SystemSettings
+from app.services.expiration_classifier import classify_expiration
+from app.services.stock_helpers import available_quantity, is_active_and_unexpired
 
 
 class DashboardService:
@@ -41,11 +43,7 @@ class DashboardService:
         items_count = 0
 
         for item in items:
-            active_qty = sum(
-                b.quantity_available
-                for b in item.batches
-                if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
-            )
+            active_qty = available_quantity(item, today)
             if active_qty > 0:
                 items_count += 1
                 total_quantity += active_qty
@@ -74,11 +72,7 @@ class DashboardService:
         distribution = []
         
         for item in items:
-            active_qty = sum(
-                b.quantity_available 
-                for b in item.batches 
-                if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
-            )
+            active_qty = available_quantity(item, today)
             if active_qty > 0:
                 value = float(active_qty * item.cost_price)
                 distribution.append({
@@ -114,12 +108,14 @@ class DashboardService:
         # level's value is bucketed by the item's own currency instead of
         # mixed into one number. The frontend converts to a single display
         # currency using SystemSettings FX rates, same as inventory_value.
+        # Bucket boundaries are classify_expiration's: expired (<=0 days),
+        # critical (1-30), warning (31-60), caution (61-90), safe (91+).
         risk_levels: Dict[str, Dict[str, Any]] = {
             "expired": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
-            "critical": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},  # 0-30 days
-            "warning": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 31-60 days
-            "caution": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 61-90 days
-            "safe": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},      # 90+ days
+            "critical": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
+            "warning": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
+            "caution": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
+            "safe": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
         }
 
         for batch in batches:
@@ -128,16 +124,7 @@ class DashboardService:
             ccy = (batch.item.currency if batch.item else None) or "ILS"
             value = batch.quantity_available * cost
 
-            if days_until < 0:
-                level = "expired"
-            elif days_until <= 30:
-                level = "critical"
-            elif days_until <= 60:
-                level = "warning"
-            elif days_until <= 90:
-                level = "caution"
-            else:
-                level = "safe"
+            level = classify_expiration(days_until)
 
             bucket = risk_levels[level]
             bucket["quantity"] += batch.quantity_available
@@ -184,12 +171,8 @@ class DashboardService:
         low_stock = []
         
         for item in items:
-            available = sum(
-                b.quantity_available 
-                for b in item.batches 
-                if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
-            )
-            
+            available = available_quantity(item, today)
+
             if available < item.reorder_point:
                 low_stock.append({
                     "item_id": str(item.id),
@@ -297,20 +280,17 @@ class DashboardService:
 
         for item in items:
             ccy = item.currency or "ILS"
-            active_qty = Decimal("0")
-
-            for batch in item.batches:
-                if batch.status != BatchStatus.ACTIVE or batch.expiration_date < today:
-                    continue
-                active_qty += batch.quantity_available
-                if (batch.expiration_date - today).days <= 60:
-                    at_risk_by_ccy[ccy] = (
-                        at_risk_by_ccy.get(ccy, Decimal("0")) + batch.quantity_available * item.cost_price
-                    )
+            active_qty = available_quantity(item, today)
 
             if active_qty > 0:
                 items_with_stock += 1
                 totals_by_currency[ccy] = totals_by_currency.get(ccy, Decimal("0")) + active_qty * item.cost_price
+
+            for batch in item.batches:
+                if is_active_and_unexpired(batch, today) and (batch.expiration_date - today).days <= 60:
+                    at_risk_by_ccy[ccy] = (
+                        at_risk_by_ccy.get(ccy, Decimal("0")) + batch.quantity_available * item.cost_price
+                    )
 
             if active_qty < item.reorder_point:
                 low_stock_count += 1

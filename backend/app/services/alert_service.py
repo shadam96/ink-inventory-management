@@ -14,6 +14,7 @@ from app.models.item import Item
 from app.models.movement import Movement
 from app.models.user import User
 from app.core.config import settings
+from app.services.stock_helpers import available_quantity
 
 
 class AlertService:
@@ -274,21 +275,21 @@ class AlertService:
         today = date.today()
         
         for item in items:
-            # Calculate available stock (non-expired, active batches)
-            available = sum(
-                b.quantity_available 
-                for b in item.batches 
-                if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
-            )
-            
+            available = available_quantity(item, today)
+
             if available < item.reorder_point:
-                # Check for existing alert today
+                # Dedupe against any not-yet-dismissed low-stock alert for
+                # this item, rather than "created today" - the latter
+                # relied on func.date(created_at) == today, which depends
+                # on the DB dialect parsing the stored timestamp string
+                # (works on Postgres, not reliably on SQLite), and would
+                # have re-alerted daily for an item nobody has acted on.
                 existing = await self.db.execute(
                     select(Alert)
                     .where(
                         Alert.item_id == item.id,
                         Alert.alert_type == AlertType.LOW_STOCK,
-                        func.date(Alert.created_at) == today,
+                        Alert.is_dismissed == False,
                     )
                 )
                 if existing.scalar_one_or_none():
@@ -421,79 +422,90 @@ class AlertService:
                     recipients.append(addr)
         return recipients
 
+    async def _notify_recipients(self, log_label: str, send_one) -> None:
+        """Send an email to every opted-in recipient via `send_one(email)`,
+        isolating failures per recipient - one bad address or a single API
+        error must not block the rest from being notified - and logging
+        (never raising) on failure, since alert creation must succeed
+        regardless of email delivery problems.
+
+        The four `_send_*_email` methods below previously each
+        reimplemented this recipient-loop + try/except independently, and
+        two of them (`_send_expiration_email`, `_send_low_stock_email`)
+        had no per-recipient isolation, so one failing address would have
+        silently stopped every recipient after it from being notified.
+        """
+        try:
+            recipients = await self._get_notification_recipients()
+        except Exception as e:
+            print(f">> Failed to load notification recipients for {log_label}: {e}")
+            return
+
+        for email in recipients:
+            try:
+                await send_one(email)
+            except Exception as e:
+                print(f">> Failed to send {log_label} email to {email}: {e}")
+
     async def _send_expiration_email(self, batch: Batch, days_left: int, severity: AlertSeverity):
         """Send expiration alert email to opted-in users"""
-        try:
-            from app.services.email_service import email_service
-            
-            recipients = await self._get_notification_recipients()
-            for email in recipients:
-                await email_service.send_expiration_alert(
-                    to=email,
-                    batch_number=batch.batch_number,
-                    item_name=batch.item.name if batch.item else "Unknown",
-                    expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
-                    days_until_expiry=days_left,
-                    quantity_available=float(batch.quantity_available),
-                    severity=severity.value
-                )
-        except Exception as e:
-            print(f">> Failed to send expiration email: {e}")
-    
+        from app.services.email_service import email_service
+
+        async def send_one(email: str) -> None:
+            await email_service.send_expiration_alert(
+                to=email,
+                batch_number=batch.batch_number,
+                item_name=batch.item.name if batch.item else "Unknown",
+                expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
+                days_until_expiry=days_left,
+                quantity_available=float(batch.quantity_available),
+                severity=severity.value,
+            )
+
+        await self._notify_recipients("expiration", send_one)
+
     async def _send_low_stock_email(self, item: Item, current_quantity: float):
         """Send low stock alert email to opted-in users"""
-        try:
-            from app.services.email_service import email_service
+        from app.services.email_service import email_service
 
-            recipients = await self._get_notification_recipients()
-            for email in recipients:
-                await email_service.send_low_stock_alert(
-                    to=email,
-                    item_name=item.name,
-                    sku=item.sku,
-                    current_quantity=current_quantity,
-                    reorder_point=item.reorder_point,
-                    min_stock=item.min_stock
-                )
-        except Exception as e:
-            print(f">> Failed to send low stock email: {e}")
+        async def send_one(email: str) -> None:
+            await email_service.send_low_stock_alert(
+                to=email,
+                item_name=item.name,
+                sku=item.sku,
+                current_quantity=current_quantity,
+                reorder_point=item.reorder_point,
+                min_stock=item.min_stock,
+            )
+
+        await self._notify_recipients("low stock", send_one)
 
     async def _send_expired_batch_email(self, batch: Batch, lost_quantity: float):
         """Send expired-batch alert email to opted-in users"""
-        try:
-            from app.services.email_service import email_service
+        from app.services.email_service import email_service
 
-            recipients = await self._get_notification_recipients()
-            for email in recipients:
-                try:
-                    await email_service.send_expired_batch_alert(
-                        to=email,
-                        batch_number=batch.batch_number,
-                        item_name=batch.item.name if batch.item else "Unknown",
-                        expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
-                        quantity_available=lost_quantity,
-                    )
-                except Exception as per_recipient_error:
-                    print(f">> Failed to email {email} about expired batch: {per_recipient_error}")
-        except Exception as e:
-            print(f">> Failed to send expired batch email: {e}")
+        async def send_one(email: str) -> None:
+            await email_service.send_expired_batch_alert(
+                to=email,
+                batch_number=batch.batch_number,
+                item_name=batch.item.name if batch.item else "Unknown",
+                expiration_date=batch.expiration_date.strftime('%d/%m/%Y'),
+                quantity_available=lost_quantity,
+            )
+
+        await self._notify_recipients("expired batch", send_one)
 
     async def _send_dead_stock_email(self, item: Item, days_inactive: int, total_quantity: float):
         """Send dead-stock alert email to opted-in users"""
-        try:
-            from app.services.email_service import email_service
+        from app.services.email_service import email_service
 
-            recipients = await self._get_notification_recipients()
-            for email in recipients:
-                try:
-                    await email_service.send_dead_stock_alert(
-                        to=email,
-                        item_name=item.name,
-                        sku=item.sku,
-                        days_inactive=days_inactive,
-                        total_quantity=total_quantity,
-                    )
-                except Exception as per_recipient_error:
-                    print(f">> Failed to email {email} about dead stock: {per_recipient_error}")
-        except Exception as e:
-            print(f">> Failed to send dead stock email: {e}")
+        async def send_one(email: str) -> None:
+            await email_service.send_dead_stock_alert(
+                to=email,
+                item_name=item.name,
+                sku=item.sku,
+                days_inactive=days_inactive,
+                total_quantity=total_quantity,
+            )
+
+        await self._notify_recipients("dead stock", send_one)

@@ -12,6 +12,7 @@ from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.user import User
+from app.services.expiration_classifier import classify_expiration
 
 
 class InventoryService:
@@ -37,25 +38,18 @@ class InventoryService:
         total_quantity = sum(b.quantity_available for b in active_batches)
         total_value = total_quantity * item.cost_price
         
-        # Categorize by expiration
+        # Categorize by expiration, using the same 30/60/90-day boundaries
+        # as fefo_engine.py and dashboard_service.py. Already-expired
+        # batches (classify_expiration -> "expired") are intentionally
+        # excluded from all four buckets here, matching this method's
+        # existing (pre-refactor) behavior.
         today = date.today()
-        expiring_30 = sum(
-            b.quantity_available for b in active_batches
-            if 0 <= (b.expiration_date - today).days <= 30
-        )
-        expiring_60 = sum(
-            b.quantity_available for b in active_batches
-            if 30 < (b.expiration_date - today).days <= 60
-        )
-        expiring_90 = sum(
-            b.quantity_available for b in active_batches
-            if 60 < (b.expiration_date - today).days <= 90
-        )
-        safe = sum(
-            b.quantity_available for b in active_batches
-            if (b.expiration_date - today).days > 90
-        )
-        
+        breakdown = {"critical": Decimal("0"), "warning": Decimal("0"), "caution": Decimal("0"), "safe": Decimal("0")}
+        for b in active_batches:
+            level = classify_expiration((b.expiration_date - today).days)
+            if level in breakdown:
+                breakdown[level] += b.quantity_available
+
         return {
             "item_id": item.id,
             "sku": item.sku,
@@ -66,10 +60,10 @@ class InventoryService:
             "batches_count": len(active_batches),
             "is_below_reorder": total_quantity < item.reorder_point,
             "expiration_breakdown": {
-                "critical_30_days": expiring_30,
-                "warning_60_days": expiring_60,
-                "caution_90_days": expiring_90,
-                "safe": safe,
+                "critical_30_days": breakdown["critical"],
+                "warning_60_days": breakdown["warning"],
+                "caution_90_days": breakdown["caution"],
+                "safe": breakdown["safe"],
             }
         }
     
