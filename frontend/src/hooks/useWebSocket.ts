@@ -14,10 +14,12 @@ export function useWebSocket() {
   useEffect(() => {
     if (token) {
       websocketService.connect(token);
-
-      return () => {
-        // Don't disconnect on unmount, keep connection alive
-      };
+    } else {
+      // isAuthenticated flipped to false (logout) - disconnect the
+      // singleton socket so the next user to log in on this tab/device
+      // doesn't silently reuse the previous user's authenticated
+      // connection (connect() no-ops if a socket is already OPEN).
+      websocketService.disconnect();
     }
   }, [token]);
 

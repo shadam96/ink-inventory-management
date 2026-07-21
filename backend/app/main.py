@@ -25,8 +25,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     await ensure_default_users()
     logger.info("Database connected, default users ensured")
 
-    # Start scheduler for background tasks
-    if not settings.is_development or settings.environment != "test":
+    # Start scheduler for background tasks - skip in development (hot
+    # reload would spawn duplicate jobs) and in test (deterministic runs
+    # without background threads). Previously used `or`, which is a
+    # tautology (always True) since environment can't simultaneously be
+    # "development" and "test", so the scheduler always started regardless.
+    if not settings.is_development and settings.environment != "test":
         start_scheduler()
         logger.info("Scheduler started")
 
@@ -88,12 +92,20 @@ async def health_check():
 # Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Handle unexpected exceptions"""
+    """Handle unexpected exceptions.
+
+    Never send raw exception text to the client - it previously depended
+    on settings.is_development, which defaults to True unless ENVIRONMENT
+    is explicitly set, so a misconfigured deployment would leak internal
+    error details on every 500. Full details go to the server log instead;
+    developers should read logs, not trust client responses, for debugging.
+    """
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
         content={
             "detail": "שגיאה פנימית בשרת",  # Internal server error
-            "error": str(exc) if settings.is_development else None,
+            "error": None,
         },
     )
 

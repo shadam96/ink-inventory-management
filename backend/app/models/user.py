@@ -1,9 +1,10 @@
 """User model for authentication and authorization"""
 import enum
+from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -76,6 +77,20 @@ class User(BaseModel):
         nullable=True,
         default=None,
         index=True
+    )
+    # Login lockout - defends /auth/login against unlimited password
+    # guessing. failed_login_attempts resets to 0 on any successful login;
+    # locked_until is set once the threshold is hit and cleared on success.
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    locked_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
     )
 
     # Relationships

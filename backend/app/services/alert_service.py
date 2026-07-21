@@ -136,45 +136,61 @@ class AlertService:
             (settings.alert_threshold_90, AlertSeverity.WARNING, "שים לב"),
             (settings.alert_threshold_120, AlertSeverity.INFO, "מידע"),
         ]
-        
+
+        # Bands must partition batches by days-until-expiration, not overlap.
+        # prev_days is the lower (exclusive) bound of each band - a batch
+        # already caught by an earlier (smaller-days) band is excluded from
+        # later bands, so it gets exactly one alert per run instead of one
+        # per threshold it happens to fall under.
+        prev_days = 0
         for days, severity, level_text in thresholds:
             threshold_date = today + timedelta(days=days)
-            prev_threshold = today + timedelta(days=days + 1)
-            
-            # Find batches expiring exactly at this threshold
+            prev_threshold_date = today + timedelta(days=prev_days)
+
             result = await self.db.execute(
                 select(Batch)
                 .options(selectinload(Batch.item))
                 .where(
                     Batch.status == BatchStatus.ACTIVE,
                     Batch.expiration_date <= threshold_date,
-                    Batch.expiration_date > today,
+                    Batch.expiration_date > prev_threshold_date,
                 )
             )
             batches = result.scalars().all()
-            
+
             for batch in batches:
                 days_left = (batch.expiration_date - today).days
-                
-                # Check if alert already exists for this batch at this level
+
+                alert_type = (
+                    AlertType.EXPIRATION_CRITICAL
+                    if days_left <= 30
+                    else AlertType.EXPIRATION_WARNING
+                )
+
+                # Check if an alert already exists for this batch at this
+                # level. Must match on the same alert_type this iteration
+                # will actually create (previously hardcoded to
+                # EXPIRATION_WARNING, so it never matched the
+                # EXPIRATION_CRITICAL alerts created for the 30-day band,
+                # and duplicates were created on every run). Dedupes against
+                # any not-yet-dismissed alert rather than "created today" -
+                # the previous func.date(created_at) == today check also
+                # depended on the DB dialect parsing the stored timestamp
+                # string (works on Postgres, not reliably on SQLite), and
+                # would have re-alerted daily for a batch the user hasn't
+                # acted on yet.
                 existing = await self.db.execute(
                     select(Alert)
                     .where(
                         Alert.batch_id == batch.id,
-                        Alert.alert_type == AlertType.EXPIRATION_WARNING,
+                        Alert.alert_type == alert_type,
                         Alert.severity == severity,
-                        func.date(Alert.created_at) == today,
+                        Alert.is_dismissed == False,
                     )
                 )
                 if existing.scalar_one_or_none():
                     continue
-                
-                alert_type = (
-                    AlertType.EXPIRATION_CRITICAL 
-                    if days_left <= 30 
-                    else AlertType.EXPIRATION_WARNING
-                )
-                
+
                 alert = await self.create_alert(
                     alert_type=alert_type,
                     severity=severity,
@@ -192,7 +208,9 @@ class AlertService:
                 # Send email notification for critical alerts
                 if self._email_enabled and severity in [AlertSeverity.CRITICAL, AlertSeverity.WARNING]:
                     await self._send_expiration_email(batch, days_left, severity)
-        
+
+            prev_days = days
+
         return alerts_created
     
     async def check_expired_batches(self) -> List[tuple[Batch, Alert]]:

@@ -225,7 +225,16 @@ async def update_batch(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="אצווה לא נמצאה",
         )
-    
+
+    # Optimistic-lock check: if the caller supplied the version it last
+    # read, it must still match. Otherwise someone else updated this batch
+    # in between and we'd silently clobber their change.
+    if batch_data.version is not None and batch_data.version != batch.version:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="האצווה עודכנה על ידי משתמש אחר בינתיים, טען מחדש ונסה שוב",  # This batch was updated by someone else in the meantime, reload and try again
+        )
+
     # Validate location if provided
     if batch_data.location_id:
         loc_result = await db.execute(
@@ -236,17 +245,28 @@ async def update_batch(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="מיקום לא נמצא",  # Location not found
             )
-    
-    # Update fields
-    update_data = batch_data.model_dump(exclude_unset=True)
+
+    # Update fields (version is the lock token, not a persisted field to copy)
+    update_data = batch_data.model_dump(exclude_unset=True, exclude={"version"})
     for field, value in update_data.items():
         setattr(batch, field, value)
-    
+
     batch.version += 1  # Optimistic locking
-    
+
     await db.commit()
-    await db.refresh(batch)
-    
+
+    # Re-fetch with item/location eager-loaded instead of db.refresh(),
+    # which expires relationships without reloading them - the next access
+    # to batch.item (e.g. via the inventory_value property below) would
+    # then trigger an async lazy-load outside a greenlet and raise
+    # MissingGreenlet.
+    result = await db.execute(
+        select(Batch)
+        .options(selectinload(Batch.item), selectinload(Batch.location))
+        .where(Batch.id == batch_id)
+    )
+    batch = result.scalar_one()
+
     response = BatchResponse.model_validate(batch)
     response.days_until_expiration = (batch.expiration_date - date.today()).days
     response.is_expired = batch.expiration_date < date.today()

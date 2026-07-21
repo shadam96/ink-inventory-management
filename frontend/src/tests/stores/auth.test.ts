@@ -61,6 +61,20 @@ describe('Auth Store', () => {
       expect(store.isAuthenticated).toBe(false)
       expect(localStorage.getItem('access_token')).toBeNull()
     })
+
+    it('should clear the unsubmitted receiving-queue draft (shared-device leak fix)', () => {
+      // receiveList is a global (non-user-scoped) localStorage key; without
+      // clearing it on logout, the next user on a shared device would see
+      // and could submit this user's leftover draft receiving items.
+      localStorage.setItem(
+        'receiveList',
+        JSON.stringify([{ id: '1', item_id: 'x', quantity: 5 }])
+      )
+
+      useAuthStore.getState().logout()
+
+      expect(localStorage.getItem('receiveList')).toBeNull()
+    })
   })
 
   describe('fetchUser', () => {

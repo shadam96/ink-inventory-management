@@ -108,6 +108,53 @@ async def test_login_wrong_password(client: AsyncClient, test_user: User):
 
 
 @pytest.mark.asyncio
+async def test_login_locks_account_after_max_failed_attempts(
+    client: AsyncClient, test_user: User
+):
+    """After LOGIN_MAX_FAILED_ATTEMPTS consecutive wrong-password attempts,
+    the account locks and even the CORRECT password is rejected with 429
+    until the lockout window (checked separately) would expire."""
+    from app.api.v1.endpoints.auth import LOGIN_MAX_FAILED_ATTEMPTS
+
+    for _ in range(LOGIN_MAX_FAILED_ATTEMPTS):
+        response = await client.post(
+            "/api/v1/auth/login",
+            json={"username": "testuser", "password": "wrongpassword"},
+        )
+        assert response.status_code == 401
+
+    # Account is now locked - even the correct password is rejected.
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "testuser", "password": "testpassword123"},
+    )
+    assert response.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_login_success_resets_failed_attempts(
+    client: AsyncClient, test_user: User, db_session
+):
+    """A successful login clears any accumulated failed_login_attempts so
+    an occasional typo doesn't slowly march an account toward lockout."""
+    for _ in range(3):
+        await client.post(
+            "/api/v1/auth/login",
+            json={"username": "testuser", "password": "wrongpassword"},
+        )
+
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"username": "testuser", "password": "testpassword123"},
+    )
+    assert response.status_code == 200
+
+    await db_session.refresh(test_user)
+    assert test_user.failed_login_attempts == 0
+    assert test_user.locked_until is None
+
+
+@pytest.mark.asyncio
 async def test_login_nonexistent_user(client: AsyncClient):
     """Test login with non-existent user fails"""
     response = await client.post(

@@ -178,7 +178,71 @@ class TestAlertService:
         # Verify alert details
         critical_alerts = [a for a in alerts if a.severity == AlertSeverity.CRITICAL]
         assert len(critical_alerts) >= 1
-    
+
+    async def test_check_expiring_batches_creates_exactly_one_alert_per_batch(
+        self, db_session, sample_item
+    ):
+        """A batch expiring in 25 days falls under all four threshold bands
+        (<=30, <=60, <=90, <=120) simultaneously, since the bands previously
+        weren't mutually exclusive. This is the fix: bands must partition by
+        days-until-expiration, so exactly one alert is created, not one per
+        threshold the batch happens to satisfy."""
+        service = AlertService(db_session)
+
+        batch = Batch(
+            batch_number="EXP-BATCH-002",
+            item_id=sample_item.id,
+            expiration_date=date.today() + timedelta(days=25),
+            receipt_date=date.today(),
+            quantity_received=Decimal("50.00"),
+            quantity_available=Decimal("50.00"),
+            status=BatchStatus.ACTIVE,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+
+        alerts = await service.check_expiring_batches()
+
+        batch_alerts = [a for a in alerts if a.batch_id == batch.id]
+        assert len(batch_alerts) == 1
+        assert batch_alerts[0].severity == AlertSeverity.CRITICAL
+        assert batch_alerts[0].alert_type == AlertType.EXPIRATION_CRITICAL
+
+    async def test_check_expiring_batches_does_not_duplicate_on_rerun(
+        self, db_session, sample_item
+    ):
+        """Running check_expiring_batches twice in the same day must not
+        create a second alert for the same batch/severity - the dedup
+        guard previously always checked
+        alert_type == EXPIRATION_WARNING even for the branch that creates
+        EXPIRATION_CRITICAL alerts, so it never matched and duplicates
+        were created on every run."""
+        service = AlertService(db_session)
+
+        batch = Batch(
+            batch_number="EXP-BATCH-003",
+            item_id=sample_item.id,
+            expiration_date=date.today() + timedelta(days=10),
+            receipt_date=date.today(),
+            quantity_received=Decimal("50.00"),
+            quantity_available=Decimal("50.00"),
+            status=BatchStatus.ACTIVE,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+
+        first_run = await service.check_expiring_batches()
+        await db_session.flush()
+        second_run = await service.check_expiring_batches()
+
+        assert len([a for a in first_run if a.batch_id == batch.id]) == 1
+        assert len([a for a in second_run if a.batch_id == batch.id]) == 0
+
+        result = await db_session.execute(
+            select(Alert).where(Alert.batch_id == batch.id)
+        )
+        assert len(result.scalars().all()) == 1
+
     async def test_check_expired_batches(self, db_session, sample_item):
         """Test checking and marking expired batches"""
         service = AlertService(db_session)

@@ -79,6 +79,11 @@ class WebSocketService {
       this.ws = null;
     }
 
+    // Clear the token so a subsequent async onclose (bound before this
+    // disconnect, since WebSocket close events fire asynchronously) can't
+    // schedule a reconnect using stale credentials - scheduleReconnect and
+    // its timeout callback both check this.token before reconnecting.
+    this.token = null;
     this.reconnectAttempts = 0;
     this.isConnecting = false;
   }
@@ -100,9 +105,17 @@ class WebSocketService {
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      if (this.token) {
-        this.connect(this.token);
+      if (!this.token) {
+        return;
       }
+      // Re-read the token from localStorage rather than reusing the
+      // value captured at the original connect() call - api.ts's 401
+      // interceptor rotates the stored access token on refresh without
+      // triggering a React re-render, so this.token can go stale while
+      // the socket is still connected; by the time a reconnect is
+      // actually needed, localStorage has the freshest one.
+      const currentToken = localStorage.getItem('access_token') || this.token;
+      this.connect(currentToken);
     }, delay);
   }
 
