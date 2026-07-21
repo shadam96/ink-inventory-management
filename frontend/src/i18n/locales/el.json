@@ -138,11 +138,15 @@
     "manufacturingDate": "Ημερομηνία Παραγωγής",
     "batchNumberPlaceholder": "Αυτόματη δημιουργία αν δεν οριστεί",
     "addToList": "Προσθήκη στη λίστα",
-    "listTitle": "Λίστα παραλαβής ({{count}} είδη)",
+    "addedToList": "Προστέθηκε στη λίστα παραλαβής",
+    "listTitle_one": "Λίστα παραλαβής ({{count}} είδος)",
+    "listTitle_other": "Λίστα παραλαβής ({{count}} είδη)",
     "recording": "Καταγραφή...",
     "receiveAll": "Παραλαβή Όλων",
     "manufacturingShort": "Παρ/γή",
-    "batchShort": "Παρτίδα"
+    "batchShort": "Παρτίδα",
+    "expirationTooSoon": "Λήγει πολύ σύντομα (απαιτούνται τουλάχιστον 6 μήνες)",
+    "expirationTooSoonError": "Δεν είναι δυνατή η παραλαβή: ορισμένα είδη στη λίστα λήγουν σε λιγότερο από 6 μήνες"
   },
   "picking": {
     "title": "Εκτέλεση Παραγγελίας",

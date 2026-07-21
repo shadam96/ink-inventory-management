@@ -121,12 +121,59 @@ async def test_get_system_settings_seeds_defaults(
     client: AsyncClient,
     auth_headers: dict,
 ):
-    """First read after a fresh DB seeds and returns defaults (3.7 / 4.0)."""
+    """First read after a fresh DB seeds and returns defaults (3.7 / 4.0 / 180)."""
     response = await client.get("/api/v1/settings/system", headers=auth_headers)
     assert response.status_code == 200
     data = response.json()
     assert data["usd_to_ils"] == 3.7
     assert data["eur_to_ils"] == 4.0
+    assert data["min_shelf_life_days"] == 180
     assert "updated_at" in data
+
+
+@pytest.mark.asyncio
+async def test_update_min_shelf_life_days(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """A manager can update the shelf-life threshold, and it persists -
+    this is the single source of truth ReceivingService reads instead of a
+    hardcoded constant, so both the value and its persistence matter."""
+    response = await client.put(
+        "/api/v1/settings/system",
+        headers=auth_headers,
+        json={"min_shelf_life_days": 90},
+    )
+    assert response.status_code == 200
+    assert response.json()["min_shelf_life_days"] == 90
+
+    # Persisted, not just echoed back
+    response = await client.get("/api/v1/settings/system", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["min_shelf_life_days"] == 90
+
+
+@pytest.mark.asyncio
+async def test_update_min_shelf_life_days_requires_auth(client: AsyncClient):
+    """Updating the threshold without auth is rejected."""
+    response = await client.put(
+        "/api/v1/settings/system",
+        json={"min_shelf_life_days": 90},
+    )
+    assert response.status_code in [401, 403]
+
+
+@pytest.mark.asyncio
+async def test_update_min_shelf_life_days_rejects_negative(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    """Negative day counts are meaningless and rejected at the schema layer."""
+    response = await client.put(
+        "/api/v1/settings/system",
+        headers=auth_headers,
+        json={"min_shelf_life_days": -1},
+    )
+    assert response.status_code == 422
 
 

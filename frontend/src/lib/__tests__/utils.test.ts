@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cn, formatDate, formatCurrency, formatNumber, daysUntilExpiration, getExpirationStatus, convertToDisplayCurrency, convertAmount } from '../utils'
 
 describe('cn utility', () => {
@@ -74,6 +74,46 @@ describe('daysUntilExpiration', () => {
     pastDate.setDate(pastDate.getDate() - 10)
     const days = daysUntilExpiration(pastDate.toISOString())
     expect(days).toBeLessThan(0)
+  })
+
+  describe('timezone independence for date-only strings', () => {
+    const originalTZ = process.env.TZ
+
+    afterEach(() => {
+      process.env.TZ = originalTZ
+      vi.useRealTimers()
+    })
+
+    it('treats a "YYYY-MM-DD" string as the same calendar day regardless of the local timezone', () => {
+      // Each zone gets "now" pinned to ITS OWN local noon on 2026-07-21, so
+      // "today" unambiguously lands on that calendar day in that zone -
+      // local noon in one zone can be a different UTC calendar day than
+      // local noon in another (e.g. UTC+14 vs UTC-7), so a single shared
+      // instant can't safely stand in for "midday" in every zone at once.
+      vi.useFakeTimers()
+
+      // A negative UTC offset is what previously exposed the bug: new
+      // Date('2027-01-17') parses as UTC midnight, and re-zeroing it with
+      // setHours() in a UTC-7 zone rolled it back to 2027-01-16. Arizona
+      // (America/Phoenix) is used instead of e.g. Los_Angeles because it
+      // never observes DST, so a fixed -7 offset applies to both "today"
+      // and the expiration date - no unrelated DST-transition skew.
+      process.env.TZ = 'America/Phoenix'
+      vi.setSystemTime(new Date('2026-07-21T19:00:00Z')) // noon in UTC-7
+      const negativeOffsetDays = daysUntilExpiration('2027-01-17')
+
+      process.env.TZ = 'UTC'
+      vi.setSystemTime(new Date('2026-07-21T12:00:00Z')) // noon in UTC
+      const utcDays = daysUntilExpiration('2027-01-17')
+
+      process.env.TZ = 'Pacific/Kiritimati' // fixed UTC+14, no DST
+      vi.setSystemTime(new Date('2026-07-20T22:00:00Z')) // noon in UTC+14
+      const positiveOffsetDays = daysUntilExpiration('2027-01-17')
+
+      expect(negativeOffsetDays).toBe(180)
+      expect(utcDays).toBe(180)
+      expect(positiveOffsetDays).toBe(180)
+    })
   })
 })
 

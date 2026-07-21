@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { PackagePlus, Barcode, Plus, X, Loader2, Camera, ScanLine } from 'lucide-react'
+import { PackagePlus, Barcode, Plus, X, XCircle, Loader2, Camera, ScanLine } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -14,8 +14,14 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
-import { itemsApi, receivingApi, type Item } from '@/lib/api'
+import { itemsApi, receivingApi, systemSettingsApi, type Item } from '@/lib/api'
 import { addPendingOperation, isOnline } from '@/lib/offline'
+import { cn, daysUntilExpiration } from '@/lib/utils'
+
+// Fallback used only until systemSettingsApi.get() resolves - matches the
+// backend's own default (system_settings.min_shelf_life_days) so the row
+// stays the single source of truth instead of a separately hardcoded copy.
+const DEFAULT_MIN_SHELF_LIFE_DAYS = 180
 
 const receiveSchema = z.object({
   item_id: z.string().min(1, 'receiving.itemRequired'),
@@ -62,6 +68,7 @@ export function ReceivingPage() {
   const [submitting, setSubmitting] = useState(false)
   const [showScanner, setShowScanner] = useState(false)
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set())
+  const [minShelfLifeDays, setMinShelfLifeDays] = useState(DEFAULT_MIN_SHELF_LIFE_DAYS)
   const autoFillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const {
@@ -88,6 +95,13 @@ export function ReceivingPage() {
     fetchItems()
   }, [])
 
+  useEffect(() => {
+    systemSettingsApi.get().then((settings) => {
+      setMinShelfLifeDays(settings.min_shelf_life_days)
+    }).catch((error) => {
+      console.error('Failed to fetch system settings:', error)
+    })
+  }, [])
 
   async function fetchItems() {
     try {
@@ -202,6 +216,7 @@ export function ReceivingPage() {
 
     setReceiveList([...receiveList, newItem])
     setAutoFilledFields(new Set())
+    toast.success(t('receiving.addedToList'))
     reset({
       item_id: '',
       quantity: 1,
@@ -218,6 +233,14 @@ export function ReceivingPage() {
 
   const handleReceiveAll = async () => {
     if (receiveList.length === 0) return
+
+    const hasShortShelfLife = receiveList.some(
+      (item) => daysUntilExpiration(item.expiration_date) < minShelfLifeDays
+    )
+    if (hasShortShelfLife) {
+      toast.error(t('receiving.expirationTooSoonError'))
+      return
+    }
 
     setSubmitting(true)
     try {
@@ -483,10 +506,15 @@ export function ReceivingPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {receiveList.map((item) => (
+              {receiveList.map((item) => {
+                const expirationTooSoon = daysUntilExpiration(item.expiration_date) < minShelfLifeDays
+                return (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between p-4 rounded-lg border bg-card"
+                  className={cn(
+                    'flex items-center justify-between p-4 rounded-lg border bg-card',
+                    expirationTooSoon && 'border-destructive'
+                  )}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-3 mb-2 flex-wrap">
@@ -497,7 +525,16 @@ export function ReceivingPage() {
                     </div>
                     <div className="flex gap-4 flex-wrap text-sm text-muted-foreground">
                       <span>{t('picking.quantityLabel')}: {item.quantity}</span>
-                      <span>{t('picking.expirationLabel')}: {item.expiration_date}</span>
+                      <span
+                        className={cn(
+                          'flex items-center gap-1',
+                          expirationTooSoon && 'text-destructive font-medium'
+                        )}
+                        title={expirationTooSoon ? t('receiving.expirationTooSoon') : undefined}
+                      >
+                        {expirationTooSoon && <XCircle className="w-3.5 h-3.5" />}
+                        {t('picking.expirationLabel')}: {item.expiration_date}
+                      </span>
                       {item.manufacturing_date && <span>{t('receiving.manufacturingShort')}: {item.manufacturing_date}</span>}
                       {item.batch_number && <span>{t('receiving.batchShort')}: {item.batch_number}</span>}
                     </div>
@@ -514,7 +551,8 @@ export function ReceivingPage() {
                     <X className="w-4 h-4" />
                   </Button>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>

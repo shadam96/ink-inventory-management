@@ -1,9 +1,11 @@
 """System-wide settings (singleton row).
 
-Holds preferences shared across all users — currently the FX rates used to
-convert per-item cost prices into a single display currency on the dashboard.
-Rates are anchored to ILS: ``usd_to_ils`` is the price of 1 USD in ILS, and
-``eur_to_ils`` is the price of 1 EUR in ILS. ILS is implicitly 1.0.
+Holds preferences shared across all users — the FX rates used to convert
+per-item cost prices into a single display currency on the dashboard, and
+admin-configurable business thresholds such as the minimum shelf life
+required to receive goods. Rates are anchored to ILS: ``usd_to_ils`` is the
+price of 1 USD in ILS, and ``eur_to_ils`` is the price of 1 EUR in ILS. ILS
+is implicitly 1.0.
 """
 from datetime import datetime
 from decimal import Decimal
@@ -30,6 +32,18 @@ class SystemSettings(Base):
         Numeric(12, 4),
         nullable=False,
         server_default="4.0",
+    )
+
+    # Goods with less shelf life remaining than this cannot be received at
+    # all (hard block in ReceivingService) - see validate_expiration_warning
+    # for the separate, non-blocking "heads up" tiers. Single source of
+    # truth for both the backend enforcement and the frontend's pre-submit
+    # check (see systemSettingsApi.get() in ReceivingPage.tsx), so the two
+    # can't drift out of sync.
+    min_shelf_life_days: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default="180",
     )
 
     updated_at: Mapped[datetime] = mapped_column(

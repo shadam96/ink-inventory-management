@@ -15,6 +15,10 @@ vi.mock('@/lib/api', () => ({
     receive: vi.fn(),
     receiveMultiple: vi.fn(),
   },
+  systemSettingsApi: {
+    get: vi.fn(),
+    update: vi.fn(),
+  },
 }))
 
 vi.mock('react-i18next', () => ({
@@ -56,6 +60,12 @@ describe('Receiving Operations', () => {
       total: 2,
       page: 1,
       page_size: 100,
+    })
+    vi.mocked(api.systemSettingsApi.get).mockResolvedValue({
+      usd_to_ils: 3.7,
+      eur_to_ils: 4.0,
+      min_shelf_life_days: 180,
+      updated_at: new Date().toISOString(),
     })
   })
 
@@ -242,7 +252,7 @@ describe('Receiving Operations', () => {
           item_name: mockItems[0].name,
           item_sku: mockItems[0].sku,
           quantity: 10,
-          expiration_date: '2027-01-01',
+          expiration_date: '2028-01-01',
           manufacturing_date: '',
           batch_number: 'BATCH-A',
           notes: '',

@@ -1,10 +1,8 @@
 """Settings API endpoints"""
 from datetime import datetime
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
-from sqlalchemy import select
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import ManagerUser, get_current_active_user, get_db
@@ -12,6 +10,7 @@ from app.models.system_settings import SystemSettings
 from app.models.user import User
 from app.schemas.user import NotificationSettingsUpdate, NotificationSettingsResponse
 from app.services.email_service import email_service
+from app.services.system_settings_service import get_or_create_system_settings
 from app.core.config import settings
 
 
@@ -19,31 +18,27 @@ router = APIRouter()
 
 
 class SystemSettingsResponse(BaseModel):
-    """FX rates anchored to ILS (price of 1 unit of foreign currency in ILS)."""
+    """FX rates anchored to ILS (price of 1 unit of foreign currency in ILS),
+    plus admin-configurable business thresholds."""
     usd_to_ils: float
     eur_to_ils: float
+    min_shelf_life_days: int
     updated_at: datetime
+
+
+class SystemSettingsUpdate(BaseModel):
+    """Fields a manager can update. FX rates are excluded - the daily
+    scheduler is their only writer (see app.tasks.scheduler)."""
+    min_shelf_life_days: int = Field(..., ge=0)
 
 
 def _serialize(row: SystemSettings) -> SystemSettingsResponse:
     return SystemSettingsResponse(
         usd_to_ils=float(row.usd_to_ils),
         eur_to_ils=float(row.eur_to_ils),
+        min_shelf_life_days=row.min_shelf_life_days,
         updated_at=row.updated_at,
     )
-
-
-async def _get_or_create_singleton(db: AsyncSession) -> SystemSettings:
-    """Returns the singleton row, creating it with defaults if the boot-time
-    migration seed somehow missed (defensive for fresh test databases)."""
-    result = await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
-    row = result.scalar_one_or_none()
-    if row is None:
-        row = SystemSettings(id=1, usd_to_ils=Decimal("3.7"), eur_to_ils=Decimal("4.0"))
-        db.add(row)
-        await db.commit()
-        await db.refresh(row)
-    return row
 
 
 class TestEmailRequest(BaseModel):
@@ -125,12 +120,27 @@ async def get_system_settings(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get system-wide settings (FX rates).
+    """Get system-wide settings (FX rates + business thresholds).
 
-    Rates are refreshed by a daily scheduler job (see app.tasks.scheduler);
-    there is no client-facing write endpoint.
+    FX rates are refreshed by a daily scheduler job (see app.tasks.scheduler)
+    and have no client-facing write endpoint; min_shelf_life_days is editable
+    via PUT below.
     """
-    row = await _get_or_create_singleton(db)
+    row = await get_or_create_system_settings(db)
+    return _serialize(row)
+
+
+@router.put("/system", response_model=SystemSettingsResponse)
+async def update_system_settings(
+    payload: SystemSettingsUpdate,
+    current_user: ManagerUser,
+    db: AsyncSession = Depends(get_db),
+):
+    """Update admin-configurable business thresholds (manager+ only)."""
+    row = await get_or_create_system_settings(db)
+    row.min_shelf_life_days = payload.min_shelf_life_days
+    await db.commit()
+    await db.refresh(row)
     return _serialize(row)
 
 

@@ -138,11 +138,15 @@
     "manufacturingDate": "Manufacturing Date",
     "batchNumberPlaceholder": "Auto-generated if not specified",
     "addToList": "Add to list",
-    "listTitle": "Receive list ({{count}} items)",
+    "addedToList": "Added to receive list",
+    "listTitle_one": "Receive list ({{count}} item)",
+    "listTitle_other": "Receive list ({{count}} items)",
     "recording": "Recording...",
     "receiveAll": "Receive All",
     "manufacturingShort": "Mfg",
-    "batchShort": "Batch"
+    "batchShort": "Batch",
+    "expirationTooSoon": "Expires too soon (needs 6+ months shelf life)",
+    "expirationTooSoonError": "Cannot receive: some items in the list expire in less than 6 months"
   },
   "picking": {
     "title": "Picking",

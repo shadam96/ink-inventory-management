@@ -96,7 +96,19 @@ export function formatDate(date: Date | string): string {
  * Calculate days until expiration
  */
 export function daysUntilExpiration(expirationDate: Date | string): number {
-  const exp = typeof expirationDate === 'string' ? new Date(expirationDate) : expirationDate
+  // A bare "YYYY-MM-DD" string (what date-only inputs and the backend's
+  // `date` fields produce) is parsed by `new Date(string)` as UTC midnight,
+  // then setHours below would re-zero it in the browser's LOCAL timezone -
+  // shifting the calendar day back by one for any negative UTC offset.
+  // Parsing the components directly constructs a local-midnight Date
+  // instead, so the day never shifts regardless of timezone.
+  const dateOnlyMatch =
+    typeof expirationDate === 'string' ? expirationDate.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null
+  const exp = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : typeof expirationDate === 'string'
+      ? new Date(expirationDate)
+      : expirationDate
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   exp.setHours(0, 0, 0, 0)

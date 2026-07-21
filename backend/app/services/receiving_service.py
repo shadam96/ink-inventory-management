@@ -14,6 +14,7 @@ from app.models.location import Location
 from app.models.movement import Movement, MovementType
 from app.schemas.batch import BatchCreate
 from app.services.sequence_service import generate_sequential_number
+from app.services.system_settings_service import get_or_create_system_settings
 
 
 class ReceivingService:
@@ -21,6 +22,16 @@ class ReceivingService:
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    async def _min_shelf_life_days(self) -> int:
+        """Goods with less shelf life remaining than this cannot be received
+        at all (hard block) - see validate_expiration_warning below for the
+        separate, non-blocking "heads up" tiers. Backed by the SystemSettings
+        singleton (editable via PUT /settings/system) rather than a hardcoded
+        constant, so the frontend's pre-submit check (which reads the same
+        row via systemSettingsApi.get()) can't silently drift out of sync."""
+        row = await get_or_create_system_settings(self.db)
+        return row.min_shelf_life_days
 
     async def generate_batch_number(self, prefix: str = "GR") -> str:
         """Generate unique batch number: GR-YYMMDD-XXX"""
@@ -114,7 +125,12 @@ class ReceivingService:
         today = date.today()
         if expiration_date < today:
             raise ValueError("תאריך תפוגה לא יכול להיות בעבר")  # Expiration date cannot be in the past
-        
+        min_shelf_life_days = await self._min_shelf_life_days()
+        if (expiration_date - today).days < min_shelf_life_days:
+            raise ValueError(
+                f"לא ניתן לקלוט - נותרו פחות מ-{min_shelf_life_days} ימים עד לתפוגה"
+            )  # Cannot receive - less than {N} days remain until expiration
+
         # Validate quantity
         if quantity <= 0:
             raise ValueError("כמות חייבת להיות חיובית")  # Quantity must be positive
@@ -190,22 +206,28 @@ class ReceivingService:
             - notes (optional)
         """
         grn_number = await self.generate_grn_number()
+        min_shelf_life_days = await self._min_shelf_life_days()
         batches = []
         movements = []
-        
+
         for receipt in receipts:
             item = await self.validate_item(receipt["item_id"])
-            
+
             if receipt.get("location_id"):
                 await self.validate_location(receipt["location_id"])
-            
+
             # Validate expiration
             expiration_date = receipt["expiration_date"]
-            if expiration_date < date.today():
+            today = date.today()
+            if expiration_date < today:
                 raise ValueError(
                     f"תאריך תפוגה לא תקין עבור פריט {item.sku}"
                 )
-            
+            if (expiration_date - today).days < min_shelf_life_days:
+                raise ValueError(
+                    f"לא ניתן לקלוט את פריט {item.sku} - נותרו פחות מ-{min_shelf_life_days} ימים עד לתפוגה"
+                )  # Cannot receive item {sku} - less than {N} days remain until expiration
+
             quantity = Decimal(str(receipt["quantity"]))
             if quantity <= 0:
                 raise ValueError(

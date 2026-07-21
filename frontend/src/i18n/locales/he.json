@@ -138,11 +138,15 @@
     "manufacturingDate": "תאריך ייצור",
     "batchNumberPlaceholder": "יווצר אוטומטית אם לא צוין",
     "addToList": "הוסף לרשימה",
-    "listTitle": "רשימת קבלה ({{count}} פריטים)",
+    "addedToList": "נוסף לרשימת הקבלה",
+    "listTitle_one": "רשימת קבלה ({{count}} פריט)",
+    "listTitle_other": "רשימת קבלה ({{count}} פריטים)",
     "recording": "מקליט...",
     "receiveAll": "קלוט הכל",
     "manufacturingShort": "ייצור",
-    "batchShort": "אצווה"
+    "batchShort": "אצווה",
+    "expirationTooSoon": "תאריך תפוגה קרוב מדי (נדרש לפחות 6 חודשים)",
+    "expirationTooSoonError": "לא ניתן לקלוט: לפריטים מסוימים ברשימה נותרו פחות מ-6 חודשים עד לתפוגה"
   },
   "picking": {
     "title": "ליקוט",

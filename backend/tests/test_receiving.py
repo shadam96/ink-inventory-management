@@ -222,14 +222,16 @@ async def test_receive_multiple_rejects_non_positive_quantity(
 
 
 @pytest.mark.asyncio
-async def test_receive_with_expiration_warning(
+async def test_receive_rejected_when_less_than_six_months_shelf_life(
     client: AsyncClient,
     auth_headers: dict,
     test_item: Item,
 ):
-    """Test that receiving with near expiration triggers warning"""
+    """Receiving must be hard-blocked when less than 180 days (~6 months)
+    remain until expiration - this supersedes the old expectation that a
+    45-day-out item would be received with just a warning."""
     near_expiration = date.today() + timedelta(days=45)
-    
+
     response = await client.post(
         "/api/v1/receiving/receive",
         headers=auth_headers,
@@ -239,11 +241,73 @@ async def test_receive_with_expiration_warning(
             "expiration_date": near_expiration.isoformat(),
         },
     )
-    
+
+    assert response.status_code == 400
+    assert "180" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_receive_accepted_at_exactly_six_months(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+):
+    """Exactly 180 days out is the boundary and must still be accepted."""
+    expiration_date = date.today() + timedelta(days=180)
+
+    response = await client.post(
+        "/api/v1/receiving/receive",
+        headers=auth_headers,
+        json={
+            "item_id": str(test_item.id),
+            "quantity": "50",
+            "expiration_date": expiration_date.isoformat(),
+        },
+    )
+
     assert response.status_code == 200
-    data = response.json()
-    assert data["warning"] is not None
-    assert data["warning"]["level"] in ["warning", "critical"]
+
+
+@pytest.mark.asyncio
+async def test_receive_shelf_life_threshold_is_configurable(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+):
+    """The 180-day rule must come from SystemSettings (single source of
+    truth shared with the frontend), not a hardcoded constant - a 45-day-out
+    item, rejected under the default, must be accepted once an admin lowers
+    the configured threshold below 45 days."""
+    near_expiration = date.today() + timedelta(days=45)
+
+    rejected = await client.post(
+        "/api/v1/receiving/receive",
+        headers=auth_headers,
+        json={
+            "item_id": str(test_item.id),
+            "quantity": "10",
+            "expiration_date": near_expiration.isoformat(),
+        },
+    )
+    assert rejected.status_code == 400
+
+    update = await client.put(
+        "/api/v1/settings/system",
+        headers=auth_headers,
+        json={"min_shelf_life_days": 30},
+    )
+    assert update.status_code == 200
+
+    accepted = await client.post(
+        "/api/v1/receiving/receive",
+        headers=auth_headers,
+        json={
+            "item_id": str(test_item.id),
+            "quantity": "10",
+            "expiration_date": near_expiration.isoformat(),
+        },
+    )
+    assert accepted.status_code == 200
 
 
 @pytest.mark.asyncio
@@ -325,7 +389,7 @@ async def test_receive_goods_retries_on_batch_number_collision(
         quantity_received=Decimal("1"),
         quantity_available=Decimal("1"),
         receipt_date=date.today(),
-        expiration_date=date.today() + timedelta(days=90),
+        expiration_date=date.today() + timedelta(days=200),
         status=BatchStatus.ACTIVE,
     )
     db_session.add(colliding_batch)
@@ -334,7 +398,7 @@ async def test_receive_goods_retries_on_batch_number_collision(
     batch, movement, grn_number = await service.receive_goods(
         item_id=test_item.id,
         quantity=Decimal("10"),
-        expiration_date=date.today() + timedelta(days=90),
+        expiration_date=date.today() + timedelta(days=200),
         user_id=test_user.id,
     )
     await db_session.commit()

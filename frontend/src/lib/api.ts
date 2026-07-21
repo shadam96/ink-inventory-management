@@ -253,10 +253,16 @@ export const dashboardApi = {
   },
 }
 
-// System settings API (FX rates — read-only; the daily scheduler is the writer).
+// System settings API (FX rates are read-only - the daily scheduler is the
+// writer; min_shelf_life_days is editable via update()).
 export const systemSettingsApi = {
   get: async () => {
     const response = await api.get('/settings/system')
+    return response.data as SystemSettings
+  },
+
+  update: async (data: { min_shelf_life_days: number }) => {
+    const response = await api.put('/settings/system', data)
     return response.data as SystemSettings
   },
 }
@@ -446,6 +452,8 @@ export interface SystemSettings {
   usd_to_ils: number
   /** Price of 1 EUR in ILS. */
   eur_to_ils: number
+  /** Minimum days of shelf life required to receive a batch (hard block below this). */
+  min_shelf_life_days: number
   /** ISO-8601 timestamp of the last Frankfurter refresh. */
   updated_at: string
 }

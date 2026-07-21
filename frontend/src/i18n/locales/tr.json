@@ -138,11 +138,15 @@
     "manufacturingDate": "Üretim Tarihi",
     "batchNumberPlaceholder": "Belirtilmezse otomatik oluşturulur",
     "addToList": "Listeye ekle",
-    "listTitle": "Kabul listesi ({{count}} ürün)",
+    "addedToList": "Kabul listesine eklendi",
+    "listTitle_one": "Kabul listesi ({{count}} ürün)",
+    "listTitle_other": "Kabul listesi ({{count}} ürün)",
     "recording": "Kaydediliyor...",
     "receiveAll": "Tümünü Kabul Et",
     "manufacturingShort": "Üretim",
-    "batchShort": "Parti"
+    "batchShort": "Parti",
+    "expirationTooSoon": "Son kullanma tarihi çok yakın (en az 6 ay gerekli)",
+    "expirationTooSoonError": "Kabul edilemiyor: listedeki bazı ürünlerin son kullanma tarihine 6 aydan az kaldı"
   },
   "picking": {
     "title": "Toplama",
