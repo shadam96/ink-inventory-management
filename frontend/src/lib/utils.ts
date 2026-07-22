@@ -133,3 +133,22 @@ export function generateId(): string {
   return Math.random().toString(36).substring(2, 15)
 }
 
+/**
+ * Decode a base64-encoded PDF and open it in a new tab as a Blob URL -
+ * avoids a bare `window.open` on an authenticated API response, and
+ * doesn't require a second round-trip to a download endpoint.
+ */
+export function openPdfInNewTab(base64: string): void {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  const blob = new Blob([bytes], { type: 'application/pdf' })
+  const url = URL.createObjectURL(blob)
+  window.open(url, '_blank')
+  // Revoke after a delay rather than immediately - the new tab needs time
+  // to actually load the blob URL before it's invalidated.
+  setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
+

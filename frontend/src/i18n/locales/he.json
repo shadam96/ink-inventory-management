@@ -48,7 +48,9 @@
     "percentOfInventory": "{{percent}}% מהמלאי",
     "criticalCount": "{{count}} קריטיים",
     "batchesWarning": "אצוות באזהרה",
-    "batchesCritical": "אצוות קריטיות"
+    "batchesCritical": "אצוות קריטיות",
+    "riskFooterCaption": "מספר האצוות מאחורי פרוסות האזהרה/הקריטי שלמעלה",
+    "distributionFooterCaption": "פעילות תנועה מאחורי תמונת המלאי הזו (7 הימים האחרונים)"
   },
   "inventory": {
     "title": "מלאי קיים",
@@ -67,6 +69,13 @@
     "description": "תיאור",
     "supplier": "ספק",
     "unit": "יחידת מידה",
+    "color": "צבע",
+    "colorCyan": "טורקיז (Cyan)",
+    "colorMagenta": "מגנטה (Magenta)",
+    "colorYellow": "צהוב",
+    "colorBlack": "שחור",
+    "colorWhite": "לבן",
+    "colorOther": "אחר",
     "costPrice": "מחיר עלות",
     "currency": "מטבע",
     "reorderPoint": "נקודת הזמנה",
@@ -140,6 +149,7 @@
     "addToList": "הוסף לרשימה",
     "addedToList": "נוסף לרשימת הקבלה",
     "listTitle_one": "רשימת קבלה ({{count}} פריט)",
+    "listTitle_two": "רשימת קבלה ({{count}} פריטים)",
     "listTitle_other": "רשימת קבלה ({{count}} פריטים)",
     "recording": "מקליט...",
     "receiveAll": "קלוט הכל",
@@ -148,6 +158,7 @@
     "expirationTooSoon": "תאריך תפוגה קרוב מדי (נדרש לפחות 6 חודשים)",
     "expirationTooSoonError": "לא ניתן לקלוט: לפריטים מסוימים ברשימה נותרו פחות מ-6 חודשים עד לתפוגה",
     "someItemsHeldBack_one": "פריט אחד הושאר בהמתנה - נותרו פחות מדי חודשים עד לתפוגה",
+    "someItemsHeldBack_two": "{{count}} פריטים הושארו בהמתנה - נותרו פחות מדי חודשים עד לתפוגה",
     "someItemsHeldBack_other": "{{count}} פריטים הושארו בהמתנה - נותרו פחות מדי חודשים עד לתפוגה",
     "offlineBarcodeUnavailable": "אתה במצב אופליין - סריקת ברקוד דורשת חיבור לרשת. בחר את הפריט ידנית מהרשימה למטה.",
     "editItem": "ערוך"
@@ -236,7 +247,10 @@
     "pdfDownloadError": "שגיאה בהורדת PDF",
     "countLabel": "{{count}} תעודות משלוח",
     "totalQuantity": "סה\"כ כמות",
-    "itemsCount": "{{count}} פריטים"
+    "itemsCount": "{{count}} פריטים",
+    "batch": "אצווה",
+    "createSuccess": "תעודת המשלוח נוצרה",
+    "createError": "שגיאה ביצירת תעודת משלוח"
   },
   "customers": {
     "machines": {

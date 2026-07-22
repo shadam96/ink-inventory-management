@@ -82,6 +82,7 @@ class DashboardService:
                     "quantity": float(active_qty),
                     "value": value,
                     "unit": item.unit_of_measure,
+                    "color": item.color.value,
                 })
         
         # Sort by value descending

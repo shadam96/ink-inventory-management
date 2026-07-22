@@ -344,6 +344,8 @@ export const customersApi = {
 }
 
 // Types
+export type ItemColor = 'cyan' | 'magenta' | 'yellow' | 'black' | 'white' | 'other'
+
 export interface Item {
   id: string
   sku: string
@@ -352,6 +354,7 @@ export interface Item {
   description?: string
   supplier: string
   unit_of_measure: string
+  color: ItemColor
   cost_price: number
   currency: 'ILS' | 'USD' | 'EUR'
   reorder_point: number
@@ -369,6 +372,7 @@ export interface CreateItemData {
   description?: string
   supplier: string
   unit_of_measure: string
+  color?: ItemColor
   cost_price: number
   currency: 'ILS' | 'USD' | 'EUR'
   reorder_point?: number
@@ -430,6 +434,8 @@ export interface DispatchDocumentResponse {
   action: 'print' | 'email'
   reference_number: string
   message: string
+  /** Only set for a successful action="print" - base64-encoded PDF bytes. */
+  pdf_base64?: string | null
 }
 
 /** Cost values keyed by the per-item currency they were entered in. */

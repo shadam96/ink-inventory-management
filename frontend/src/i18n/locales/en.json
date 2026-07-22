@@ -48,7 +48,9 @@
     "percentOfInventory": "{{percent}}% of inventory",
     "criticalCount": "{{count}} critical",
     "batchesWarning": "Batches at warning",
-    "batchesCritical": "Critical batches"
+    "batchesCritical": "Critical batches",
+    "riskFooterCaption": "Batch counts behind the warning/critical slices above",
+    "distributionFooterCaption": "Movement activity behind this inventory snapshot (last 7 days)"
   },
   "inventory": {
     "title": "Current Stock",
@@ -67,6 +69,13 @@
     "description": "Description",
     "supplier": "Supplier",
     "unit": "Unit",
+    "color": "Color",
+    "colorCyan": "Cyan",
+    "colorMagenta": "Magenta",
+    "colorYellow": "Yellow",
+    "colorBlack": "Black",
+    "colorWhite": "White",
+    "colorOther": "Other",
     "costPrice": "Cost Price",
     "currency": "Currency",
     "reorderPoint": "Reorder Point",
@@ -236,7 +245,10 @@
     "pdfDownloadError": "Error downloading PDF",
     "countLabel": "{{count}} delivery notes",
     "totalQuantity": "Total Quantity",
-    "itemsCount": "{{count}} items"
+    "itemsCount": "{{count}} items",
+    "batch": "Batch",
+    "createSuccess": "Delivery note created",
+    "createError": "Error creating delivery note"
   },
   "customers": {
     "machines": {

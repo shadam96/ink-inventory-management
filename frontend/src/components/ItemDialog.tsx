@@ -41,6 +41,7 @@ const itemSchema = z.object({
   description: z.string().optional(),
   supplier: z.string().min(1, 'items.supplierRequired'),
   unit_of_measure: z.string().min(1, 'items.unitRequired'),
+  color: z.enum(['cyan', 'magenta', 'yellow', 'black', 'white', 'other']),
   cost_price: z.number().min(0, 'items.costPriceInvalid'),
   currency: z.enum(['ILS', 'USD', 'EUR']),
   reorder_point: z.number().int('items.reorderPointInvalid').min(0).optional(),
@@ -75,6 +76,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           ...item,
           barcode: item.barcode || '',
           currency: item.currency || defaultCurrency,
+          color: item.color || 'other',
         }
       : {
           sku: '',
@@ -83,6 +85,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           description: '',
           supplier: '',
           unit_of_measure: t('items.unitDefault'),
+          color: 'other',
           cost_price: 0,
           currency: defaultCurrency,
           reorder_point: 10,
@@ -97,6 +100,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         ...item,
         barcode: item.barcode || '',
         currency: item.currency || defaultCurrency,
+        color: item.color || 'other',
       })
     } else {
       reset({
@@ -106,6 +110,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         description: '',
         supplier: '',
         unit_of_measure: t('items.unitDefault'),
+        color: 'other',
         cost_price: 0,
         currency: defaultCurrency,
         reorder_point: 10,
@@ -126,6 +131,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         description: data.description,
         supplier: data.supplier,
         unit_of_measure: data.unit_of_measure,
+        color: data.color,
         cost_price: data.cost_price,
         currency: data.currency,
         reorder_point: data.reorder_point,
@@ -232,6 +238,29 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 <p className="text-sm text-destructive">{t(errors.unit_of_measure.message ?? '')}</p>
               )}
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="color">{t('items.color')}</Label>
+            <Controller
+              name="color"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="color">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cyan">{t('items.colorCyan')}</SelectItem>
+                    <SelectItem value="magenta">{t('items.colorMagenta')}</SelectItem>
+                    <SelectItem value="yellow">{t('items.colorYellow')}</SelectItem>
+                    <SelectItem value="black">{t('items.colorBlack')}</SelectItem>
+                    <SelectItem value="white">{t('items.colorWhite')}</SelectItem>
+                    <SelectItem value="other">{t('items.colorOther')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

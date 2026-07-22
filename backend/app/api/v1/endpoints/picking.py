@@ -1,6 +1,6 @@
 """Picking and dispatch endpoints with FEFO support"""
-import logging
-from datetime import datetime, timezone
+import base64
+from datetime import date
 from decimal import Decimal
 from typing import List, Literal, Optional
 from uuid import UUID
@@ -11,13 +11,13 @@ from sqlalchemy import select
 
 from app.api.deps import DbSession, PickingUser, WarehouseUser
 from app.api.error_handling import translate_value_error
+from app.services.document_service import DocumentService
+from app.services.email_service import email_service
 from app.services.fefo_engine import FEFOEngine
 from app.services.inventory_service import InventoryService
-from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
-from app.models.movement import Movement, MovementType
+from app.models.delivery_note import DeliveryNote, DeliveryNoteItem, DeliveryNoteStatus
+from app.models.movement import MovementType
 from app.models.user import UserRole
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -72,13 +72,16 @@ class DispatchDocumentRequest(BaseModel):
 
 
 class DispatchDocumentResponse(BaseModel):
-    """Stub response for dispatch document generation."""
+    """Response for dispatch document generation."""
 
     success: bool
     document_type: str
     action: str
     reference_number: str
     message: str
+    # Only set for a successful action="print" - base64-encoded PDF bytes
+    # for the frontend to decode into a Blob and open/download.
+    pdf_base64: Optional[str] = None
 
 
 @router.post("/suggest-batches")
@@ -243,13 +246,32 @@ async def create_dispatch(
         
         all_warnings.extend(validation.warnings)
     
-    # Generate reference number if not provided
+    # When a customer is given, this dispatch is also a real DeliveryNote
+    # (status ISSUED - the goods are leaving right now, not a draft) so it
+    # shows up in the Delivery Notes list and can be printed/emailed as a
+    # proper document. Its own generated number becomes the shared
+    # reference for the dispatch movements, so generate_dispatch_document
+    # can look one up from the other with a single equality lookup instead
+    # of a separate linking column. A manually-supplied reference_number is
+    # ignored in this branch - mixing it with the DN numbering scheme isn't
+    # worth the added complexity for how rarely both are set together.
     ref_number = request.reference_number
-    if not ref_number:
+    if request.customer_id:
+        doc_service = DocumentService(db)
+        delivery_note = await doc_service.create_delivery_note(
+            customer_id=request.customer_id,
+            items=[{"batch_id": i.batch_id, "quantity": i.quantity} for i in request.items],
+            user_id=current_user.id,
+            notes=request.notes,
+            issue_date=date.today(),
+        )
+        delivery_note.status = DeliveryNoteStatus.ISSUED
+        ref_number = delivery_note.delivery_note_number
+    elif not ref_number:
         from app.services.receiving_service import ReceivingService
         receiving = ReceivingService(db)
         ref_number = await receiving.generate_batch_number(prefix="DSP")
-    
+
     # Execute all picks
     movements = []
     total_quantity = Decimal("0")
@@ -287,50 +309,109 @@ async def create_dispatch(
     "/dispatches/{reference_number}/document",
     response_model=DispatchDocumentResponse,
 )
+@translate_value_error()
 async def generate_dispatch_document(
     reference_number: str,
     request: DispatchDocumentRequest,
     db: DbSession,
     current_user: WarehouseUser,
 ) -> DispatchDocumentResponse:
-    """
-    Generate or send a document for a dispatch (pick note or delivery note).
+    """Generate or send a document for a dispatch (pick note or delivery note).
 
-    NOTE: this endpoint is a stub. The actual document templates and
-    rendering are not yet implemented. It returns ``success=False`` with an
-    honest "not implemented" message so the UI does not mislead operators
-    into believing a document was actually produced.
+    Pick note: an internal warehouse confirmation, built directly from the
+    DISPATCH movements sharing this reference number - no customer needed.
+
+    Delivery note: only exists if the dispatch was created with a customer
+    (create_dispatch then made it a real DeliveryNote row sharing this same
+    reference number as its delivery_note_number). If not, there is nothing
+    to generate - this is reported back as a clear, honest failure rather
+    than a 404, since the dispatch itself is real, only the document isn't.
     """
-    # Verify the reference corresponds to a real dispatch so we don't
-    # silently accept arbitrary strings.
-    exists = await db.execute(
-        select(Movement.id)
-        .where(Movement.reference_number == reference_number)
-        .limit(1)
-    )
-    if exists.first() is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"לא נמצא ליקוט עם מספר אסמכתא {reference_number}",
+    doc_service = DocumentService(db)
+
+    if request.document_type == "pick_note":
+        try:
+            pdf_bytes = await doc_service.generate_pick_note_pdf(reference_number)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"לא נמצא ליקוט עם מספר אסמכתא {reference_number}",
+            )
+
+        if request.action == "print":
+            return DispatchDocumentResponse(
+                success=True,
+                document_type=request.document_type,
+                action=request.action,
+                reference_number=reference_number,
+                message="תעודת הליקוט הופקה בהצלחה",
+                pdf_base64=base64.b64encode(pdf_bytes).decode("ascii"),
+            )
+
+        recipient = current_user.notification_email or current_user.email
+        await email_service.send_email(
+            to=recipient,
+            subject=f"תעודת ליקוט {reference_number}",
+            html_body=f"מצורפת תעודת הליקוט עבור אסמכתא {reference_number}.",
+            attachments=[{"filename": f"{reference_number}.pdf", "content": pdf_bytes}],
+        )
+        return DispatchDocumentResponse(
+            success=True,
+            document_type=request.document_type,
+            action=request.action,
+            reference_number=reference_number,
+            message=f"תעודת הליקוט נשלחה ל-{recipient}",
         )
 
-    logger.info(
-        "Document request (stub, not implemented): ref=%s type=%s action=%s user=%s",
-        reference_number,
-        request.document_type,
-        request.action,
-        current_user.id,
+    # document_type == "delivery_note"
+    dn_result = await db.execute(
+        select(DeliveryNote).where(DeliveryNote.delivery_note_number == reference_number)
     )
+    delivery_note = dn_result.scalar_one_or_none()
+    if not delivery_note:
+        return DispatchDocumentResponse(
+            success=False,
+            document_type=request.document_type,
+            action=request.action,
+            reference_number=reference_number,
+            message="לא נבחר לקוח בליקוט זה, ולכן לא קיימת תעודת משלוח להפקה",
+        )
 
-    type_label = "תעודת ליקוט" if request.document_type == "pick_note" else "תעודת משלוח"
-    message = f"{type_label}: הפקת המסמך טרם הוטמעה במערכת"
+    pdf_bytes = await doc_service.generate_delivery_note_pdf(delivery_note.id)
 
+    if request.action == "print":
+        return DispatchDocumentResponse(
+            success=True,
+            document_type=request.document_type,
+            action=request.action,
+            reference_number=reference_number,
+            message="תעודת המשלוח הופקה בהצלחה",
+            pdf_base64=base64.b64encode(pdf_bytes).decode("ascii"),
+        )
+
+    dn_full = await doc_service.get_delivery_note_with_details(delivery_note.id)
+    customer_email = dn_full.customer.email if dn_full and dn_full.customer else None
+    if not customer_email:
+        return DispatchDocumentResponse(
+            success=False,
+            document_type=request.document_type,
+            action=request.action,
+            reference_number=reference_number,
+            message="ללקוח זה אין כתובת אימייל רשומה במערכת",
+        )
+
+    await email_service.send_email(
+        to=customer_email,
+        subject=f"תעודת משלוח {reference_number}",
+        html_body=f"מצורפת תעודת המשלוח {reference_number}.",
+        attachments=[{"filename": f"{reference_number}.pdf", "content": pdf_bytes}],
+    )
     return DispatchDocumentResponse(
-        success=False,
+        success=True,
         document_type=request.document_type,
         action=request.action,
         reference_number=reference_number,
-        message=message,
+        message=f"תעודת המשלוח נשלחה ל-{customer_email}",
     )
 
 

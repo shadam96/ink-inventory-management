@@ -48,7 +48,9 @@
     "percentOfInventory": "{{percent}}% του αποθέματος",
     "criticalCount": "{{count}} κρίσιμα",
     "batchesWarning": "Παρτίδες σε προειδοποίηση",
-    "batchesCritical": "Κρίσιμες παρτίδες"
+    "batchesCritical": "Κρίσιμες παρτίδες",
+    "riskFooterCaption": "Αριθμός παρτίδων πίσω από τις πάνω φέτες προειδοποίησης/κρίσιμες",
+    "distributionFooterCaption": "Δραστηριότητα κίνησης πίσω από αυτή την εικόνα αποθέματος (τελευταίες 7 ημέρες)"
   },
   "inventory": {
     "title": "Τρέχον Απόθεμα",
@@ -67,6 +69,13 @@
     "description": "Περιγραφή",
     "supplier": "Προμηθευτής",
     "unit": "Μονάδα",
+    "color": "Χρώμα",
+    "colorCyan": "Κυανό",
+    "colorMagenta": "Ματζέντα",
+    "colorYellow": "Κίτρινο",
+    "colorBlack": "Μαύρο",
+    "colorWhite": "Λευκό",
+    "colorOther": "Άλλο",
     "costPrice": "Τιμή Κόστους",
     "currency": "Νόμισμα",
     "reorderPoint": "Σημείο Αναπαραγγελίας",
@@ -236,7 +245,10 @@
     "pdfDownloadError": "Σφάλμα κατά τη λήψη PDF",
     "countLabel": "{{count}} δελτία αποστολής",
     "totalQuantity": "Συνολική Ποσότητα",
-    "itemsCount": "{{count}} είδη"
+    "itemsCount": "{{count}} είδη",
+    "batch": "Παρτίδα",
+    "createSuccess": "Το δελτίο αποστολής δημιουργήθηκε",
+    "createError": "Σφάλμα κατά τη δημιουργία δελτίου αποστολής"
   },
   "customers": {
     "machines": {

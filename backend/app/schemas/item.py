@@ -5,6 +5,7 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
+from app.models.item import ItemColor
 from app.schemas.common import BaseSchema, TimestampSchema
 
 Currency = Literal["ILS", "USD", "EUR"]
@@ -12,11 +13,12 @@ Currency = Literal["ILS", "USD", "EUR"]
 
 class ItemBase(BaseSchema):
     """Base item schema"""
-    
+
     sku: str = Field(..., min_length=1, max_length=50)
     name: str = Field(..., min_length=1, max_length=200)
     supplier: str = Field(..., min_length=1, max_length=200)
     unit_of_measure: str = Field(default="KG", max_length=20)
+    color: ItemColor = Field(default=ItemColor.OTHER)
 
 
 class ItemCreate(ItemBase):
@@ -48,6 +50,7 @@ class ItemUpdate(BaseSchema):
     description: Optional[str] = None
     supplier: Optional[str] = Field(None, min_length=1, max_length=200)
     unit_of_measure: Optional[str] = Field(None, max_length=20)
+    color: Optional[ItemColor] = None
     cost_price: Optional[Decimal] = Field(None, ge=0)
     currency: Optional[Currency] = None
     reorder_point: Optional[int] = Field(None, ge=0)

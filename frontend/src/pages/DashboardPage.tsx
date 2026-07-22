@@ -75,6 +75,41 @@ const RISK_COLORS = {
   expired: '#6B7280',
 }
 
+// Matches Item.color (backend/app/models/item.py) - standard process-ink
+// swatches, not the app's generic theme colors, so a chart reader can
+// recognize the ink itself at a glance.
+const ITEM_COLOR_HEX: Record<string, string> = {
+  cyan: '#00AEEF',
+  magenta: '#EC008C',
+  yellow: '#FFE800',
+  black: '#000000',
+  white: '#FFFFFF',
+  other: 'hsl(var(--primary))',
+}
+
+function DistributionTooltip({ active, payload, currency }: { active?: boolean; payload?: any[]; currency: 'ILS' | 'USD' | 'EUR' }) {
+  if (!active || !payload || payload.length === 0) return null
+  const data = payload[0].payload
+  return (
+    <div style={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem', padding: '0.5rem 0.75rem' }}>
+      <p className="font-medium">{data.name}</p>
+      <p className="text-sm text-muted-foreground">{formatNumber(data.quantity)} {data.unit}</p>
+      <p className="text-sm">{formatCurrency(data.value, currency)}</p>
+    </div>
+  )
+}
+
+function RiskTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+  if (!active || !payload || payload.length === 0) return null
+  const data = payload[0].payload
+  return (
+    <div style={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem', padding: '0.5rem 0.75rem' }}>
+      <p className="font-medium">{data.name}</p>
+      <p className="text-sm">{formatNumber(data.quantity)} L</p>
+    </div>
+  )
+}
+
 export function DashboardPage() {
   const { t } = useTranslation()
   const { currency } = useUIStore()
@@ -113,20 +148,27 @@ export function DashboardPage() {
     ? convertToDisplayCurrency(kpis?.at_risk_value_by_currency ?? {}, currency, fxRates)
     : 0
 
-  // Each level's value is bucketed by currency (like inventory_value_by_currency) -
-  // summing raw amounts across currencies without conversion would be
-  // meaningless as soon as two items use different currencies.
+  // Slice size stays value-based (bucketed by currency, like
+  // inventory_value_by_currency - summing raw amounts across currencies
+  // without conversion would be meaningless). Only the hover tooltip shows
+  // quantity instead, via each level's own `quantity` (already computed
+  // server-side, no FX conversion needed for a physical unit).
   const riskChartData = riskData && fxRates ? [
-    { name: t('dashboard.riskSafe'), value: convertToDisplayCurrency(riskData.risk_levels.safe.value_by_currency, currency, fxRates), color: RISK_COLORS.safe },
-    { name: t('dashboard.riskCaution'), value: convertToDisplayCurrency(riskData.risk_levels.caution.value_by_currency, currency, fxRates), color: RISK_COLORS.caution },
-    { name: t('dashboard.riskWarning'), value: convertToDisplayCurrency(riskData.risk_levels.warning.value_by_currency, currency, fxRates), color: RISK_COLORS.warning },
-    { name: t('dashboard.riskCritical'), value: convertToDisplayCurrency(riskData.risk_levels.critical.value_by_currency, currency, fxRates), color: RISK_COLORS.critical },
-    { name: t('dashboard.riskExpired'), value: convertToDisplayCurrency(riskData.risk_levels.expired.value_by_currency, currency, fxRates), color: RISK_COLORS.expired },
+    { name: t('dashboard.riskSafe'), value: convertToDisplayCurrency(riskData.risk_levels.safe.value_by_currency, currency, fxRates), quantity: riskData.risk_levels.safe.quantity, color: RISK_COLORS.safe },
+    { name: t('dashboard.riskCaution'), value: convertToDisplayCurrency(riskData.risk_levels.caution.value_by_currency, currency, fxRates), quantity: riskData.risk_levels.caution.quantity, color: RISK_COLORS.caution },
+    { name: t('dashboard.riskWarning'), value: convertToDisplayCurrency(riskData.risk_levels.warning.value_by_currency, currency, fxRates), quantity: riskData.risk_levels.warning.quantity, color: RISK_COLORS.warning },
+    { name: t('dashboard.riskCritical'), value: convertToDisplayCurrency(riskData.risk_levels.critical.value_by_currency, currency, fxRates), quantity: riskData.risk_levels.critical.quantity, color: RISK_COLORS.critical },
+    { name: t('dashboard.riskExpired'), value: convertToDisplayCurrency(riskData.risk_levels.expired.value_by_currency, currency, fxRates), quantity: riskData.risk_levels.expired.quantity, color: RISK_COLORS.expired },
   ].filter(d => d.value > 0) : []
 
+  // Bar length/X-axis is quantity on hand (not price); the tooltip still
+  // shows total value, so `value` is carried through for that lookup.
   const distributionChartData = distribution.slice(0, 8).map(item => ({
     name: item.sku,
+    quantity: item.quantity,
     value: item.value,
+    unit: item.unit,
+    color: ITEM_COLOR_HEX[item.color] ?? ITEM_COLOR_HEX.other,
   }))
 
   if (loading) {
@@ -198,10 +240,7 @@ export function DashboardPage() {
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip
-                      formatter={(value: number) => formatCurrency(value, currency)}
-                      contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
-                    />
+                    <Tooltip content={(props: any) => <RiskTooltip {...props} />} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="flex flex-wrap justify-center gap-4 mt-4">
@@ -221,6 +260,22 @@ export function DashboardPage() {
                 {t('common.noData')}
               </div>
             )}
+
+            {/* The chart above only shows currency value per slice - these
+                are the batch counts behind the warning/critical slices. */}
+            <div className="mt-4 pt-4 border-t">
+              <p className="text-xs text-muted-foreground mb-2">{t('dashboard.riskFooterCaption')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg p-3 text-center bg-status-warning/10 border border-status-warning/30">
+                  <p className="text-xl font-bold text-status-warning">{riskData?.risk_levels?.warning?.batches || 0}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.batchesWarning')}</p>
+                </div>
+                <div className="rounded-lg p-3 text-center bg-status-critical/10 border border-status-critical/30">
+                  <p className="text-xl font-bold text-status-critical">{riskData?.risk_levels?.critical?.batches || 0}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.batchesCritical')}</p>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -235,13 +290,18 @@ export function DashboardPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={distributionChartData} layout="vertical">
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="hsl(var(--border))" />
-                    <XAxis type="number" tickFormatter={(value) => formatCurrency(value, currency)} stroke="hsl(var(--muted-foreground))" />
+                    <XAxis type="number" tickFormatter={(value) => formatNumber(value)} stroke="hsl(var(--muted-foreground))" />
                     <YAxis type="category" dataKey="name" width={80} stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip
-                      formatter={(value: number) => formatCurrency(value, currency)}
-                      contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem' }}
-                    />
-                    <Bar dataKey="value" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
+                    <Tooltip content={(props: any) => <DistributionTooltip {...props} currency={currency} />} />
+                    <Bar dataKey="quantity" radius={[0, 4, 4, 0]}>
+                      {distributionChartData.map((entry, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={entry.color}
+                          stroke={entry.color === ITEM_COLOR_HEX.white ? 'hsl(var(--border))' : undefined}
+                        />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -250,42 +310,21 @@ export function DashboardPage() {
                 {t('common.noData')}
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-        <Card className="bg-status-safe/10 border-status-safe/30">
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-status-safe">
-              {formatNumber(kpis?.recent_receipts || 0)}
-            </p>
-            <p className="text-sm text-muted-foreground">{t('dashboard.recentReceipts')}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-ink-cyan/10 border-ink-cyan/30">
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-ink-cyan">
-              {formatNumber(kpis?.recent_dispatches || 0)}
-            </p>
-            <p className="text-sm text-muted-foreground">{t('dashboard.recentDispatches')}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-status-warning/10 border-status-warning/30">
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-status-warning">
-              {riskData?.risk_levels?.warning?.batches || 0}
-            </p>
-            <p className="text-sm text-muted-foreground">{t('dashboard.batchesWarning')}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-status-critical/10 border-status-critical/30">
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-status-critical">
-              {riskData?.risk_levels?.critical?.batches || 0}
-            </p>
-            <p className="text-sm text-muted-foreground">{t('dashboard.batchesCritical')}</p>
+            {/* Recent movement activity behind this inventory snapshot. */}
+            <div className="mt-4 pt-4 border-t">
+              <p className="text-xs text-muted-foreground mb-2">{t('dashboard.distributionFooterCaption')}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="rounded-lg p-3 text-center bg-status-safe/10 border border-status-safe/30">
+                  <p className="text-xl font-bold text-status-safe">{formatNumber(kpis?.recent_receipts || 0)}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.recentReceipts')}</p>
+                </div>
+                <div className="rounded-lg p-3 text-center bg-ink-cyan/10 border border-ink-cyan/30">
+                  <p className="text-xl font-bold text-ink-cyan">{formatNumber(kpis?.recent_dispatches || 0)}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.recentDispatches')}</p>
+                </div>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { pickingApi } from '@/lib/api'
+import { openPdfInNewTab } from '@/lib/utils'
 
 type DocumentType = 'pick_note' | 'delivery_note'
 type DocumentAction = 'print' | 'email'
@@ -37,11 +38,14 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
         documentType,
         action,
       )
-      // Honor the backend's success flag — the endpoint is a stub right
-      // now and returns success=false so the UI cannot mislead operators
-      // into thinking a real pick note / delivery note was produced.
+      // Honor the backend's success flag — e.g. a delivery note can't be
+      // produced when no customer was selected for this dispatch, or an
+      // email can't be sent when the customer has no address on file.
       if (response.success) {
         toast.success(response.message)
+        if (action === 'print' && response.pdf_base64) {
+          openPdfInNewTab(response.pdf_base64)
+        }
       } else {
         toast.info(response.message)
       }

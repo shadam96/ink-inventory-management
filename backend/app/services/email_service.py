@@ -1,7 +1,8 @@
 """Email service using Resend for transactional emails"""
+import base64
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, TypedDict
 
 import resend
 from jinja2 import Environment, FileSystemLoader
@@ -14,6 +15,11 @@ logger = logging.getLogger(__name__)
 template_dir = Path(__file__).parent.parent / "templates" / "email"
 template_dir.mkdir(parents=True, exist_ok=True)
 jinja_env = Environment(loader=FileSystemLoader(str(template_dir)))
+
+
+class EmailAttachment(TypedDict):
+    filename: str
+    content: bytes
 
 
 class EmailService:
@@ -41,6 +47,7 @@ class EmailService:
         html_body: str,
         text_body: Optional[str] = None,
         priority: bool = False,  # kept for API compat, ignored
+        attachments: Optional[List[EmailAttachment]] = None,
     ):
         """Send an email via Resend. Fires immediately — no queue."""
         if not self._configured:
@@ -56,6 +63,14 @@ class EmailService:
             }
             if text_body:
                 params["text"] = text_body
+            if attachments:
+                params["attachments"] = [
+                    {
+                        "filename": a["filename"],
+                        "content": base64.b64encode(a["content"]).decode("ascii"),
+                    }
+                    for a in attachments
+                ]
 
             resend.Emails.send(params)
             logger.info("Email sent: %s -> %s", subject, to)

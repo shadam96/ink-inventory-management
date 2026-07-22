@@ -48,7 +48,9 @@
     "percentOfInventory": "Stokun %{{percent}}'i",
     "criticalCount": "{{count}} kritik",
     "batchesWarning": "Uyarı seviyesindeki partiler",
-    "batchesCritical": "Kritik partiler"
+    "batchesCritical": "Kritik partiler",
+    "riskFooterCaption": "Yukarıdaki uyarı/kritik dilimlerin arkasındaki parti sayıları",
+    "distributionFooterCaption": "Bu stok görünümünün arkasındaki hareket etkinliği (son 7 gün)"
   },
   "inventory": {
     "title": "Mevcut Stok",
@@ -67,6 +69,13 @@
     "description": "Açıklama",
     "supplier": "Tedarikçi",
     "unit": "Birim",
+    "color": "Renk",
+    "colorCyan": "Camgöbeği",
+    "colorMagenta": "Macenta",
+    "colorYellow": "Sarı",
+    "colorBlack": "Siyah",
+    "colorWhite": "Beyaz",
+    "colorOther": "Diğer",
     "costPrice": "Maliyet Fiyatı",
     "currency": "Para Birimi",
     "reorderPoint": "Yeniden Sipariş Noktası",
@@ -236,7 +245,10 @@
     "pdfDownloadError": "PDF indirilirken hata oluştu",
     "countLabel": "{{count}} irsaliye",
     "totalQuantity": "Toplam Miktar",
-    "itemsCount": "{{count}} ürün"
+    "itemsCount": "{{count}} ürün",
+    "batch": "Parti",
+    "createSuccess": "İrsaliye oluşturuldu",
+    "createError": "İrsaliye oluşturulurken hata oluştu"
   },
   "customers": {
     "machines": {

@@ -28,6 +28,7 @@ from app.models.delivery_note import DeliveryNote, DeliveryNoteItem, DeliveryNot
 from app.models.customer import Customer
 from app.models.batch import Batch
 from app.models.item import Item
+from app.models.movement import Movement, MovementType
 from app.models.user import User
 from app.services.sequence_service import generate_sequential_number
 
@@ -258,6 +259,109 @@ class DocumentService:
         
         return pdf_bytes
     
+    async def get_dispatch_movements(self, reference_number: str) -> List[Movement]:
+        """Fetch the DISPATCH movements that make up a picking dispatch,
+        with everything a pick-note PDF needs already loaded."""
+        result = await self.db.execute(
+            select(Movement)
+            .options(
+                selectinload(Movement.batch).selectinload(Batch.item),
+                selectinload(Movement.user),
+            )
+            .where(
+                Movement.reference_number == reference_number,
+                Movement.movement_type == MovementType.DISPATCH,
+            )
+            .order_by(Movement.timestamp)
+        )
+        return list(result.scalars().all())
+
+    async def generate_pick_note_pdf(self, reference_number: str) -> bytes:
+        """Generate a pick note (תעודת ליקוט) PDF directly from the
+        DISPATCH movements sharing this reference number - an internal
+        warehouse confirmation of what was picked, not tied to a customer
+        (see generate_delivery_note_pdf for the customer-facing document)."""
+        movements = await self.get_dispatch_movements(reference_number)
+        if not movements:
+            raise ValueError(f"לא נמצא ליקוט עם מספר אסמכתא {reference_number}")
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            rightMargin=20 * mm,
+            leftMargin=20 * mm,
+            topMargin=20 * mm,
+            bottomMargin=20 * mm,
+        )
+
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'Title', parent=styles['Heading1'], fontSize=18,
+            alignment=TA_CENTER, spaceAfter=20,
+        )
+        header_style = ParagraphStyle(
+            'Header', parent=styles['Normal'], fontSize=12, alignment=TA_RIGHT,
+        )
+
+        elements = [Paragraph("תעודת ליקוט", title_style), Spacer(1, 10 * mm)]
+
+        picker = movements[0].user.full_name if movements[0].user else ""
+        header_data = [
+            ["מספר אסמכתא:", reference_number],
+            ["תאריך:", movements[0].timestamp.strftime("%d/%m/%Y %H:%M")],
+            ["לוקט על ידי:", picker],
+        ]
+        header_table = Table(header_data, colWidths=[40 * mm, 120 * mm])
+        header_table.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elements.append(header_table)
+        elements.append(Spacer(1, 10 * mm))
+
+        items_header = ["#", "מק\"ט", "תיאור", "אצווה", "כמות", "יח'"]
+        items_data = [items_header]
+        total_qty = Decimal("0")
+        for i, movement in enumerate(movements, 1):
+            batch = movement.batch
+            item = batch.item if batch else None
+            items_data.append([
+                str(i),
+                item.sku if item else "",
+                item.name if item else "",
+                batch.batch_number if batch else "",
+                f"{movement.quantity:.2f}",
+                item.unit_of_measure if item else "",
+            ])
+            total_qty += movement.quantity
+
+        items_data.append(["", "", "", "סה\"כ:", f"{total_qty:.2f}", ""])
+
+        items_table = Table(
+            items_data,
+            colWidths=[10 * mm, 25 * mm, 55 * mm, 30 * mm, 20 * mm, 15 * mm],
+        )
+        items_table.setStyle(TableStyle([
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('ALIGN', (4, 1), (4, -1), 'CENTER'),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+            ('GRID', (0, 0), (-1, -2), 0.5, colors.black),
+            ('LINEABOVE', (3, -1), (-1, -1), 1, colors.black),
+            ('FONTSIZE', (3, -1), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elements.append(items_table)
+
+        doc.build(elements)
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+        return pdf_bytes
+
     async def update_delivery_note_status(
         self,
         delivery_note_id: UUID,
