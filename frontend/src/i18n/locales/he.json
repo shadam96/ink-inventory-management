@@ -146,7 +146,11 @@
     "manufacturingShort": "ייצור",
     "batchShort": "אצווה",
     "expirationTooSoon": "תאריך תפוגה קרוב מדי (נדרש לפחות 6 חודשים)",
-    "expirationTooSoonError": "לא ניתן לקלוט: לפריטים מסוימים ברשימה נותרו פחות מ-6 חודשים עד לתפוגה"
+    "expirationTooSoonError": "לא ניתן לקלוט: לפריטים מסוימים ברשימה נותרו פחות מ-6 חודשים עד לתפוגה",
+    "someItemsHeldBack_one": "פריט אחד הושאר בהמתנה - נותרו פחות מדי חודשים עד לתפוגה",
+    "someItemsHeldBack_other": "{{count}} פריטים הושארו בהמתנה - נותרו פחות מדי חודשים עד לתפוגה",
+    "offlineBarcodeUnavailable": "אתה במצב אופליין - סריקת ברקוד דורשת חיבור לרשת. בחר את הפריט ידנית מהרשימה למטה.",
+    "editItem": "ערוך"
   },
   "picking": {
     "title": "ליקוט",

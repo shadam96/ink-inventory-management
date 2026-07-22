@@ -146,7 +146,11 @@
     "manufacturingShort": "Üretim",
     "batchShort": "Parti",
     "expirationTooSoon": "Son kullanma tarihi çok yakın (en az 6 ay gerekli)",
-    "expirationTooSoonError": "Kabul edilemiyor: listedeki bazı ürünlerin son kullanma tarihine 6 aydan az kaldı"
+    "expirationTooSoonError": "Kabul edilemiyor: listedeki bazı ürünlerin son kullanma tarihine 6 aydan az kaldı",
+    "someItemsHeldBack_one": "{{count}} ürün beklemede tutuldu (son kullanma tarihi çok yakın)",
+    "someItemsHeldBack_other": "{{count}} ürün beklemede tutuldu (son kullanma tarihi çok yakın)",
+    "offlineBarcodeUnavailable": "Çevrimdışısınız - barkod arama bağlantı gerektirir. Aşağıdan ürünü elle seçin.",
+    "editItem": "Düzenle"
   },
   "picking": {
     "title": "Toplama",

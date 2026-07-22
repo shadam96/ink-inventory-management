@@ -67,6 +67,10 @@ describe('Receiving Operations', () => {
       min_shelf_life_days: 180,
       updated_at: new Date().toISOString(),
     })
+    // Default to online - individual tests override this to exercise the
+    // offline paths (isOnline() is a bare vi.fn() otherwise, which returns
+    // undefined/falsy and would put every test in the "offline" branch).
+    vi.mocked(offline.isOnline).mockReturnValue(true)
   })
 
   it('should load items for selection', async () => {
@@ -151,9 +155,7 @@ describe('Receiving Operations', () => {
     // Simplified test - actual implementation would be more detailed
   })
 
-  it('should reject a fractional quantity instead of adding it to the receive list', async () => {
-    const user = userEvent.setup()
-
+  it('should accept a fractional quantity (items are commonly measured in KG/L) and add it to the receive list', async () => {
     render(
       <BrowserRouter>
         <ReceivingPage />
@@ -168,22 +170,57 @@ describe('Receiving Operations', () => {
     await waitFor(() => {
       expect(itemSelect.querySelector('option[value="1"]')).toBeInTheDocument()
     })
-    await user.selectOptions(itemSelect, '1')
+    fireEvent.change(itemSelect, { target: { value: '1' } })
 
     const quantityInput = document.getElementById('quantity') as HTMLInputElement
     fireEvent.change(quantityInput, { target: { value: '2.5' } })
 
     const expirationInput = document.getElementById('expiration_date') as HTMLInputElement
-    fireEvent.change(expirationInput, { target: { value: '2027-01-01' } })
+    fireEvent.change(expirationInput, { target: { value: '2028-01-01' } })
+
+    const addButton = screen.getByRole('button', { name: /receiving\.addToList/i })
+    fireEvent.submit(addButton.closest('form')!)
+
+    // No validation error, and the fractional-quantity item was added.
+    await waitFor(() => {
+      expect(screen.getByText(/receiving\.listTitle/)).toBeInTheDocument()
+    })
+    expect(screen.queryByText('receiving.quantityPositive')).not.toBeInTheDocument()
+
+    // ReceivingPage persists the list to localStorage on every mutation -
+    // clear it so it doesn't leak into the next test.
+    localStorage.removeItem('receiveList')
+  })
+
+  it('should reject a zero or negative quantity', async () => {
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    await waitFor(() => {
+      expect(api.itemsApi.list).toHaveBeenCalled()
+    })
+
+    const itemSelect = document.getElementById('item_id') as HTMLSelectElement
+    await waitFor(() => {
+      expect(itemSelect.querySelector('option[value="1"]')).toBeInTheDocument()
+    })
+    fireEvent.change(itemSelect, { target: { value: '1' } })
+
+    const quantityInput = document.getElementById('quantity') as HTMLInputElement
+    fireEvent.change(quantityInput, { target: { value: '0' } })
+
+    const expirationInput = document.getElementById('expiration_date') as HTMLInputElement
+    fireEvent.change(expirationInput, { target: { value: '2028-01-01' } })
 
     const addButton = screen.getByRole('button', { name: /receiving\.addToList/i })
     fireEvent.submit(addButton.closest('form')!)
 
     await waitFor(() => {
-      expect(screen.getByText('receiving.quantityInteger')).toBeInTheDocument()
+      expect(screen.getByText('receiving.quantityPositive')).toBeInTheDocument()
     })
-
-    // The fractional-quantity item must not have been added to the list.
     expect(screen.queryByText(/receiving\.listTitle/)).not.toBeInTheDocument()
   })
 
@@ -301,8 +338,142 @@ describe('Receiving Operations', () => {
     // 1. Adding items to receive list
     // 2. Clicking "קלוט הכל"
     // 3. Verifying API was called with correct data
-    
+
     expect(typeof api.receivingApi.receive).toBe('function')
+  })
+
+  it('should submit only the shelf-life-eligible items and keep the flagged one staged', async () => {
+    const user = userEvent.setup()
+
+    localStorage.setItem(
+      'receiveList',
+      JSON.stringify([
+        {
+          id: 'eligible-1',
+          item_id: '1',
+          item_name: mockItems[0].name,
+          item_sku: mockItems[0].sku,
+          quantity: 10,
+          expiration_date: '2028-01-01',
+          manufacturing_date: '',
+          batch_number: 'BATCH-OK',
+          notes: '',
+        },
+        {
+          id: 'flagged-1',
+          item_id: '2',
+          item_name: mockItems[1].name,
+          item_sku: mockItems[1].sku,
+          quantity: 5,
+          // Always well under the 180-day default, regardless of when the
+          // test runs.
+          expiration_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split('T')[0],
+          manufacturing_date: '',
+          batch_number: 'BATCH-SOON',
+          notes: '',
+        },
+      ])
+    )
+
+    vi.mocked(offline.isOnline).mockReturnValue(true)
+    vi.mocked(api.receivingApi.receive).mockResolvedValue({
+      id: 'batch-1',
+      batch_number: 'BATCH-001',
+      message: 'Success',
+    })
+
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    const receiveAllButton = await screen.findByRole('button', {
+      name: /receiving\.receiveAll/i,
+    })
+    await user.click(receiveAllButton)
+
+    // Only the eligible item was submitted...
+    await waitFor(() => {
+      expect(api.receivingApi.receive).toHaveBeenCalledWith(
+        expect.objectContaining({ item_id: '1', batch_number: 'BATCH-OK' })
+      )
+    })
+    expect(api.receivingApi.receive).toHaveBeenCalledTimes(1)
+    expect(api.receivingApi.receiveMultiple).not.toHaveBeenCalled()
+
+    // ...and the flagged item is still staged, not silently dropped. (SKU,
+    // not name, since the item-select dropdown also renders each name.)
+    await waitFor(() => {
+      expect(screen.getByText(mockItems[1].sku)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(mockItems[0].sku)).not.toBeInTheDocument()
+
+    localStorage.removeItem('receiveList')
+  })
+
+  it('should move a staged item back into the form for editing instead of only allowing remove', async () => {
+    const user = userEvent.setup()
+
+    localStorage.setItem(
+      'receiveList',
+      JSON.stringify([
+        {
+          id: 'edit-me',
+          item_id: '1',
+          item_name: mockItems[0].name,
+          item_sku: mockItems[0].sku,
+          quantity: 12.5,
+          expiration_date: '2028-01-01',
+          manufacturing_date: '',
+          batch_number: 'BATCH-EDIT',
+          notes: 'handle with care',
+        },
+      ])
+    )
+
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    const editButton = await screen.findByTitle('receiving.editItem')
+    await user.click(editButton)
+
+    // Removed from the staged list...
+    expect(screen.queryByText(/receiving\.listTitle/)).not.toBeInTheDocument()
+
+    // ...and its data (including the fractional quantity and batch number
+    // that a full remove-and-re-add would have lost) is back in the form.
+    expect(document.getElementById('quantity')).toHaveValue(12.5)
+    expect(document.getElementById('batch_number')).toHaveValue('BATCH-EDIT')
+
+    localStorage.removeItem('receiveList')
+  })
+
+  it('should refuse a barcode lookup while offline instead of failing with a generic network error', async () => {
+    const user = userEvent.setup()
+    vi.mocked(offline.isOnline).mockReturnValue(false)
+
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    const barcodeInput = screen.getByPlaceholderText('receiving.enterBarcode')
+    await user.type(barcodeInput, 'BARCODE-X')
+    fireEvent.submit(barcodeInput.closest('form')!)
+
+    // No Toaster is mounted in this test tree, so the toast copy itself
+    // isn't asserted here - the behavior that matters is that the lookup
+    // never hits the network while offline.
+    await waitFor(() => {
+      expect(api.receivingApi.validateBarcode).not.toHaveBeenCalled()
+    })
   })
 })
 

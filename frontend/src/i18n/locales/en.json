@@ -146,7 +146,11 @@
     "manufacturingShort": "Mfg",
     "batchShort": "Batch",
     "expirationTooSoon": "Expires too soon (needs 6+ months shelf life)",
-    "expirationTooSoonError": "Cannot receive: some items in the list expire in less than 6 months"
+    "expirationTooSoonError": "Cannot receive: some items in the list expire in less than 6 months",
+    "someItemsHeldBack_one": "{{count}} item held back — still under the required shelf-life window",
+    "someItemsHeldBack_other": "{{count}} items held back — still under the required shelf-life window",
+    "offlineBarcodeUnavailable": "You're offline — barcode lookup needs a connection. Select the item manually below instead.",
+    "editItem": "Edit"
   },
   "picking": {
     "title": "Picking",

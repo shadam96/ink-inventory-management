@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { PackagePlus, Barcode, Plus, X, XCircle, Loader2, Camera, ScanLine } from 'lucide-react'
+import { PackagePlus, Barcode, Plus, X, XCircle, Loader2, Camera, ScanLine, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,11 @@ const DEFAULT_MIN_SHELF_LIFE_DAYS = 180
 
 const receiveSchema = z.object({
   item_id: z.string().min(1, 'receiving.itemRequired'),
-  quantity: z.number().int('receiving.quantityInteger').min(1, 'receiving.quantityPositive'),
+  // Decimal, not integer: items are commonly measured in KG/L (see
+  // Item.unit_of_measure, default "KG") and the backend stores quantity as
+  // Numeric(12, 3) - forcing whole numbers here made it impossible to
+  // receive an accurately-weighed real-world shipment (e.g. "37.5 KG").
+  quantity: z.number().positive('receiving.quantityPositive'),
   expiration_date: z.string().min(1, 'receiving.expirationDateRequired'),
   manufacturing_date: z.string().optional(),
   batch_number: z.string().optional(),
@@ -91,18 +95,6 @@ export function ReceivingPage() {
 
   const selectedItemId = watch('item_id')
 
-  useEffect(() => {
-    fetchItems()
-  }, [])
-
-  useEffect(() => {
-    systemSettingsApi.get().then((settings) => {
-      setMinShelfLifeDays(settings.min_shelf_life_days)
-    }).catch((error) => {
-      console.error('Failed to fetch system settings:', error)
-    })
-  }, [])
-
   async function fetchItems() {
     try {
       const response = await itemsApi.list({ page_size: 100 })
@@ -111,6 +103,33 @@ export function ReceivingPage() {
       console.error('Failed to fetch items:', error)
     }
   }
+
+  async function fetchMinShelfLifeDays() {
+    try {
+      const settings = await systemSettingsApi.get()
+      setMinShelfLifeDays(settings.min_shelf_life_days)
+    } catch (error) {
+      console.error('Failed to fetch system settings:', error)
+    }
+  }
+
+  useEffect(() => {
+    fetchItems()
+    fetchMinShelfLifeDays()
+
+    // A clerk's tab realistically stays open for a whole shift. Without
+    // this, a newly-added item or an admin's live change to the shelf-life
+    // threshold (Settings page, in another tab) silently doesn't show up
+    // here until a manual reload.
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        fetchItems()
+        fetchMinShelfLifeDays()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
 
   // parsedData only carries the fields the *current* scan's barcode encodes.
   // Any field it omits must be cleared back to its default rather than left
@@ -149,24 +168,36 @@ export function ReceivingPage() {
     autoFillTimerRef.current = setTimeout(() => setAutoFilledFields(new Set()), 3000)
   }
 
+  // Shared by both the camera scanner and the manual barcode field - only
+  // how "not found"/errors are surfaced differs between the two callers.
+  const applyScanResult = (result: Awaited<ReturnType<typeof receivingApi.validateBarcode>>): boolean => {
+    if (!result.valid || !result.item) return false
+
+    setValue('item_id', result.item.id, { shouldValidate: true })
+    setBarcode('')
+
+    applyParsedData(result.parsed_data)
+    if (result.parsed_data) {
+      toast.success(t('receiving.itemFoundFilled', { name: result.item.name, sku: result.item.sku }))
+    } else {
+      toast.success(t('receiving.itemFound', { name: result.item.name, sku: result.item.sku }))
+    }
+
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100])
+    return true
+  }
+
   const handleBarcodeScanned = async ({ code }: ScanResult): Promise<boolean> => {
+    // Barcode lookup always hits the network - unlike handleReceiveAll,
+    // there's no offline queue for it, so fail fast with a clear reason
+    // instead of a confusing generic network error.
+    if (!isOnline()) {
+      toast.error(t('receiving.offlineBarcodeUnavailable'))
+      return false
+    }
     try {
       const result = await receivingApi.validateBarcode(code)
-      if (result.valid && result.item) {
-        setValue('item_id', result.item.id, { shouldValidate: true })
-        setBarcode('')
-
-        applyParsedData(result.parsed_data)
-        if (result.parsed_data) {
-          toast.success(t('receiving.itemFoundFilled', { name: result.item.name, sku: result.item.sku }))
-        } else {
-          toast.success(t('receiving.itemFound', { name: result.item.name, sku: result.item.sku }))
-        }
-
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100])
-        return true
-      }
-      return false
+      return applyScanResult(result)
     } catch (error) {
       console.error('Failed to validate barcode:', error)
       return false
@@ -174,21 +205,13 @@ export function ReceivingPage() {
   }
 
   const handleManualBarcodeScanned = async (code: string) => {
+    if (!isOnline()) {
+      toast.error(t('receiving.offlineBarcodeUnavailable'))
+      return
+    }
     try {
       const result = await receivingApi.validateBarcode(code)
-      if (result.valid && result.item) {
-        setValue('item_id', result.item.id, { shouldValidate: true })
-        setBarcode('')
-
-        applyParsedData(result.parsed_data)
-        if (result.parsed_data) {
-          toast.success(t('receiving.itemFoundFilled', { name: result.item.name, sku: result.item.sku }))
-        } else {
-          toast.success(t('receiving.itemFound', { name: result.item.name, sku: result.item.sku }))
-        }
-
-        if (navigator.vibrate) navigator.vibrate([100, 50, 100])
-      } else {
+      if (!applyScanResult(result)) {
         toast.error(t('receiving.barcodeNotFound', { code }))
       }
     } catch (error) {
@@ -231,30 +254,60 @@ export function ReceivingPage() {
     setReceiveList(receiveList.filter(item => item.id !== id))
   }
 
+  // Pull a staged line back into the form for editing instead of forcing a
+  // full remove-and-re-add - re-typing a multi-field entry (with
+  // barcode-parsed batch/expiration data) just to fix one typo was the
+  // only option before, and that data entry was lost in the process.
+  const handleEditItem = (id: string) => {
+    const item = receiveList.find(i => i.id === id)
+    if (!item) return
+
+    setValue('item_id', item.item_id, { shouldValidate: true })
+    setValue('quantity', item.quantity, { shouldValidate: true })
+    setValue('expiration_date', item.expiration_date, { shouldValidate: true })
+    setValue('manufacturing_date', item.manufacturing_date || '')
+    setValue('batch_number', item.batch_number || '')
+    setValue('notes', item.notes || '')
+
+    setReceiveList(receiveList.filter(i => i.id !== id))
+    setAutoFilledFields(new Set())
+  }
+
   const handleReceiveAll = async () => {
     if (receiveList.length === 0) return
 
-    const hasShortShelfLife = receiveList.some(
+    // This is a best-effort local grouping, not the authority on whether an
+    // item can actually be received - the device's clock could be wrong.
+    // The backend re-validates every item with its own clock; splitting
+    // here only decides which items we *attempt* now vs. leave staged, so
+    // a wrong device clock can delay a valid item but never wrongly force
+    // one through (the backend still rejects it) or get one stuck (it just
+    // stays in the list untouched, exactly like before submission).
+    const eligible = receiveList.filter(
+      (item) => daysUntilExpiration(item.expiration_date) >= minShelfLifeDays
+    )
+    const flagged = receiveList.filter(
       (item) => daysUntilExpiration(item.expiration_date) < minShelfLifeDays
     )
-    if (hasShortShelfLife) {
+
+    if (eligible.length === 0) {
       toast.error(t('receiving.expirationTooSoonError'))
       return
     }
 
     setSubmitting(true)
     try {
-      const payload = receiveList.length === 1
+      const payload = eligible.length === 1
         ? {
-            item_id: receiveList[0].item_id,
-            quantity: receiveList[0].quantity,
-            expiration_date: receiveList[0].expiration_date,
-            manufacturing_date: receiveList[0].manufacturing_date || undefined,
-            batch_number: receiveList[0].batch_number,
-            notes: receiveList[0].notes,
+            item_id: eligible[0].item_id,
+            quantity: eligible[0].quantity,
+            expiration_date: eligible[0].expiration_date,
+            manufacturing_date: eligible[0].manufacturing_date || undefined,
+            batch_number: eligible[0].batch_number,
+            notes: eligible[0].notes,
           }
         : {
-            items: receiveList.map(item => ({
+            items: eligible.map(item => ({
               item_id: item.item_id,
               quantity: item.quantity,
               expiration_date: item.expiration_date,
@@ -271,26 +324,34 @@ export function ReceivingPage() {
         // receiveMultiple in lib/api.ts).
         await addPendingOperation(
           'receive',
-          receiveList.length === 1 ? '/receiving/receive' : '/receiving/receive-multiple',
+          eligible.length === 1 ? '/receiving/receive' : '/receiving/receive-multiple',
           'POST',
           payload
         )
         toast.info(t('receiving.offlineQueued'))
-        setReceiveList([])
+        setReceiveList(flagged)
+        if (flagged.length > 0) {
+          toast.warning(t('receiving.someItemsHeldBack', { count: flagged.length }))
+        }
         return
       }
 
-      if (receiveList.length === 1) {
+      if (eligible.length === 1) {
         await receivingApi.receive(payload as any)
       } else {
         await receivingApi.receiveMultiple(payload as any)
       }
 
       toast.success(t('receiving.success'))
-      setReceiveList([])
+      setReceiveList(flagged)
+      if (flagged.length > 0) {
+        toast.warning(t('receiving.someItemsHeldBack', { count: flagged.length }))
+      }
     } catch (error: any) {
       console.error('Failed to receive items:', error)
       toast.error(error.response?.data?.detail || t('receiving.error'))
+      // Nothing was confirmed received - leave the full list (including
+      // the eligible items just attempted) staged so nothing is lost.
     } finally {
       setSubmitting(false)
     }
@@ -414,9 +475,9 @@ export function ReceivingPage() {
                 <Input
                   id="quantity"
                   type="number"
-                  step="1"
-                  min={1}
-                  inputMode="numeric"
+                  step="0.001"
+                  min={0.001}
+                  inputMode="decimal"
                   {...register('quantity', { valueAsNumber: true })}
                   className={fieldClass('quantity')}
                 />
@@ -542,14 +603,25 @@ export function ReceivingPage() {
                       <p className="text-sm text-muted-foreground mt-1 truncate">{item.notes}</p>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemoveFromList(item.id)}
-                    className="text-destructive flex-shrink-0 touch-manipulation"
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
+                  <div className="flex items-center flex-shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleEditItem(item.id)}
+                      title={t('receiving.editItem')}
+                      className="touch-manipulation"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => handleRemoveFromList(item.id)}
+                      className="text-destructive touch-manipulation"
+                    >
+                      <X className="w-4 h-4" />
+                    </Button>
+                  </div>
                 </div>
                 )
               })}
