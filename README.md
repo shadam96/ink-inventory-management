@@ -93,7 +93,7 @@ Copy `env.example` to `backend/.env` and configure:
 | `SECRET_KEY` | Yes (production) | JWT signing key, min 32 chars |
 | `ENVIRONMENT` | No | `development` (default) or `production` |
 | `CORS_ORIGINS` | No | Comma-separated allowed origins |
-| `SMTP_HOST/USER/PASSWORD` | No | Email notifications ([setup guide](EMAIL_SETUP_GUIDE.md)) |
+| `RESEND_API_KEY` | No | Email notifications via Resend ([setup guide](EMAIL_SETUP_GUIDE.md)) |
 
 See [`SPEC.md`](SPEC.md) for the full list.
 

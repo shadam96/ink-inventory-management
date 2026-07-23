@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/tooltip'
 import { Header } from '@/components/layout/Header'
 import { SortableTableHead } from '@/components/SortableTableHead'
+import { Package, Layers, Wallet } from 'lucide-react'
 import {
   formatCurrency,
   formatNumber,
@@ -53,7 +54,7 @@ export function InventoryPage() {
   const [total, setTotal] = useState(0)
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
-  const [totalCost, setTotalCost] = useState<InventoryTotalCost['totals']>({})
+  const [summary, setSummary] = useState<InventoryTotalCost>({ totals: {}, product_count: 0, total_quantity: 0 })
   const [fxRates, setFxRates] = useState<SystemSettings | null>(null)
   const pageSize = 20
 
@@ -73,7 +74,7 @@ export function InventoryPage() {
   }, [page, debouncedSearch, sortBy, sortOrder])
 
   useEffect(() => {
-    fetchTotalCost()
+    fetchSummary()
   }, [debouncedSearch])
 
   const handleSort = (key: string) => {
@@ -105,15 +106,15 @@ export function InventoryPage() {
     }
   }
 
-  async function fetchTotalCost() {
+  async function fetchSummary() {
     try {
       const response = await inventoryApi.totalCost({
         search: debouncedSearch || undefined,
       })
-      setTotalCost(response.totals || {})
+      setSummary(response)
     } catch (error) {
-      console.error('Failed to fetch inventory total cost:', error)
-      setTotalCost({})
+      console.error('Failed to fetch inventory summary:', error)
+      setSummary({ totals: {}, product_count: 0, total_quantity: 0 })
     }
   }
 
@@ -135,6 +136,45 @@ export function InventoryPage() {
           placeholder={t('inventory.search')}
           className="w-80"
         />
+      </div>
+
+      <div className="flex justify-center">
+        <Card className="w-full max-w-2xl">
+          <CardContent className="p-4">
+            <div className="grid grid-cols-3 divide-x rtl:divide-x-reverse divide-border">
+              <div className="flex flex-col items-center gap-1 px-2">
+                <Package className="w-5 h-5 text-primary" />
+                <p className="text-2xl font-bold">{formatNumber(summary.product_count)}</p>
+                <p className="text-sm text-muted-foreground">{t('inventory.summaryProducts')}</p>
+              </div>
+              <div className="flex flex-col items-center gap-1 px-2">
+                <Layers className="w-5 h-5 text-primary" />
+                <p className="text-2xl font-bold">{formatNumber(summary.total_quantity, 1)}</p>
+                <p className="text-sm text-muted-foreground">{t('inventory.summaryQuantity')}</p>
+              </div>
+              <div className="flex flex-col items-center gap-1 px-2">
+                <Wallet className="w-5 h-5 text-primary" />
+                <p className="text-2xl font-bold font-mono">
+                  {fxRates
+                    ? formatCurrency(
+                        convertToDisplayCurrency(
+                          summary.totals as Partial<Record<'ILS' | 'USD' | 'EUR', number>>,
+                          displayCurrency,
+                          fxRates,
+                        ),
+                        displayCurrency,
+                      )
+                    : Object.entries(summary.totals)
+                        .map(([currency, value]) =>
+                          formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR'),
+                        )
+                        .join(' + ') || formatCurrency(0, displayCurrency)}
+                </p>
+                <p className="text-sm text-muted-foreground">{t('inventory.summaryValue')}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
@@ -278,30 +318,6 @@ export function InventoryPage() {
           </div>
         </CardContent>
       </Card>
-
-      {Object.keys(totalCost).length > 0 && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-2 sm:gap-4">
-          <span className="text-sm font-medium text-muted-foreground">
-            {t('inventory.grandTotal')}:
-          </span>
-          <span className="font-mono font-semibold text-base">
-            {fxRates
-              ? formatCurrency(
-                  convertToDisplayCurrency(
-                    totalCost as Partial<Record<'ILS' | 'USD' | 'EUR', number>>,
-                    displayCurrency,
-                    fxRates,
-                  ),
-                  displayCurrency,
-                )
-              : Object.entries(totalCost)
-                  .map(([currency, value]) =>
-                    formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR'),
-                  )
-                  .join(' + ')}
-          </span>
-        </div>
-      )}
 
       {/* Pagination */}
       {totalPages > 1 && (

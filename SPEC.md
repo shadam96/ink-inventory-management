@@ -75,7 +75,7 @@ npm run dev  # Vite dev server on :5173
 | **DB Driver** | asyncpg | 0.29 | Fastest async PostgreSQL driver |
 | **Migrations** | Alembic | 1.13 | SQLAlchemy-native migrations |
 | **Auth** | JWT (python-jose) | 3.3 | Stateless auth, access + refresh tokens |
-| **Email** | aiosmtplib + Jinja2 | 3.0 / 3.1 | Async SMTP, templated HTML emails |
+| **Email** | resend + Jinja2 | latest / 3.1 | Resend API, templated HTML emails |
 | **Scheduler** | APScheduler | 3.10 | In-process background jobs |
 | **PDF** | ReportLab | 4.2 | Delivery note PDF generation |
 | **Excel** | openpyxl | 3.1 | Export to .xlsx |
@@ -326,7 +326,7 @@ Print/digital send. Goods receipt module with barcode/manual entry.
 | DN includes customer, items, qty, batch, expiry | ✅ | All fields on DN and DN items |
 | DN status workflow | ✅ | DRAFT → ISSUED → DELIVERED → INVOICED (or CANCELLED) |
 | DN PDF export | ✅ | ReportLab PDF generation |
-| DN email to customer | ✅ | Async SMTP via email_service |
+| DN email to customer | ✅ | Resend via email_service |
 | DN search and history | ✅ | Paginated list with filters |
 | Goods receipt with barcode scan | ✅ | Camera + manual, auto batch numbering |
 | Goods receipt with qty + expiry + batch + location | ✅ | All mandatory fields validated |
@@ -491,12 +491,9 @@ ALERT_THRESHOLD_30=30
 # ---- Dead Stock ----
 DEAD_STOCK_DAYS=180
 
-# ---- Email (SMTP) ----
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your@gmail.com
-SMTP_PASSWORD=app-specific-password
-EMAIL_FROM=noreply@linoprint.com
+# ---- Email (Resend) ----
+RESEND_API_KEY=re_your_api_key
+EMAIL_FROM=Lino Inventory <onboarding@resend.dev>
 
 # ---- Frontend (Vite env) ----
 VITE_API_URL=https://your-backend.onrender.com/api/v1

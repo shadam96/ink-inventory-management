@@ -38,9 +38,12 @@ class InventoryRowResponse(BaseSchema):
 
 
 class InventoryTotalCostResponse(BaseSchema):
-    """Total cost of inventory broken down by currency."""
+    """Summary of active inventory: cost by currency, distinct product
+    count, and total quantity on hand."""
 
     totals: dict[str, Decimal]
+    product_count: int
+    total_quantity: Decimal
 
 
 @router.get("", response_model=PaginatedResponse[InventoryRowResponse])
@@ -223,6 +226,11 @@ async def get_inventory_total_cost(
             )
             .group_by(dedup_sub.c.currency)
         )
+
+        agg_stmt = select(
+            func.count(func.distinct(dedup_sub.c.sku)),
+            func.coalesce(func.sum(dedup_sub.c.quantity_available), 0),
+        )
     else:
         stmt = (
             select(
@@ -248,9 +256,33 @@ async def get_inventory_total_cost(
                 | (Item.supplier.ilike(like))
             )
 
+        agg_stmt = (
+            select(
+                func.count(func.distinct(Item.id)),
+                func.coalesce(func.sum(Batch.quantity_available), 0),
+            )
+            .select_from(Batch)
+            .join(Item, Batch.item_id == Item.id)
+            .where(Batch.status == BatchStatus.ACTIVE)
+            .where(Batch.quantity_available > 0)
+        )
+        if search:
+            agg_stmt = agg_stmt.where(
+                (Item.sku.ilike(like))
+                | (Item.name.ilike(like))
+                | (Batch.batch_number.ilike(like))
+                | (Item.supplier.ilike(like))
+            )
+
     rows = (await db.execute(stmt)).all()
     totals = {currency: Decimal(value) for currency, value in rows}
-    return InventoryTotalCostResponse(totals=totals)
+
+    product_count, total_quantity = (await db.execute(agg_stmt)).one()
+    return InventoryTotalCostResponse(
+        totals=totals,
+        product_count=product_count,
+        total_quantity=Decimal(total_quantity),
+    )
 
 
 # ------------------------------------------------------------------

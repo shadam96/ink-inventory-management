@@ -1,82 +1,43 @@
-# 📧 Email Setup Guide - Real Email Testing
+# 📧 Email Setup Guide - Resend
 
-This guide will help you configure real email sending for the inventory management system.
-
----
-
-## Option 1: Gmail (Recommended for Testing)
-
-### Step 1: Enable 2-Factor Authentication
-
-1. Go to your Google Account: https://myaccount.google.com/
-2. Navigate to **Security**
-3. Enable **2-Step Verification** if not already enabled
-
-### Step 2: Generate App Password
-
-1. Go to: https://myaccount.google.com/apppasswords
-2. Select **App**: Mail
-3. Select **Device**: Other (Custom name)
-4. Enter name: "Inventory Management System"
-5. Click **Generate**
-6. **Copy the 16-character password** (format: xxxx xxxx xxxx xxxx)
-
-### Step 3: Configure Backend
-
-Update `backend/.env` file:
-
-```env
-# Email Configuration (Gmail)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_USER=your_email@gmail.com
-SMTP_PASSWORD=your_16_char_app_password
-EMAIL_FROM=your_email@gmail.com
-```
-
-**Important**: 
-- Use spaces in the app password as shown by Google, or remove them
-- Don't use your regular Gmail password
+Transactional email (alerts, delivery notes, test emails) is sent through
+[Resend](https://resend.com). Configure it via a single environment
+variable — no SMTP credentials involved.
 
 ---
 
-## Option 2: Outlook/Hotmail
+## Step 1: Get a Resend API Key
 
-### Configuration
+1. Sign up at https://resend.com
+2. Go to **API Keys** and create a new key (starts with `re_`)
+3. (Optional, for production) Verify a sending domain under **Domains** so
+   `EMAIL_FROM` can use your own domain instead of `onboarding@resend.dev`
 
-Update `backend/.env` file:
+## Step 2: Configure the Backend
 
-```env
-# Email Configuration (Outlook)
-SMTP_HOST=smtp-mail.outlook.com
-SMTP_PORT=587
-SMTP_USER=your_email@outlook.com
-SMTP_PASSWORD=your_outlook_password
-EMAIL_FROM=your_email@outlook.com
-```
-
----
-
-## Option 3: Custom SMTP Server
-
-If you have your own SMTP server:
+Set these environment variables wherever the backend runs (`backend/.env`
+locally, or your hosting provider's environment variable settings in
+production — e.g. Render, Railway, Fly.io):
 
 ```env
-# Email Configuration (Custom)
-SMTP_HOST=smtp.your-domain.com
-SMTP_PORT=587
-SMTP_USER=your_username
-SMTP_PASSWORD=your_password
-EMAIL_FROM=noreply@your-domain.com
+RESEND_API_KEY=re_your_api_key
+EMAIL_FROM=Lino Inventory <onboarding@resend.dev>
 ```
+
+Restart the backend after changing environment variables — `Settings` is
+read once at process startup (`app/core/config.py`).
+
+**Production note**: the "Send Test Email" button in Settings returns
+*"Email not configured. Set RESEND_API_KEY in environment variables."*
+whenever this variable is missing on the server the backend is actually
+running on. Setting it in a local `.env` file has no effect on a deployed
+instance — it must be set in that host's environment variable panel.
 
 ---
 
 ## Testing Email Configuration
 
-### Method 1: Using the Test Script (Easiest)
-
-I've created a test script for you. Run:
+### Method 1: Using the Test Script (Easiest, local only)
 
 ```bash
 cd backend
@@ -84,7 +45,7 @@ python test_email_real.py
 ```
 
 This will:
-1. Load your .env configuration
+1. Load your local `.env` configuration
 2. Send a test email
 3. Report success or failure
 
@@ -103,9 +64,9 @@ npm run dev
 ```
 
 3. Navigate to: http://localhost:5173/settings
-4. Scroll to **Email Settings**
-5. Enter your email address
-6. Click **Send** button
+4. Scroll to **Email Alerts**
+5. Enter your email address next to **Send Test Email**
+6. Click **Send Test**
 
 ### Method 3: Using curl
 
@@ -120,49 +81,38 @@ TOKEN=$(curl -X POST http://localhost:8000/api/v1/auth/login \
 curl -X POST http://localhost:8000/api/v1/settings/email/test \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"email":"your_test_email@gmail.com"}'
+  -d '{"email":"your_test_email@example.com"}'
 ```
 
 ---
 
 ## Troubleshooting
 
-### Error: "Authentication failed"
+### Error: "Email not configured. Set RESEND_API_KEY in environment variables."
 
-**Gmail:**
-- Make sure you're using the **App Password**, not your regular password
-- Verify 2-Step Verification is enabled
-- Try regenerating the App Password
+- `RESEND_API_KEY` isn't set in the environment of the backend process
+  handling the request. Check the host running the backend (not just your
+  local machine) and set it there.
+- Restart/redeploy the backend after setting the variable — it's read once
+  at startup via `app.core.config.settings`.
 
-**Outlook:**
-- Check if "Less secure app access" is enabled (if applicable)
-- Verify your password is correct
+### Error: "Failed to send test email: ..."
 
-### Error: "Connection refused"
+- The key is set but Resend rejected the request — check the key is valid
+  and not revoked, and that `EMAIL_FROM` is either `onboarding@resend.dev`
+  (Resend's shared sandbox sender) or a domain you've verified in Resend.
 
-- Check SMTP_HOST and SMTP_PORT are correct
-- Verify your firewall isn't blocking port 587
-- Try port 465 with SSL (update code if needed)
+### Emails not arriving
 
-### Error: "Email not configured"
-
-- Make sure `backend/.env` file exists
-- Verify SMTP_USER and SMTP_PASSWORD are set
-- Restart the backend server after updating .env
-
-### Error: "Timeout"
-
-- Check your internet connection
-- Some networks block SMTP ports
-- Try using a different network (mobile hotspot)
+- Check the Resend dashboard's **Logs** tab — it shows delivery status per
+  message, including bounces/spam rejections.
+- Check the recipient's spam folder.
 
 ---
 
 ## Testing Automated Alerts
 
 Once email is configured, you can test automated alert emails:
-
-### Test Expiration Alerts
 
 ```bash
 # Trigger alert check manually
@@ -173,100 +123,45 @@ curl -X POST http://localhost:8000/api/v1/alerts/run-checks \
 This will:
 - Check for expiring batches
 - Check for low stock
-- Send emails to admin/manager users
-
-### Configure Alert Recipients
-
-By default, emails are sent to users with **ADMIN** or **MANAGER** roles.
-
-To receive alert emails:
-1. Make sure your user has ADMIN or MANAGER role
-2. Your user email must be set in the database
-3. SMTP must be configured
+- Send emails to the addresses configured in Settings → Email Alerts
 
 ---
 
 ## Email Templates Available
 
-The system includes these Hebrew RTL email templates:
+The system includes these Hebrew RTL email templates
+(`backend/app/templates/email/`):
 
 1. **Expiration Alert** (`expiration_alert.html`)
    - Sent when batches are 30/60/90/120 days from expiration
-   - Includes batch details and recommendations
-
 2. **Low Stock Alert** (`low_stock_alert.html`)
    - Sent when inventory falls below reorder point
-   - Critical alerts for items below minimum stock
-
-3. **Delivery Note** (`delivery_note_email.html`)
+3. **Expired Batch Alert** (`expired_batch_alert.html`)
+4. **Dead Stock Alert** (`dead_stock_alert.html`)
+5. **Delivery Note** (`delivery_note_email.html`)
    - Sent to customers with delivery confirmations
-   - Includes delivery note number and item count
-
-4. **Weekly Report** (`weekly_report.html`)
-   - Summary of inventory status
-   - KPIs and statistics
-   - Currently manual - can be scheduled
-
-5. **Test Email** (`test_email.html`)
-   - Simple test to verify configuration
-   - Sent from Settings page
+6. **Weekly Report** (`weekly_report.html`)
+7. **Test Email** (`test_email.html`)
+   - Sent from the Settings page
 
 ---
 
 ## Security Best Practices
 
-### For Production
-
-1. **Never commit .env file to git** ✅ (Already in .gitignore)
-2. **Use environment variables** on your server
-3. **Rotate passwords** regularly
-4. **Use dedicated email account** for system emails
-5. **Monitor email quota** to avoid limits
-
-### Gmail Limits
-
-- **Free Gmail**: ~500 emails/day
-- **Google Workspace**: ~2,000 emails/day
-- Consider using SendGrid or AWS SES for production
-
----
-
-## Advanced: Using SendGrid (Production)
-
-For production with high volume, consider SendGrid:
-
-```bash
-pip install sendgrid
-```
-
-Update email service to use SendGrid API instead of SMTP.
-
-```env
-SENDGRID_API_KEY=your_api_key
-EMAIL_FROM=verified_sender@your-domain.com
-```
+1. **Never commit `.env` files to git** ✅ (already in `.gitignore`)
+2. Store `RESEND_API_KEY` as a secret in your hosting provider, not in code
+3. Rotate the API key if it's ever exposed
+4. Verify a sending domain in Resend for production instead of relying on
+   the shared `onboarding@resend.dev` sandbox sender
 
 ---
 
 ## Verification Checklist
 
-- [ ] SMTP credentials configured in `backend/.env`
-- [ ] Backend server restarted after .env changes
+- [ ] `RESEND_API_KEY` set in the environment of the **running** backend (not just locally)
+- [ ] `EMAIL_FROM` set to a sandbox or verified-domain sender
+- [ ] Backend restarted/redeployed after setting the variable
 - [ ] Test email sent successfully via Settings page
 - [ ] Test email received in inbox
 - [ ] Alert emails working (run checks manually)
 - [ ] No errors in backend logs
-
----
-
-## Next Steps
-
-1. ✅ Configure SMTP in .env
-2. ✅ Run test script: `python test_email_real.py`
-3. ✅ Send test email from Settings page
-4. ✅ Verify email received
-5. ✅ Test automated alerts
-
----
-
-**Need Help?** Check the troubleshooting section or review backend logs for error messages.

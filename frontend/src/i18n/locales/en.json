@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "Dashboard",
-    "inventory": "Current Stock",
+    "inventory": "Hand On Stock",
     "items": "Items",
     "batches": "Batches",
     "receiving": "Receiving",
@@ -53,11 +53,14 @@
     "distributionFooterCaption": "Movement activity behind this inventory snapshot (last 7 days)"
   },
   "inventory": {
-    "title": "Current Stock",
+    "title": "Hand On Stock",
     "search": "Search inventory...",
     "totalCost": "Total Cost",
     "grandTotal": "Grand Total",
-    "receiptDates": "Intake dates:"
+    "receiptDates": "Intake dates:",
+    "summaryProducts": "Products",
+    "summaryQuantity": "Quantity",
+    "summaryValue": "Value"
   },
   "items": {
     "title": "Items",

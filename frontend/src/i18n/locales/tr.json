@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "Kontrol Paneli",
-    "inventory": "Mevcut Stok",
+    "inventory": "Eldeki Stok",
     "items": "Ürünler",
     "batches": "Partiler",
     "receiving": "Mal Kabul",
@@ -53,11 +53,14 @@
     "distributionFooterCaption": "Bu stok görünümünün arkasındaki hareket etkinliği (son 7 gün)"
   },
   "inventory": {
-    "title": "Mevcut Stok",
+    "title": "Eldeki Stok",
     "search": "Stokta ara...",
     "totalCost": "Toplam Maliyet",
     "grandTotal": "Genel Toplam",
-    "receiptDates": "Giriş tarihleri:"
+    "receiptDates": "Giriş tarihleri:",
+    "summaryProducts": "Ürünler",
+    "summaryQuantity": "Miktar",
+    "summaryValue": "Değer"
   },
   "items": {
     "title": "Ürünler",

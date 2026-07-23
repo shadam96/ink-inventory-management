@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "Πίνακας Ελέγχου",
-    "inventory": "Τρέχον Απόθεμα",
+    "inventory": "Διαθέσιμο Απόθεμα",
     "items": "Είδη",
     "batches": "Παρτίδες",
     "receiving": "Παραλαβή",
@@ -53,11 +53,14 @@
     "distributionFooterCaption": "Δραστηριότητα κίνησης πίσω από αυτή την εικόνα αποθέματος (τελευταίες 7 ημέρες)"
   },
   "inventory": {
-    "title": "Τρέχον Απόθεμα",
+    "title": "Διαθέσιμο Απόθεμα",
     "search": "Αναζήτηση αποθέματος...",
     "totalCost": "Συνολικό Κόστος",
     "grandTotal": "Γενικό Σύνολο",
-    "receiptDates": "Ημερομηνίες εισαγωγής:"
+    "receiptDates": "Ημερομηνίες εισαγωγής:",
+    "summaryProducts": "Προϊόντα",
+    "summaryQuantity": "Ποσότητα",
+    "summaryValue": "Αξία"
   },
   "items": {
     "title": "Είδη",

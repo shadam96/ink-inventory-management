@@ -5,7 +5,7 @@
   },
   "nav": {
     "dashboard": "לוח בקרה",
-    "inventory": "מלאי קיים",
+    "inventory": "מלאי בפועל",
     "items": "פריטים",
     "batches": "אצוות",
     "receiving": "קבלת סחורה",
@@ -53,11 +53,14 @@
     "distributionFooterCaption": "פעילות תנועה מאחורי תמונת המלאי הזו (7 הימים האחרונים)"
   },
   "inventory": {
-    "title": "מלאי קיים",
+    "title": "מלאי בפועל",
     "search": "חיפוש במלאי...",
     "totalCost": "סך עלות",
     "grandTotal": "עלות כוללת",
-    "receiptDates": "תאריכי קליטה:"
+    "receiptDates": "תאריכי קליטה:",
+    "summaryProducts": "מוצרים",
+    "summaryQuantity": "כמות",
+    "summaryValue": "שווי"
   },
   "items": {
     "title": "פריטים",

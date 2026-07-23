@@ -521,6 +521,8 @@ export interface InventoryRow {
 
 export interface InventoryTotalCost {
   totals: Record<string, number>
+  product_count: number
+  total_quantity: number
 }
 
 export interface CreateCustomerData {
