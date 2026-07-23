@@ -1,65 +1,84 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAuthStore } from '@/store/auth'
-import axios from 'axios'
+import { authApi } from '@/lib/api'
 
-vi.mock('axios')
+// The store calls the configured authApi wrapper (lib/api.ts), not raw
+// axios - mock that directly instead of the axios module.
+vi.mock('@/lib/api', () => ({
+  authApi: {
+    login: vi.fn(),
+    me: vi.fn(),
+  },
+}))
 
 describe('Auth Store', () => {
   beforeEach(() => {
-    // Reset store state before each test
     useAuthStore.setState({
       user: null,
-      token: null,
       isAuthenticated: false,
+      isLoading: false,
+      error: null,
     })
     localStorage.clear()
     vi.clearAllMocks()
   })
 
   describe('login', () => {
-    it('should set user and token on successful login', async () => {
-      const mockResponse = {
-        data: {
-          access_token: 'test-token',
-          token_type: 'bearer',
-        },
+    it('should set the user and mark authenticated on successful login', async () => {
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        access_token: 'test-token',
+        refresh_token: 'test-refresh-token',
+        token_type: 'bearer',
+      })
+      const mockUser = {
+        id: '1',
+        username: 'testuser',
+        email: 'test@example.com',
+        full_name: 'Test User',
+        role: 'admin' as const,
+        is_active: true,
       }
-      vi.mocked(axios.post).mockResolvedValueOnce(mockResponse)
+      vi.mocked(authApi.me).mockResolvedValueOnce(mockUser)
 
-      const store = useAuthStore.getState()
-      await store.login('testuser', 'password123')
+      await useAuthStore.getState().login('testuser', 'password123')
 
       expect(localStorage.getItem('access_token')).toBe('test-token')
-      expect(store.token).toBe('test-token')
+      expect(localStorage.getItem('refresh_token')).toBe('test-refresh-token')
+      const state = useAuthStore.getState()
+      expect(state.isAuthenticated).toBe(true)
+      expect(state.user).toEqual(mockUser)
     })
 
-    it('should throw error on failed login', async () => {
-      vi.mocked(axios.post).mockRejectedValueOnce(new Error('Invalid credentials'))
+    it('should throw and record an error on failed login', async () => {
+      vi.mocked(authApi.login).mockRejectedValueOnce({
+        response: { data: { detail: 'Invalid credentials' } },
+      })
 
-      const store = useAuthStore.getState()
-      await expect(store.login('wrong', 'wrong')).rejects.toThrow()
+      await expect(
+        useAuthStore.getState().login('wrong', 'wrong')
+      ).rejects.toBeTruthy()
+
+      expect(useAuthStore.getState().error).toBe('Invalid credentials')
+      expect(useAuthStore.getState().isLoading).toBe(false)
     })
   })
 
   describe('logout', () => {
-    it('should clear user, token, and localStorage', () => {
-      // Setup initial state
+    it('should clear user, auth state, and localStorage', () => {
       useAuthStore.setState({
-        user: { id: '1', username: 'test', email: 'test@test.com', role: 'admin' },
-        token: 'test-token',
+        user: { id: '1', username: 'test', email: 'test@test.com', full_name: 'Test', role: 'admin', is_active: true },
         isAuthenticated: true,
       })
       localStorage.setItem('access_token', 'test-token')
+      localStorage.setItem('refresh_token', 'test-refresh-token')
 
-      // Logout
-      const store = useAuthStore.getState()
-      store.logout()
+      useAuthStore.getState().logout()
 
-      // Verify state is cleared
-      expect(store.user).toBeNull()
-      expect(store.token).toBeNull()
-      expect(store.isAuthenticated).toBe(false)
+      const state = useAuthStore.getState()
+      expect(state.user).toBeNull()
+      expect(state.isAuthenticated).toBe(false)
       expect(localStorage.getItem('access_token')).toBeNull()
+      expect(localStorage.getItem('refresh_token')).toBeNull()
     })
 
     it('should clear the unsubmitted receiving-queue draft (shared-device leak fix)', () => {
@@ -84,31 +103,26 @@ describe('Auth Store', () => {
         username: 'testuser',
         email: 'test@example.com',
         full_name: 'Test User',
-        role: 'manager',
+        role: 'manager' as const,
         is_active: true,
       }
+      vi.mocked(authApi.me).mockResolvedValueOnce(mockUser)
 
-      vi.mocked(axios.get).mockResolvedValueOnce({ data: mockUser })
-      localStorage.setItem('access_token', 'test-token')
+      await useAuthStore.getState().fetchUser()
 
-      const store = useAuthStore.getState()
-      await store.fetchUser()
-
-      expect(store.user).toEqual(mockUser)
-      expect(store.isAuthenticated).toBe(true)
+      const state = useAuthStore.getState()
+      expect(state.user).toEqual(mockUser)
+      expect(state.isAuthenticated).toBe(true)
     })
 
-    it('should logout if token is invalid', async () => {
-      vi.mocked(axios.get).mockRejectedValueOnce({ response: { status: 401 } })
-      localStorage.setItem('access_token', 'invalid-token')
+    it('should clear the user if the token is invalid', async () => {
+      vi.mocked(authApi.me).mockRejectedValueOnce({ response: { status: 401 } })
 
-      const store = useAuthStore.getState()
-      await store.fetchUser()
+      await useAuthStore.getState().fetchUser()
 
-      expect(store.user).toBeNull()
-      expect(store.isAuthenticated).toBe(false)
-      expect(localStorage.getItem('access_token')).toBeNull()
+      const state = useAuthStore.getState()
+      expect(state.user).toBeNull()
+      expect(state.isAuthenticated).toBe(false)
     })
   })
 })
-

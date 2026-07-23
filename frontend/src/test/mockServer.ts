@@ -71,32 +71,27 @@ export const mockAlert = {
 }
 
 // API handlers
+//
+// API_BASE_URL already includes /api/v1 (it's the axios baseURL from
+// lib/api.ts), and every real apiXxx.method() call passes only the path
+// *below* that base (e.g. api.get('/items')) - so handler paths here must
+// not repeat /api/v1 themselves, and must match those relative paths
+// exactly (lib/api.ts is the source of truth for what each call hits).
 export const handlers = [
   // Auth endpoints
-  http.post(`${API_BASE_URL}/api/v1/auth/login`, () => {
+  http.post(`${API_BASE_URL}/auth/login`, () => {
     return HttpResponse.json({
       access_token: 'mock-token',
       token_type: 'bearer',
     })
   }),
 
-  http.post(`${API_BASE_URL}/api/v1/auth/register`, async ({ request }) => {
-    const body = await request.json() as any
-    return HttpResponse.json({
-      ...mockUser,
-      username: body.username,
-      email: body.email,
-      full_name: body.full_name,
-      role: body.role,
-    })
-  }),
-
-  http.get(`${API_BASE_URL}/api/v1/auth/me`, () => {
+  http.get(`${API_BASE_URL}/auth/me`, () => {
     return HttpResponse.json(mockUser)
   }),
 
   // Items endpoints
-  http.get(`${API_BASE_URL}/api/v1/inventory/items`, () => {
+  http.get(`${API_BASE_URL}/items`, () => {
     return HttpResponse.json({
       items: [mockItem],
       total: 1,
@@ -105,7 +100,7 @@ export const handlers = [
     })
   }),
 
-  http.post(`${API_BASE_URL}/api/v1/inventory/items`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/items`, async ({ request }) => {
     const body = await request.json() as any
     return HttpResponse.json({
       ...mockItem,
@@ -114,7 +109,7 @@ export const handlers = [
     })
   }),
 
-  http.put(`${API_BASE_URL}/api/v1/inventory/items/:id`, async ({ params, request }) => {
+  http.put(`${API_BASE_URL}/items/:id`, async ({ params, request }) => {
     const body = await request.json() as any
     return HttpResponse.json({
       ...mockItem,
@@ -123,19 +118,19 @@ export const handlers = [
     })
   }),
 
-  http.delete(`${API_BASE_URL}/api/v1/inventory/items/:id`, () => {
+  http.delete(`${API_BASE_URL}/items/:id`, () => {
     return HttpResponse.json({ message: 'Item deleted' })
   }),
 
   // Customers endpoints
-  http.get(`${API_BASE_URL}/api/v1/customers`, () => {
+  http.get(`${API_BASE_URL}/customers`, () => {
     return HttpResponse.json({
       items: [mockCustomer],
       total: 1,
     })
   }),
 
-  http.post(`${API_BASE_URL}/api/v1/customers`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/customers`, async ({ request }) => {
     const body = await request.json() as any
     return HttpResponse.json({
       ...mockCustomer,
@@ -145,7 +140,7 @@ export const handlers = [
   }),
 
   // Batches endpoints
-  http.get(`${API_BASE_URL}/api/v1/batches`, () => {
+  http.get(`${API_BASE_URL}/batches`, () => {
     return HttpResponse.json({
       items: [mockBatch],
       total: 1,
@@ -153,7 +148,7 @@ export const handlers = [
   }),
 
   // Alerts endpoints
-  http.get(`${API_BASE_URL}/api/v1/alerts`, () => {
+  http.get(`${API_BASE_URL}/alerts`, () => {
     return HttpResponse.json({
       items: [mockAlert],
       total: 1,
@@ -161,32 +156,34 @@ export const handlers = [
     })
   }),
 
-  http.patch(`${API_BASE_URL}/api/v1/alerts/:id/read`, () => {
+  http.put(`${API_BASE_URL}/alerts/:id/read`, () => {
     return HttpResponse.json({
       ...mockAlert,
       is_read: true,
     })
   }),
 
-  http.post(`${API_BASE_URL}/api/v1/alerts/mark-all-read`, () => {
+  http.put(`${API_BASE_URL}/alerts/read-all`, () => {
     return HttpResponse.json({ message: 'All alerts marked as read' })
   }),
 
   // Dashboard endpoints
-  http.get(`${API_BASE_URL}/api/v1/dashboard/summary`, () => {
+  http.get(`${API_BASE_URL}/dashboard/kpis`, () => {
     return HttpResponse.json({
-      total_inventory_value: 10000,
+      inventory_value_by_currency: { ILS: 10000 },
+      at_risk_value_by_currency: { ILS: 1550 },
       at_risk_percentage: 15.5,
-      low_stock_items_count: 3,
-      unread_alerts_count: 5,
-      total_items: 50,
-      total_batches: 100,
-      active_batches: 80,
+      low_stock_items: 3,
+      critical_low_stock: 1,
+      items_in_stock: 50,
+      unread_alerts: 5,
+      recent_receipts: 10,
+      recent_dispatches: 4,
     })
   }),
 
   // Receiving endpoints
-  http.post(`${API_BASE_URL}/api/v1/receiving/validate-barcode`, async ({ request }) => {
+  http.post(`${API_BASE_URL}/receiving/validate-barcode`, async ({ request }) => {
     const body = await request.json() as any
     return HttpResponse.json({
       valid: true,
@@ -194,12 +191,12 @@ export const handlers = [
     })
   }),
 
-  http.post(`${API_BASE_URL}/api/v1/receiving/receive`, () => {
+  http.post(`${API_BASE_URL}/receiving/receive`, () => {
     return HttpResponse.json(mockBatch)
   }),
 
   // Picking endpoints
-  http.get(`${API_BASE_URL}/api/v1/picking/suggest-batches/:item_id`, () => {
+  http.get(`${API_BASE_URL}/picking/suggest-batches/:item_id`, () => {
     return HttpResponse.json({
       suggested_batches: [
         {

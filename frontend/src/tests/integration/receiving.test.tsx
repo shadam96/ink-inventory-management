@@ -7,6 +7,12 @@ import * as api from '@/lib/api'
 import * as offline from '@/lib/offline'
 
 vi.mock('@/lib/api', () => ({
+  // NotificationBell (rendered inside <Header>, which ReceivingPage
+  // renders) imports the default axios instance directly for its own
+  // alert fetch - stub it too so that unrelated fetch doesn't error.
+  default: {
+    get: vi.fn().mockResolvedValue({ data: { items: [] } }),
+  },
   itemsApi: {
     list: vi.fn(),
   },
@@ -87,7 +93,7 @@ describe('Receiving Operations', () => {
 
   it('should validate barcode', async () => {
     const user = userEvent.setup()
-    
+
     vi.mocked(api.receivingApi.validateBarcode).mockResolvedValue({
       valid: true,
       item: mockItems[0],
@@ -99,21 +105,21 @@ describe('Receiving Operations', () => {
       </BrowserRouter>
     )
 
-    const barcodeInput = screen.getByPlaceholderText(/סרוק או הזן ברקוד/i)
+    // The i18n mock echoes translation keys verbatim, and the barcode
+    // submit button is icon-only (no accessible name) - select the input
+    // by its (mocked) placeholder key and submit its form directly.
+    const barcodeInput = screen.getByPlaceholderText('receiving.enterBarcode')
     await user.type(barcodeInput, '1234567890')
-
-    const checkButton = screen.getByRole('button', { name: /בדוק ברקוד/i })
-    await user.click(checkButton)
+    fireEvent.submit(barcodeInput.closest('form')!)
 
     await waitFor(() => {
       expect(api.receivingApi.validateBarcode).toHaveBeenCalledWith('1234567890')
     })
   })
 
-  it('should show alert for invalid barcode', async () => {
+  it('should not fill the form when the barcode is not found', async () => {
     const user = userEvent.setup()
-    
-    vi.stubGlobal('alert', vi.fn())
+
     vi.mocked(api.receivingApi.validateBarcode).mockResolvedValue({
       valid: false,
       item: null,
@@ -125,15 +131,16 @@ describe('Receiving Operations', () => {
       </BrowserRouter>
     )
 
-    const barcodeInput = screen.getByPlaceholderText(/סרוק או הזן ברקוד/i)
+    const barcodeInput = screen.getByPlaceholderText('receiving.enterBarcode')
     await user.type(barcodeInput, 'INVALID')
-
-    const checkButton = screen.getByRole('button', { name: /בדוק ברקוד/i })
-    await user.click(checkButton)
+    fireEvent.submit(barcodeInput.closest('form')!)
 
     await waitFor(() => {
-      expect(alert).toHaveBeenCalledWith('ברקוד לא נמצא')
+      expect(api.receivingApi.validateBarcode).toHaveBeenCalledWith('INVALID')
     })
+    // A not-found lookup never calls setValue('item_id', ...), so the
+    // select stays at its unset default instead of being filled in.
+    expect((document.getElementById('item_id') as HTMLSelectElement).value).toBe('')
   })
 
   it('should allow adding items to receive list', async () => {

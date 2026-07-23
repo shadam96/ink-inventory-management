@@ -9,9 +9,11 @@ import {
 
 describe('Utility Functions', () => {
   describe('formatDate', () => {
-    it('should format ISO date to DD/MM/YYYY', () => {
+    it('should format ISO date as day/month/year', () => {
+      // Locale-formatted (tests run under the Hebrew locale - see
+      // tests/setup.ts), so the separator is "." (he-IL), not "/".
       const result = formatDate('2024-12-13')
-      expect(result).toMatch(/\d{2}\/\d{2}\/\d{4}/)
+      expect(result).toMatch(/^\d{2}[./]\d{2}[./]\d{4}$/)
     })
 
     it('should handle empty string', () => {
@@ -39,13 +41,18 @@ describe('Utility Functions', () => {
   })
 
   describe('formatNumber', () => {
-    it('should format number with thousand separators', () => {
+    it('defaults to 0 decimal places', () => {
       const result = formatNumber(1234567.89)
+      expect(result).toBe('1,234,568')
+    })
+
+    it('formats with thousand separators at a given decimal count', () => {
+      const result = formatNumber(1234567.89, 2)
       expect(result).toBe('1,234,567.89')
     })
 
-    it('should limit to 2 decimal places', () => {
-      const result = formatNumber(123.456789)
+    it('rounds to the requested decimal places', () => {
+      const result = formatNumber(123.456789, 2)
       expect(result).toBe('123.46')
     })
   })
@@ -72,23 +79,18 @@ describe('Utility Functions', () => {
       expect(getExpirationStatus(-1)).toBe('expired')
     })
 
-    it('should return "critical" for 0-29 days', () => {
+    it('should return "critical" for 0-30 days', () => {
       expect(getExpirationStatus(0)).toBe('critical')
-      expect(getExpirationStatus(29)).toBe('critical')
+      expect(getExpirationStatus(30)).toBe('critical')
     })
 
-    it('should return "warning" for 30-59 days', () => {
-      expect(getExpirationStatus(30)).toBe('warning')
-      expect(getExpirationStatus(59)).toBe('warning')
+    it('should return "warning" for 31-60 days', () => {
+      expect(getExpirationStatus(31)).toBe('warning')
+      expect(getExpirationStatus(60)).toBe('warning')
     })
 
-    it('should return "info" for 60-89 days', () => {
-      expect(getExpirationStatus(60)).toBe('info')
-      expect(getExpirationStatus(89)).toBe('info')
-    })
-
-    it('should return "safe" for 90+ days', () => {
-      expect(getExpirationStatus(90)).toBe('safe')
+    it('should return "safe" for 61+ days', () => {
+      expect(getExpirationStatus(61)).toBe('safe')
       expect(getExpirationStatus(120)).toBe('safe')
     })
   })

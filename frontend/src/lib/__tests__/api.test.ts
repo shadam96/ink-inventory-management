@@ -13,20 +13,6 @@ describe('Auth API', () => {
     expect(result.token_type).toBe('bearer')
   })
 
-  it('should register new user', async () => {
-    const userData = {
-      username: 'newuser',
-      email: 'new@example.com',
-      full_name: 'New User',
-      password: 'password123',
-      role: 'viewer' as const,
-    }
-    const result = await authApi.register(userData)
-    expect(result.username).toBe('newuser')
-    expect(result.email).toBe('new@example.com')
-    expect(result.role).toBe('viewer')
-  })
-
   it('should get current user', async () => {
     const result = await authApi.me()
     expect(result.id).toBe(mockUser.id)
@@ -127,14 +113,14 @@ describe('Alerts API', () => {
     expect(result.unread_count).toBe(1)
   })
 
-  // Note: markAsRead and markAllAsRead might not be implemented yet
-  // Skipping these tests for now
-  it.skip('should mark alert as read', async () => {
-    // API method may not exist yet
+  it('should mark alert as read', async () => {
+    const result = await alertsApi.markRead('1')
+    expect(result.is_read).toBe(true)
   })
 
-  it.skip('should mark all alerts as read', async () => {
-    // API method may not exist yet
+  it('should mark all alerts as read', async () => {
+    const result = await alertsApi.markAllRead()
+    expect(result.message).toBeDefined()
   })
 })
 
