@@ -158,7 +158,7 @@ export function InventoryPage() {
                   {fxRates
                     ? formatCurrency(
                         convertToDisplayCurrency(
-                          summary.totals as Partial<Record<'ILS' | 'USD' | 'EUR', number>>,
+                          summary.totals as Partial<Record<'ILS' | 'USD' | 'EUR' | 'TRY', number>>,
                           displayCurrency,
                           fxRates,
                         ),
@@ -166,7 +166,7 @@ export function InventoryPage() {
                       )
                     : Object.entries(summary.totals)
                         .map(([currency, value]) =>
-                          formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR'),
+                          formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR' | 'TRY'),
                         )
                         .join(' + ') || formatCurrency(0, displayCurrency)}
                 </p>
@@ -261,20 +261,20 @@ export function InventoryPage() {
                             ? formatCurrency(
                                 convertAmount(
                                   row.cost_price,
-                                  row.currency as 'ILS' | 'USD' | 'EUR',
+                                  row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY',
                                   displayCurrency,
                                   fxRates,
                                 ),
                                 displayCurrency,
                               )
-                            : formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR')}
+                            : formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY')}
                         </TableCell>
                         <TableCell className="text-left font-mono font-medium">
                           {fxRates
                             ? formatCurrency(
                                 convertAmount(
                                   row.quantity_available * row.cost_price,
-                                  row.currency as 'ILS' | 'USD' | 'EUR',
+                                  row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY',
                                   displayCurrency,
                                   fxRates,
                                 ),
@@ -282,7 +282,7 @@ export function InventoryPage() {
                               )
                             : formatCurrency(
                                 row.quantity_available * row.cost_price,
-                                row.currency as 'ILS' | 'USD' | 'EUR',
+                                row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY',
                               )}
                         </TableCell>
                         <TableCell>

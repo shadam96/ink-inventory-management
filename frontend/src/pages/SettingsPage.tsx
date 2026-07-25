@@ -232,6 +232,12 @@ export function SettingsPage() {
                     {t('settings.currencyEUR')}
                   </Label>
                 </div>
+                <div className="flex items-center gap-3">
+                  <RadioGroupItem value="TRY" id="TRY" />
+                  <Label htmlFor="TRY" className="cursor-pointer">
+                    {t('settings.currencyTRY')}
+                  </Label>
+                </div>
               </div>
             </RadioGroup>
           </div>

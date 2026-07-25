@@ -238,19 +238,24 @@ class DashboardService:
             "movements_count": len(movements),
         }
     
-    async def _get_fx_rates(self) -> tuple[Decimal, Decimal]:
-        """Returns (usd_to_ils, eur_to_ils) from the SystemSettings
+    async def _get_fx_rates(self) -> tuple[Decimal, Decimal, Decimal]:
+        """Returns (usd_to_ils, eur_to_ils, try_to_ils) from the SystemSettings
         singleton, falling back to its column defaults if the row is
         somehow missing (defensive for fresh test databases)."""
         result = await self.db.execute(select(SystemSettings).where(SystemSettings.id == 1))
         row = result.scalar_one_or_none()
         if row is None:
-            return Decimal("3.7"), Decimal("4.0")
-        return row.usd_to_ils, row.eur_to_ils
+            return Decimal("3.7"), Decimal("4.0"), Decimal("0.11")
+        return row.usd_to_ils, row.eur_to_ils, row.try_to_ils
 
     @staticmethod
-    def _sum_in_ils(amounts_by_currency: Dict[str, float], usd_to_ils: Decimal, eur_to_ils: Decimal) -> Decimal:
-        rates = {"ILS": Decimal("1"), "USD": usd_to_ils, "EUR": eur_to_ils}
+    def _sum_in_ils(
+        amounts_by_currency: Dict[str, float],
+        usd_to_ils: Decimal,
+        eur_to_ils: Decimal,
+        try_to_ils: Decimal,
+    ) -> Decimal:
+        rates = {"ILS": Decimal("1"), "USD": usd_to_ils, "EUR": eur_to_ils, "TRY": try_to_ils}
         return sum(
             (Decimal(str(amount)) * rates.get(ccy, Decimal("1")) for ccy, amount in amounts_by_currency.items()),
             Decimal("0"),
@@ -314,9 +319,9 @@ class DashboardService:
         # both sides to one currency first - previously this summed
         # risk_map's per-level "percentage" fields, which were themselves
         # computed from values mixed across currencies without conversion.
-        usd_to_ils, eur_to_ils = await self._get_fx_rates()
-        inventory_total_ils = self._sum_in_ils(inventory_totals, usd_to_ils, eur_to_ils)
-        at_risk_total_ils = self._sum_in_ils(at_risk_totals, usd_to_ils, eur_to_ils)
+        usd_to_ils, eur_to_ils, try_to_ils = await self._get_fx_rates()
+        inventory_total_ils = self._sum_in_ils(inventory_totals, usd_to_ils, eur_to_ils, try_to_ils)
+        at_risk_total_ils = self._sum_in_ils(at_risk_totals, usd_to_ils, eur_to_ils, try_to_ils)
         at_risk_percentage = (
             round(float(at_risk_total_ils / inventory_total_ils) * 100, 1)
             if inventory_total_ils > 0

@@ -70,6 +70,7 @@ describe('Receiving Operations', () => {
     vi.mocked(api.systemSettingsApi.get).mockResolvedValue({
       usd_to_ils: 3.7,
       eur_to_ils: 4.0,
+      try_to_ils: 0.11,
       min_shelf_life_days: 180,
       updated_at: new Date().toISOString(),
     })

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-type Currency = 'ILS' | 'USD' | 'EUR'
+type Currency = 'ILS' | 'USD' | 'EUR' | 'TRY'
 type AppIcon = 'droplets' | 'package' | 'boxes' | 'warehouse'
 
 /**

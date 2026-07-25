@@ -356,6 +356,7 @@
     "currencyILS": "שקל ישראלי (₪)",
     "currencyUSD": "דולר אמריקאי ($)",
     "currencyEUR": "יורו (€)",
+    "currencyTRY": "לירה טורקית (₺)",
     "language": "שפה",
     "languageDescription": "שפת הממשק. השינויים מיושמים מיידית.",
     "iconDroplets": "טיפות",
@@ -379,7 +380,8 @@
   "currency": {
     "ils": "₪ שקל",
     "usd": "$ דולר",
-    "eur": "€ אירו"
+    "eur": "€ אירו",
+    "try": "₺ לירה"
   },
   "common": {
     "save": "שמור",

@@ -356,7 +356,7 @@ export interface Item {
   unit_of_measure: string
   color: ItemColor
   cost_price: number
-  currency: 'ILS' | 'USD' | 'EUR'
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
   reorder_point: number
   min_stock: number
   max_stock: number
@@ -374,7 +374,7 @@ export interface CreateItemData {
   unit_of_measure: string
   color?: ItemColor
   cost_price: number
-  currency: 'ILS' | 'USD' | 'EUR'
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
   reorder_point?: number
   min_stock?: number
   max_stock?: number
@@ -439,7 +439,7 @@ export interface DispatchDocumentResponse {
 }
 
 /** Cost values keyed by the per-item currency they were entered in. */
-export type CurrencyTotals = Partial<Record<'ILS' | 'USD' | 'EUR', number>>
+export type CurrencyTotals = Partial<Record<'ILS' | 'USD' | 'EUR' | 'TRY', number>>
 
 export interface DashboardKPIs {
   inventory_value_by_currency: CurrencyTotals
@@ -458,6 +458,8 @@ export interface SystemSettings {
   usd_to_ils: number
   /** Price of 1 EUR in ILS. */
   eur_to_ils: number
+  /** Price of 1 Turkish Lira in ILS. */
+  try_to_ils: number
   /** Minimum days of shelf life required to receive a batch (hard block below this). */
   min_shelf_life_days: number
   /** ISO-8601 timestamp of the last Frankfurter refresh. */

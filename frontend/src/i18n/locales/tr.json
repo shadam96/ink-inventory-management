@@ -354,6 +354,7 @@
     "currencyILS": "İsrail Şekeli (₪)",
     "currencyUSD": "ABD Doları ($)",
     "currencyEUR": "Euro (€)",
+    "currencyTRY": "Türk Lirası (₺)",
     "language": "Dil",
     "languageDescription": "Arayüz dili. Değişiklikler hemen uygulanır.",
     "iconDroplets": "Damlalar",
@@ -377,7 +378,8 @@
   "currency": {
     "ils": "₪ Şekel",
     "usd": "$ Dolar",
-    "eur": "€ Euro"
+    "eur": "€ Euro",
+    "try": "₺ Lira"
   },
   "common": {
     "save": "Kaydet",

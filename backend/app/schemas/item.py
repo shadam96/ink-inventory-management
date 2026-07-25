@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 from app.models.item import ItemColor
 from app.schemas.common import BaseSchema, TimestampSchema
 
-Currency = Literal["ILS", "USD", "EUR"]
+Currency = Literal["ILS", "USD", "EUR", "TRY"]
 
 
 class ItemBase(BaseSchema):

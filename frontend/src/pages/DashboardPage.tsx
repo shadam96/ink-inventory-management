@@ -87,7 +87,7 @@ const ITEM_COLOR_HEX: Record<string, string> = {
   other: 'hsl(var(--primary))',
 }
 
-function DistributionTooltip({ active, payload, currency }: { active?: boolean; payload?: any[]; currency: 'ILS' | 'USD' | 'EUR' }) {
+function DistributionTooltip({ active, payload, currency }: { active?: boolean; payload?: any[]; currency: 'ILS' | 'USD' | 'EUR' | 'TRY' }) {
   if (!active || !payload || payload.length === 0) return null
   const data = payload[0].payload
   return (
@@ -292,7 +292,10 @@ export function DashboardPage() {
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="hsl(var(--border))" />
                     <XAxis type="number" tickFormatter={(value) => formatNumber(value)} stroke="hsl(var(--muted-foreground))" />
                     <YAxis type="category" dataKey="name" width={80} stroke="hsl(var(--muted-foreground))" />
-                    <Tooltip content={(props: any) => <DistributionTooltip {...props} currency={currency} />} />
+                    <Tooltip
+                      content={(props: any) => <DistributionTooltip {...props} currency={currency} />}
+                      cursor={{ fill: 'hsl(var(--muted))', radius: 4 }}
+                    />
                     <Bar dataKey="quantity" radius={[0, 4, 4, 0]}>
                       {distributionChartData.map((entry, index) => (
                         <Cell

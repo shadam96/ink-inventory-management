@@ -354,6 +354,7 @@
     "currencyILS": "Israeli Shekel (₪)",
     "currencyUSD": "US Dollar ($)",
     "currencyEUR": "Euro (€)",
+    "currencyTRY": "Turkish Lira (₺)",
     "language": "Language",
     "languageDescription": "Interface language. Changes apply immediately.",
     "iconDroplets": "Droplets",
@@ -377,7 +378,8 @@
   "currency": {
     "ils": "₪ Shekel",
     "usd": "$ Dollar",
-    "eur": "€ Euro"
+    "eur": "€ Euro",
+    "try": "₺ Lira"
   },
   "common": {
     "save": "Save",

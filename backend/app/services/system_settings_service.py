@@ -23,6 +23,7 @@ async def get_or_create_system_settings(db: AsyncSession) -> SystemSettings:
             id=1,
             usd_to_ils=Decimal("3.7"),
             eur_to_ils=Decimal("4.0"),
+            try_to_ils=Decimal("0.11"),
             min_shelf_life_days=180,
         )
         db.add(row)

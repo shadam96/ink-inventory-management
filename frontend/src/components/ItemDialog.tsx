@@ -43,7 +43,7 @@ const itemSchema = z.object({
   unit_of_measure: z.string().min(1, 'items.unitRequired'),
   color: z.enum(['cyan', 'magenta', 'yellow', 'black', 'white', 'other']),
   cost_price: z.number().min(0, 'items.costPriceInvalid'),
-  currency: z.enum(['ILS', 'USD', 'EUR']),
+  currency: z.enum(['ILS', 'USD', 'EUR', 'TRY']),
   reorder_point: z.number().int('items.reorderPointInvalid').min(0).optional(),
   min_stock: z.number().int('items.minStockInvalid').min(0).optional(),
   max_stock: z.number().int('items.maxStockInvalid').min(0).optional(),
@@ -291,6 +291,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                         <SelectItem value="ILS">{t('currency.ils')}</SelectItem>
                         <SelectItem value="USD">{t('currency.usd')}</SelectItem>
                         <SelectItem value="EUR">{t('currency.eur')}</SelectItem>
+                        <SelectItem value="TRY">{t('currency.try')}</SelectItem>
                       </SelectContent>
                     </Select>
                   )}

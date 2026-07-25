@@ -4,8 +4,8 @@ Holds preferences shared across all users — the FX rates used to convert
 per-item cost prices into a single display currency on the dashboard, and
 admin-configurable business thresholds such as the minimum shelf life
 required to receive goods. Rates are anchored to ILS: ``usd_to_ils`` is the
-price of 1 USD in ILS, and ``eur_to_ils`` is the price of 1 EUR in ILS. ILS
-is implicitly 1.0.
+price of 1 USD in ILS, ``eur_to_ils`` is the price of 1 EUR in ILS, and
+``try_to_ils`` is the price of 1 Turkish Lira in ILS. ILS is implicitly 1.0.
 """
 from datetime import datetime
 from decimal import Decimal
@@ -32,6 +32,11 @@ class SystemSettings(Base):
         Numeric(12, 4),
         nullable=False,
         server_default="4.0",
+    )
+    try_to_ils: Mapped[Decimal] = mapped_column(
+        Numeric(12, 4),
+        nullable=False,
+        server_default="0.11",
     )
 
     # Goods with less shelf life remaining than this cannot be received at

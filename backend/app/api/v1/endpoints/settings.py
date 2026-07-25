@@ -22,6 +22,7 @@ class SystemSettingsResponse(BaseModel):
     plus admin-configurable business thresholds."""
     usd_to_ils: float
     eur_to_ils: float
+    try_to_ils: float
     min_shelf_life_days: int
     updated_at: datetime
 
@@ -36,6 +37,7 @@ def _serialize(row: SystemSettings) -> SystemSettingsResponse:
     return SystemSettingsResponse(
         usd_to_ils=float(row.usd_to_ils),
         eur_to_ils=float(row.eur_to_ils),
+        try_to_ils=float(row.try_to_ils),
         min_shelf_life_days=row.min_shelf_life_days,
         updated_at=row.updated_at,
     )

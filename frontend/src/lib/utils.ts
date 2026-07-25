@@ -29,7 +29,7 @@ export function formatNumber(value: number, decimals = 0): string {
  */
 export function formatCurrency(
   value: number,
-  currency: 'ILS' | 'USD' | 'EUR' = 'ILS',
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY' = 'ILS',
 ): string {
   return new Intl.NumberFormat(currentIntlLocale(), {
     style: 'currency',
@@ -42,6 +42,8 @@ export interface FxRates {
   usd_to_ils: number
   /** Price of 1 EUR in ILS. */
   eur_to_ils: number
+  /** Price of 1 Turkish Lira in ILS. */
+  try_to_ils: number
 }
 
 /**
@@ -50,14 +52,15 @@ export interface FxRates {
  * the chosen display currency. Missing buckets are treated as zero.
  */
 export function convertToDisplayCurrency(
-  amounts: Partial<Record<'ILS' | 'USD' | 'EUR', number>>,
-  displayCurrency: 'ILS' | 'USD' | 'EUR',
+  amounts: Partial<Record<'ILS' | 'USD' | 'EUR' | 'TRY', number>>,
+  displayCurrency: 'ILS' | 'USD' | 'EUR' | 'TRY',
   rates: FxRates,
 ): number {
   const inIls =
     (amounts.ILS ?? 0) +
     (amounts.USD ?? 0) * rates.usd_to_ils +
-    (amounts.EUR ?? 0) * rates.eur_to_ils
+    (amounts.EUR ?? 0) * rates.eur_to_ils +
+    (amounts.TRY ?? 0) * rates.try_to_ils
 
   switch (displayCurrency) {
     case 'ILS':
@@ -66,14 +69,16 @@ export function convertToDisplayCurrency(
       return inIls / rates.usd_to_ils
     case 'EUR':
       return inIls / rates.eur_to_ils
+    case 'TRY':
+      return inIls / rates.try_to_ils
   }
 }
 
 /** Convert a single amount from one currency to another via ILS-anchored rates. */
 export function convertAmount(
   amount: number,
-  from: 'ILS' | 'USD' | 'EUR',
-  to: 'ILS' | 'USD' | 'EUR',
+  from: 'ILS' | 'USD' | 'EUR' | 'TRY',
+  to: 'ILS' | 'USD' | 'EUR' | 'TRY',
   rates: FxRates,
 ): number {
   if (from === to) return amount

@@ -43,7 +43,7 @@ async def run_expiration_checks():
             await db.rollback()
 
 
-def _invert_frankfurter_rates(payload: dict) -> tuple[Decimal, Decimal] | None:
+def _invert_frankfurter_rates(payload: dict) -> tuple[Decimal, Decimal, Decimal] | None:
     """Convert Frankfurter's ILS-base response into our 'foreign-to-ILS' schema.
 
     Frankfurter returns rates as 1 ILS = X foreign; we store 1 foreign = X ILS,
@@ -54,10 +54,12 @@ def _invert_frankfurter_rates(payload: dict) -> tuple[Decimal, Decimal] | None:
     rates = payload.get("rates") or {}
     usd_per_ils = rates.get("USD")
     eur_per_ils = rates.get("EUR")
+    try_per_ils = rates.get("TRY")
     if not (isinstance(usd_per_ils, (int, float)) and usd_per_ils > 0
-            and isinstance(eur_per_ils, (int, float)) and eur_per_ils > 0):
+            and isinstance(eur_per_ils, (int, float)) and eur_per_ils > 0
+            and isinstance(try_per_ils, (int, float)) and try_per_ils > 0):
         return None
-    return Decimal(str(1 / usd_per_ils)), Decimal(str(1 / eur_per_ils))
+    return Decimal(str(1 / usd_per_ils)), Decimal(str(1 / eur_per_ils)), Decimal(str(1 / try_per_ils))
 
 
 async def refresh_fx_rates():
@@ -73,7 +75,7 @@ async def refresh_fx_rates():
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 FRANKFURTER_LATEST_URL,
-                params={"base": "ILS", "symbols": "USD,EUR"},
+                params={"base": "ILS", "symbols": "USD,EUR,TRY"},
             )
             response.raise_for_status()
             data = response.json()
@@ -85,22 +87,24 @@ async def refresh_fx_rates():
     if inverted is None:
         logger.warning(f"FX rates refresh got unexpected payload, keeping existing values: {data}")
         return
-    usd_to_ils, eur_to_ils = inverted
+    usd_to_ils, eur_to_ils, try_to_ils = inverted
 
     async with async_session_maker() as db:
         try:
             result = await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
             row = result.scalar_one_or_none()
             if row is None:
-                row = SystemSettings(id=1, usd_to_ils=usd_to_ils, eur_to_ils=eur_to_ils)
+                row = SystemSettings(id=1, usd_to_ils=usd_to_ils, eur_to_ils=eur_to_ils, try_to_ils=try_to_ils)
                 db.add(row)
             else:
                 row.usd_to_ils = usd_to_ils
                 row.eur_to_ils = eur_to_ils
+                row.try_to_ils = try_to_ils
             await db.commit()
             logger.info(
                 f"FX rates refreshed: 1 USD = {usd_to_ils:.4f} ILS, "
-                f"1 EUR = {eur_to_ils:.4f} ILS (Frankfurter date: {data.get('date')})"
+                f"1 EUR = {eur_to_ils:.4f} ILS, 1 TRY = {try_to_ils:.4f} ILS "
+                f"(Frankfurter date: {data.get('date')})"
             )
         except Exception as e:
             logger.error(f"FX rates DB write failed: {e}")

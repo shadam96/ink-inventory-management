@@ -118,7 +118,7 @@ describe('daysUntilExpiration', () => {
 })
 
 describe('convertToDisplayCurrency', () => {
-  const rates = { usd_to_ils: 4, eur_to_ils: 5 }
+  const rates = { usd_to_ils: 4, eur_to_ils: 5, try_to_ils: 0.25 }
 
   it('returns ILS bucket unchanged when displaying in ILS', () => {
     expect(convertToDisplayCurrency({ ILS: 100 }, 'ILS', rates)).toBe(100)
@@ -150,10 +150,15 @@ describe('convertToDisplayCurrency', () => {
   it('round-trips a USD bucket back to USD via ILS', () => {
     expect(convertToDisplayCurrency({ USD: 42 }, 'USD', rates)).toBeCloseTo(42)
   })
+
+  it('converts TRY into ILS at the configured rate', () => {
+    // 100 TRY * 0.25 ILS/TRY = 25 ILS
+    expect(convertToDisplayCurrency({ TRY: 100 }, 'ILS', rates)).toBe(25)
+  })
 })
 
 describe('convertAmount', () => {
-  const rates = { usd_to_ils: 4, eur_to_ils: 5 }
+  const rates = { usd_to_ils: 4, eur_to_ils: 5, try_to_ils: 0.25 }
 
   it('returns the amount untouched when from === to', () => {
     expect(convertAmount(100, 'USD', 'USD', rates)).toBe(100)
@@ -171,6 +176,10 @@ describe('convertAmount', () => {
   it('round-trips a cross-currency conversion through ILS', () => {
     // 10 EUR → ILS (50) → USD (12.5)
     expect(convertAmount(10, 'EUR', 'USD', rates)).toBe(12.5)
+  })
+
+  it('converts TRY to ILS via the configured rate', () => {
+    expect(convertAmount(100, 'TRY', 'ILS', rates)).toBe(25)
   })
 })
 

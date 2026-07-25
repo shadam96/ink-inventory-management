@@ -354,6 +354,7 @@
     "currencyILS": "Ισραηλινό Σέκελ (₪)",
     "currencyUSD": "Δολάριο ΗΠΑ ($)",
     "currencyEUR": "Ευρώ (€)",
+    "currencyTRY": "Τουρκική Λίρα (₺)",
     "language": "Γλώσσα",
     "languageDescription": "Γλώσσα διεπαφής. Οι αλλαγές εφαρμόζονται άμεσα.",
     "iconDroplets": "Σταγόνες",
@@ -377,7 +378,8 @@
   "currency": {
     "ils": "₪ Σέκελ",
     "usd": "$ Δολάριο",
-    "eur": "€ Ευρώ"
+    "eur": "€ Ευρώ",
+    "try": "₺ Λίρα"
   },
   "common": {
     "save": "Αποθήκευση",
