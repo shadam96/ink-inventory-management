@@ -145,14 +145,14 @@ export function ItemsPage() {
     <div className="space-y-6">
       <Header title={t('items.title')} />
 
-      <div className="flex items-center justify-between relative z-10 -mt-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 relative z-10 -mt-2">
         <SearchInput
           value={search}
           onChange={handleSearch}
           placeholder={t('items.search')}
-          className="w-80"
+          className="w-full sm:w-80"
         />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={() => handleExport('excel')}>
             <FileSpreadsheet className="w-4 h-4 me-2" />
             Excel

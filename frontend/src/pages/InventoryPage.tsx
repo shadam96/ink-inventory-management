@@ -134,7 +134,7 @@ export function InventoryPage() {
           value={search}
           onChange={handleSearch}
           placeholder={t('inventory.search')}
-          className="w-80"
+          className="w-full sm:w-80"
         />
       </div>
 

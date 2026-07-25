@@ -142,6 +142,19 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
             // QR/barcode not detected in this frame — ignore
           }
         )
+
+        // scanner.start() resolves much slower on real mobile camera
+        // hardware than on a desktop webcam, so an unmount (closing the
+        // scanner, or the user backing out) frequently lands while this
+        // promise is still pending. The cleanup below already ran by then
+        // and saw isScanning === false, so it skipped stop() - without
+        // this check the camera stream leaks and keeps running in the
+        // background, blocking every future scanner.start() (including a
+        // fresh instance) from acquiring the camera until the page is
+        // fully reloaded.
+        if (!mountedRef.current) {
+          scanner.stop().catch(() => {})
+        }
       } catch (err) {
         console.error('Scanner start error:', err)
         if (mountedRef.current) {

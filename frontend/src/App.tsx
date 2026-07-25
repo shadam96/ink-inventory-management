@@ -22,14 +22,19 @@ import { initDB } from '@/lib/offline'
 initDB().catch(console.error)
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, fetchUser } = useAuthStore()
+  const { user, fetchUser } = useAuthStore()
   const token = localStorage.getItem('access_token')
 
+  // isAuthenticated is persisted across reloads, but `user` is not (see
+  // partialize in store/auth.ts) - so isAuthenticated alone can be stale
+  // true while `user` is still null in memory. Gate on `user` instead, or
+  // fetchUser() never fires and StaffRoute's "loading" null-render below
+  // becomes permanent.
   useEffect(() => {
-    if (token && !isAuthenticated) {
+    if (token && !user) {
       fetchUser()
     }
-  }, [token, isAuthenticated, fetchUser])
+  }, [token, user, fetchUser])
 
   if (!token) {
     return <Navigate to="/login" replace />
