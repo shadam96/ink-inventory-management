@@ -1,6 +1,6 @@
 """Tests for dashboard service functionality"""
 import pytest
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import uuid4
 
@@ -320,7 +320,67 @@ class TestDashboardService:
         assert activity["movements_count"] >= 3
         assert "receipts_quantity" in activity
         assert "dispatches_quantity" in activity
-    
+
+    async def test_get_movement_trend(self, db_session, sample_items_with_batches):
+        """Trend series must be zero-filled for every day in range and
+        bucket movements onto the correct day, not just summed overall."""
+        service = DashboardService(db_session)
+        batches = sample_items_with_batches["batches"]
+
+        from app.models.user import UserRole
+
+        user = User(
+            username="trend_test_user",
+            email="trend_test@test.com",
+            hashed_password="hashed",
+            full_name="Trend Test",
+            role=UserRole.WAREHOUSE_WORKER,
+        )
+        db_session.add(user)
+        await db_session.flush()
+
+        today = datetime.now(timezone.utc)
+        two_days_ago = today - timedelta(days=2)
+
+        db_session.add_all([
+            Movement(
+                batch_id=batches[0].id,
+                user_id=user.id,
+                movement_type=MovementType.RECEIPT,
+                quantity=Decimal("10.00"),
+                quantity_before=Decimal("0.00"),
+                quantity_after=Decimal("10.00"),
+                timestamp=today,
+            ),
+            Movement(
+                batch_id=batches[0].id,
+                user_id=user.id,
+                movement_type=MovementType.DISPATCH,
+                quantity=Decimal("4.00"),
+                quantity_before=Decimal("10.00"),
+                quantity_after=Decimal("6.00"),
+                timestamp=two_days_ago,
+            ),
+        ])
+        await db_session.flush()
+
+        trend = await service.get_movement_trend(days=3)
+
+        # start_date..today inclusive over a 3-day window is 4 days
+        assert trend["period_days"] == 3
+        assert len(trend["series"]) == 4
+
+        by_date = {point["date"]: point for point in trend["series"]}
+        assert by_date[today.date().isoformat()]["receipts"] == 10.0
+        assert by_date[today.date().isoformat()]["dispatches"] == 0.0
+        assert by_date[two_days_ago.date().isoformat()]["dispatches"] == 4.0
+
+        # A day with no movements must still be present, zero-filled.
+        no_movement_day = (two_days_ago + timedelta(days=1)).date().isoformat()
+        assert by_date[no_movement_day]["receipts"] == 0.0
+        assert by_date[no_movement_day]["dispatches"] == 0.0
+        assert by_date[no_movement_day]["scraps"] == 0.0
+
     async def test_get_kpi_summary(self, db_session, sample_items_with_batches):
         """Test getting complete KPI summary"""
         service = DashboardService(db_session)
@@ -436,7 +496,23 @@ class TestDashboardAPI:
         data = response.json()
         assert data["period_days"] == 14
         assert "movements_count" in data
-    
+
+    async def test_get_movement_trend_api(self, client, auth_token):
+        """Test getting movement trend via API"""
+        response = await client.get(
+            "/api/v1/dashboard/movement-trend?days=14",
+            headers={"Authorization": f"Bearer {auth_token}"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["period_days"] == 14
+        assert len(data["series"]) == 15
+        assert all(
+            {"date", "receipts", "dispatches", "scraps"} <= point.keys()
+            for point in data["series"]
+        )
+
     async def test_unauthorized_access(self, client):
         """Test that unauthorized access is blocked"""
         response = await client.get("/api/v1/dashboard/kpis")

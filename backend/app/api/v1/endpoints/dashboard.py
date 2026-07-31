@@ -72,3 +72,14 @@ async def get_recent_activity(
     """Get recent activity summary"""
     service = DashboardService(db)
     return await service.get_recent_activity(days)
+
+
+@router.get("/movement-trend")
+async def get_movement_trend(
+    db: DbSession,
+    current_user: CurrentUser,
+    days: int = Query(7, ge=1, le=90),
+) -> dict:
+    """Get daily receipts/dispatches/scraps series (for trend chart)"""
+    service = DashboardService(db)
+    return await service.get_movement_trend(days)

@@ -237,7 +237,52 @@ class DashboardService:
             "alerts_generated": alerts_count,
             "movements_count": len(movements),
         }
-    
+
+    async def get_movement_trend(self, days: int = 7) -> Dict[str, Any]:
+        """Get daily receipts/dispatches/scraps for the trailing period,
+        zero-filled so a trend chart has no gaps on days without movements.
+        Uses the same start_date window as get_recent_activity so both
+        endpoints agree on what "last N days" covers."""
+        today = date.today()
+        start_date = today - timedelta(days=days)
+
+        result = await self.db.execute(
+            select(
+                func.date(Movement.timestamp).label("day"),
+                Movement.movement_type,
+                func.sum(Movement.quantity).label("total"),
+            )
+            .where(func.date(Movement.timestamp) >= start_date)
+            .group_by(func.date(Movement.timestamp), Movement.movement_type)
+        )
+
+        # func.date() comes back as a str on SQLite (tests) but as a date
+        # object on Postgres (asyncpg, used in prod) - normalize both.
+        totals: Dict[date, Dict[MovementType, Decimal]] = {}
+        for day, movement_type, total in result.all():
+            if isinstance(day, str):
+                day = date.fromisoformat(day)
+            totals.setdefault(day, {})[movement_type] = total
+
+        num_days = (today - start_date).days + 1
+        series = []
+        for offset in range(num_days):
+            day = start_date + timedelta(days=offset)
+            day_totals = totals.get(day, {})
+            series.append({
+                "date": day.isoformat(),
+                "receipts": float(day_totals.get(MovementType.RECEIPT, 0)),
+                "dispatches": float(day_totals.get(MovementType.DISPATCH, 0)),
+                "scraps": float(day_totals.get(MovementType.SCRAP, 0)),
+            })
+
+        return {
+            "period_days": days,
+            "start_date": start_date.isoformat(),
+            "end_date": today.isoformat(),
+            "series": series,
+        }
+
     async def _get_fx_rates(self) -> tuple[Decimal, Decimal, Decimal]:
         """Returns (usd_to_ils, eur_to_ils, try_to_ils) from the SystemSettings
         singleton, falling back to its column defaults if the row is

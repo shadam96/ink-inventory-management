@@ -229,7 +229,7 @@ export const dashboardApi = {
   
   getInventoryValue: async () => {
     const response = await api.get('/dashboard/inventory-value')
-    return response.data
+    return response.data as InventoryValue
   },
   
   getInventoryDistribution: async () => {
@@ -244,12 +244,17 @@ export const dashboardApi = {
   
   getLowStock: async () => {
     const response = await api.get('/dashboard/low-stock')
-    return response.data
+    return response.data as LowStockResponse
   },
   
   getRecentActivity: async (days = 7) => {
     const response = await api.get('/dashboard/recent-activity', { params: { days } })
     return response.data
+  },
+
+  getMovementTrend: async (days = 7) => {
+    const response = await api.get('/dashboard/movement-trend', { params: { days } })
+    return response.data as MovementTrend
   },
 }
 
@@ -451,6 +456,43 @@ export interface DashboardKPIs {
   unread_alerts: number
   recent_receipts: number
   recent_dispatches: number
+}
+
+export interface MovementTrendPoint {
+  date: string
+  receipts: number
+  dispatches: number
+  scraps: number
+}
+
+export interface MovementTrend {
+  period_days: number
+  start_date: string
+  end_date: string
+  series: MovementTrendPoint[]
+}
+
+export interface InventoryValue {
+  totals_by_currency: CurrencyTotals
+  total_quantity: number
+  items_with_stock: number
+}
+
+export interface LowStockItem {
+  item_id: string
+  sku: string
+  name: string
+  current_quantity: number
+  reorder_point: number
+  min_stock: number
+  shortage: number
+  is_critical: boolean
+}
+
+export interface LowStockResponse {
+  items: LowStockItem[]
+  count: number
+  critical_count: number
 }
 
 export interface SystemSettings {
