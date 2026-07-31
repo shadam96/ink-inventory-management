@@ -11,7 +11,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
+import { QuantityInput } from '@/components/ui/quantity-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -149,6 +149,7 @@ export function CreateDeliveryNoteDialog({ open, onOpenChange, onCreated }: Crea
   }
 
   const selectedBatch = batchOptions.find(b => b.batch_id === batchId)
+  const selectedItem = items.find(i => i.id === itemId)
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -192,12 +193,12 @@ export function CreateDeliveryNoteDialog({ open, onOpenChange, onCreated }: Crea
 
               <div className="space-y-2">
                 <Label htmlFor="dn_quantity">{t('receiving.quantity')}</Label>
-                <Input
+                <QuantityInput
                   id="dn_quantity"
-                  type="number"
-                  step="0.001"
+                  step={1}
                   min={0.001}
                   max={selectedBatch?.quantity_available}
+                  unit={selectedItem?.unit_of_measure}
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                   disabled={!itemId}

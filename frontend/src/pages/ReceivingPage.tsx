@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { QuantityInput } from '@/components/ui/quantity-input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -472,13 +473,13 @@ export function ReceivingPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="quantity">{t('receiving.quantity')} *</Label>
-                <Input
+                <QuantityInput
                   id="quantity"
-                  type="number"
-                  step="0.001"
-                  min={0.001}
-                  inputMode="decimal"
                   {...register('quantity', { valueAsNumber: true })}
+                  step={1}
+                  min={0.001}
+                  unit={selectedItem?.unit_of_measure}
+                  inputMode="decimal"
                   className={fieldClass('quantity')}
                 />
                 {errors.quantity && (

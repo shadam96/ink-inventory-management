@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { QuantityInput } from '@/components/ui/quantity-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -68,6 +69,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     handleSubmit,
     reset,
     control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<ItemFormData>({
     resolver: zodResolver(itemSchema),
@@ -267,12 +269,11 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
             <div className="space-y-2">
               <Label htmlFor="cost_price">{t('items.costPrice')} *</Label>
               <div className="flex gap-2">
-                <Input
+                <QuantityInput
                   id="cost_price"
-                  type="number"
-                  step="0.01"
-                  min={0}
                   {...register('cost_price', { valueAsNumber: true })}
+                  step={0.01}
+                  min={0}
                   placeholder="0.00"
                   className="flex-1"
                 />
@@ -316,13 +317,13 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <Input
+              <QuantityInput
                 id="reorder_point"
-                type="number"
-                step="1"
-                min={0}
-                inputMode="numeric"
                 {...register('reorder_point', { valueAsNumber: true })}
+                step={1}
+                min={0}
+                unit={watch('unit_of_measure')}
+                inputMode="numeric"
                 placeholder="10"
               />
             </div>
@@ -331,26 +332,26 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="min_stock">{t('items.minStock')}</Label>
-              <Input
+              <QuantityInput
                 id="min_stock"
-                type="number"
-                step="1"
-                min={0}
-                inputMode="numeric"
                 {...register('min_stock', { valueAsNumber: true })}
+                step={1}
+                min={0}
+                unit={watch('unit_of_measure')}
+                inputMode="numeric"
                 placeholder="5"
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="max_stock">{t('items.maxStock')}</Label>
-              <Input
+              <QuantityInput
                 id="max_stock"
-                type="number"
-                step="1"
-                min={0}
-                inputMode="numeric"
                 {...register('max_stock', { valueAsNumber: true })}
+                step={1}
+                min={0}
+                unit={watch('unit_of_measure')}
+                inputMode="numeric"
                 placeholder="100"
               />
             </div>

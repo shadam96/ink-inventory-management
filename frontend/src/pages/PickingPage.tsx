@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { QuantityInput } from '@/components/ui/quantity-input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -346,14 +347,14 @@ function AdminPickingView() {
 
               <div className="space-y-2">
                 <Label htmlFor="quantity">{t('picking.quantity')} *</Label>
-                <Input
+                <QuantityInput
                   id="quantity"
-                  type="number"
-                  step="1"
+                  {...register('quantity', { valueAsNumber: true })}
+                  step={1}
                   min={1}
+                  unit={selectedItem?.unit_of_measure}
                   inputMode="numeric"
                   disabled={!itemInStock}
-                  {...register('quantity', { valueAsNumber: true })}
                   placeholder="0"
                 />
                 {errors.quantity && (
@@ -675,13 +676,13 @@ function CustomerPickingView() {
 
             <div className="space-y-2">
               <Label htmlFor="c_quantity">{t('picking.quantity')} *</Label>
-              <Input
+              <QuantityInput
                 id="c_quantity"
-                type="number"
-                step="1"
-                min={1}
-                inputMode="numeric"
                 {...register('quantity', { valueAsNumber: true })}
+                step={1}
+                min={1}
+                unit={selectedItem?.unit_of_measure}
+                inputMode="numeric"
                 placeholder="0"
               />
               {errors.quantity && (
