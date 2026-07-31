@@ -34,6 +34,11 @@ export function formatCurrency(
   return new Intl.NumberFormat(currentIntlLocale(), {
     style: 'currency',
     currency,
+    // 'symbol' (the default) falls back to the ISO code ("TRY") for
+    // currencies most locales lack a dedicated glyph for; narrowSymbol
+    // renders the actual ₺ character everywhere while leaving other
+    // currencies (₪, $, €) unchanged.
+    currencyDisplay: 'narrowSymbol',
   }).format(value)
 }
 

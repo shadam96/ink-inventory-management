@@ -294,9 +294,13 @@ export function DashboardPage() {
                     <YAxis type="category" dataKey="name" width={80} stroke="hsl(var(--muted-foreground))" />
                     <Tooltip
                       content={(props: any) => <DistributionTooltip {...props} currency={currency} />}
-                      cursor={{ fill: 'hsl(var(--muted))', radius: 4 }}
+                      cursor={false}
                     />
-                    <Bar dataKey="quantity" radius={[0, 4, 4, 0]}>
+                    <Bar
+                      dataKey="quantity"
+                      radius={[0, 4, 4, 0]}
+                      activeBar={{ stroke: 'hsl(var(--foreground))', strokeWidth: 2 }}
+                    >
                       {distributionChartData.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}

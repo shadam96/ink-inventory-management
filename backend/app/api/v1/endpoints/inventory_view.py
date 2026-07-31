@@ -1,4 +1,4 @@
-"""Inventory view endpoint — aggregated hand-on stock"""
+"""Inventory view endpoint — aggregated stock on hand"""
 from datetime import date
 from decimal import Decimal
 from typing import List, Literal, Optional
