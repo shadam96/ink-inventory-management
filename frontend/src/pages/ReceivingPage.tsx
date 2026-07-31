@@ -478,7 +478,7 @@ export function ReceivingPage() {
                   {...register('quantity', { valueAsNumber: true })}
                   step={1}
                   min={0.001}
-                  unit={selectedItem?.unit_of_measure}
+                  unit={t('common.liter')}
                   inputMode="decimal"
                   className={fieldClass('quantity')}
                 />

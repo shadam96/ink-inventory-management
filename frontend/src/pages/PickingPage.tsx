@@ -352,7 +352,7 @@ function AdminPickingView() {
                   {...register('quantity', { valueAsNumber: true })}
                   step={1}
                   min={1}
-                  unit={selectedItem?.unit_of_measure}
+                  unit={t('common.liter')}
                   inputMode="numeric"
                   disabled={!itemInStock}
                   placeholder="0"
@@ -681,7 +681,7 @@ function CustomerPickingView() {
                 {...register('quantity', { valueAsNumber: true })}
                 step={1}
                 min={1}
-                unit={selectedItem?.unit_of_measure}
+                unit={t('common.liter')}
                 inputMode="numeric"
                 placeholder="0"
               />

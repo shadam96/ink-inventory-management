@@ -149,7 +149,6 @@ export function CreateDeliveryNoteDialog({ open, onOpenChange, onCreated }: Crea
   }
 
   const selectedBatch = batchOptions.find(b => b.batch_id === batchId)
-  const selectedItem = items.find(i => i.id === itemId)
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -198,7 +197,7 @@ export function CreateDeliveryNoteDialog({ open, onOpenChange, onCreated }: Crea
                   step={1}
                   min={0.001}
                   max={selectedBatch?.quantity_available}
-                  unit={selectedItem?.unit_of_measure}
+                  unit={t('common.liter')}
                   value={quantity}
                   onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                   disabled={!itemId}

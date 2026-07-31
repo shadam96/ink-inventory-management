@@ -69,7 +69,6 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     handleSubmit,
     reset,
     control,
-    watch,
     formState: { errors, isSubmitting },
   } = useForm<ItemFormData>({
     resolver: zodResolver(itemSchema),
@@ -322,7 +321,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 {...register('reorder_point', { valueAsNumber: true })}
                 step={1}
                 min={0}
-                unit={watch('unit_of_measure')}
+                unit={t('common.liter')}
                 inputMode="numeric"
                 placeholder="10"
               />
@@ -337,7 +336,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 {...register('min_stock', { valueAsNumber: true })}
                 step={1}
                 min={0}
-                unit={watch('unit_of_measure')}
+                unit={t('common.liter')}
                 inputMode="numeric"
                 placeholder="5"
               />
@@ -350,7 +349,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                 {...register('max_stock', { valueAsNumber: true })}
                 step={1}
                 min={0}
-                unit={watch('unit_of_measure')}
+                unit={t('common.liter')}
                 inputMode="numeric"
                 placeholder="100"
               />
