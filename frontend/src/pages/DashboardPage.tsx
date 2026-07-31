@@ -137,12 +137,13 @@ function DistributionTooltip({ active, payload, currency }: { active?: boolean; 
 }
 
 function RiskTooltip({ active, payload }: { active?: boolean; payload?: any[] }) {
+  const { t } = useTranslation()
   if (!active || !payload || payload.length === 0) return null
   const data = payload[0].payload
   return (
     <div style={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', color: 'hsl(var(--foreground))', borderRadius: '0.5rem', padding: '0.5rem 0.75rem' }}>
       <p className="font-medium">{data.name}</p>
-      <p className="text-sm">{formatNumber(data.quantity)} L</p>
+      <p className="text-sm">{formatNumber(data.quantity)} {t('common.liter')}</p>
     </div>
   )
 }
