@@ -319,7 +319,7 @@ function AdminPickingView() {
                 >
                   <option value="">{t('picking.selectItemPlaceholder')}</option>
                   {items.map((item) => {
-                    const isOOS = (item.total_quantity_available ?? 0) <= 0
+                    const isOOS = (item.total_quantity_available ?? 0) <= (item.min_stock ?? 0)
                     return (
                       <option key={item.id} value={item.id} disabled={isOOS}>
                         {item.sku} - {item.name}
@@ -654,7 +654,7 @@ function CustomerPickingView() {
               >
                 <option value="">{t('picking.selectItemPlaceholder')}</option>
                 {items.map((item) => {
-                  const isOOS = (item.total_quantity_available ?? 0) <= 0
+                  const isOOS = (item.total_quantity_available ?? 0) <= (item.min_stock ?? 0)
                   return (
                     <option key={item.id} value={item.id} disabled={isOOS}>
                       {item.sku} - {item.name}
