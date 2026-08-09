@@ -9,12 +9,13 @@ from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, Scope
 from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
 from app.models.user import UserRole
 from app.schemas.common import BaseSchema, PaginatedResponse
+from app.services.scoping import batch_location_filter
 
 router = APIRouter()
 
@@ -50,6 +51,7 @@ class InventoryTotalCostResponse(BaseSchema):
 async def list_inventory(
     db: DbSession,
     current_user: CurrentUser,
+    scope: Scope,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = None,
@@ -105,6 +107,10 @@ async def list_inventory(
         .where(Batch.status == BatchStatus.ACTIVE)
         .where(Batch.quantity_available > 0)
     )
+
+    location_clause = batch_location_filter(scope)
+    if location_clause is not None:
+        base = base.where(location_clause)
 
     if search:
         like = f"%{search}%"
@@ -174,6 +180,7 @@ async def list_inventory(
 async def get_inventory_total_cost(
     db: DbSession,
     current_user: CurrentUser,
+    scope: Scope,
     search: Optional[str] = None,
 ) -> InventoryTotalCostResponse:
     """
@@ -232,6 +239,8 @@ async def get_inventory_total_cost(
             func.coalesce(func.sum(dedup_sub.c.quantity_available), 0),
         )
     else:
+        location_clause = batch_location_filter(scope)
+
         stmt = (
             select(
                 Item.currency,
@@ -246,6 +255,8 @@ async def get_inventory_total_cost(
             .where(Batch.quantity_available > 0)
             .group_by(Item.currency)
         )
+        if location_clause is not None:
+            stmt = stmt.where(location_clause)
 
         if search:
             like = f"%{search}%"
@@ -266,6 +277,8 @@ async def get_inventory_total_cost(
             .where(Batch.status == BatchStatus.ACTIVE)
             .where(Batch.quantity_available > 0)
         )
+        if location_clause is not None:
+            agg_stmt = agg_stmt.where(location_clause)
         if search:
             agg_stmt = agg_stmt.where(
                 (Item.sku.ilike(like))

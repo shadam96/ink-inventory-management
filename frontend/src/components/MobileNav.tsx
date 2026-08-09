@@ -25,6 +25,7 @@ const allNavItems = [
   { to: '/batches', icon: Layers, labelKey: 'nav.batches', staffOnly: true },
   { to: '/customers', icon: Users, labelKey: 'nav.customers', staffOnly: true },
   { to: '/alerts', icon: Bell, labelKey: 'nav.alerts', staffOnly: true },
+  { to: '/users', icon: Users, labelKey: 'nav.users', staffOnly: true, adminOnly: true },
   { to: '/settings', icon: Settings, labelKey: 'nav.settings', staffOnly: false },
 ]
 
@@ -32,9 +33,10 @@ export function MobileNav() {
   const { t } = useTranslation()
   const { user } = useAuthStore()
   const isCustomer = user?.role === 'customer'
-  const navItems = isCustomer
-    ? allNavItems.filter(item => !item.staffOnly)
-    : allNavItems
+  const isAdmin = user?.role === 'admin'
+  const navItems = allNavItems.filter(
+    (item) => (!item.staffOnly || !isCustomer) && (!item.adminOnly || isAdmin)
+  )
 
   return (
     <nav className="fixed bottom-0 inset-x-0 z-50 bg-background/95 backdrop-blur-sm border-t md:hidden safe-area-inset-bottom">

@@ -1,7 +1,7 @@
 """Dashboard service for KPIs and analytics"""
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from uuid import UUID
 
 from sqlalchemy import select, func, and_
@@ -18,22 +18,37 @@ from app.services.expiration_classifier import classify_expiration
 from app.services.stock_helpers import available_quantity, is_active_and_unexpired
 
 
+def _items_batches_loader(location_ids: Optional[List[UUID]]):
+    """selectinload(Item.batches), optionally filtered to only load batches
+    at the given locations - so available_quantity()/is_active_and_unexpired()
+    downstream operate on an already-scoped collection with no other
+    changes needed."""
+    if location_ids is None:
+        return selectinload(Item.batches)
+    return selectinload(Item.batches.and_(Batch.location_id.in_(location_ids)))
+
+
 class DashboardService:
     """Service for dashboard KPIs and analytics"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
-    async def get_inventory_value(self) -> Dict[str, Any]:
+
+    async def get_inventory_value(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
         """Calculate inventory value bucketed by per-item currency.
 
         Items declare their own currency on creation. Summing raw cost prices
         across currencies would be nonsense, so the dashboard receives a
         per-currency breakdown and applies FX conversion client-side using the
         rates from SystemSettings.
+
+        location_ids restricts the underlying batches to those locations
+        (staff scoping) - None means unrestricted.
         """
         result = await self.db.execute(
-            select(Item).options(selectinload(Item.batches))
+            select(Item).options(_items_batches_loader(location_ids))
         )
         items = result.scalars().all()
 
@@ -61,10 +76,12 @@ class DashboardService:
             "items_with_stock": items_count,
         }
     
-    async def get_inventory_distribution(self) -> List[Dict[str, Any]]:
+    async def get_inventory_distribution(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> List[Dict[str, Any]]:
         """Get inventory distribution by item (for pie chart)"""
         result = await self.db.execute(
-            select(Item).options(selectinload(Item.batches))
+            select(Item).options(_items_batches_loader(location_ids))
         )
         items = result.scalars().all()
         
@@ -89,11 +106,13 @@ class DashboardService:
         distribution.sort(key=lambda x: x["value"], reverse=True)
         return distribution
     
-    async def get_expiration_risk_map(self) -> Dict[str, Any]:
+    async def get_expiration_risk_map(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
         """Get expiration risk breakdown (for gauge/risk map)"""
         today = date.today()
-        
-        result = await self.db.execute(
+
+        query = (
             select(Batch)
             .options(selectinload(Batch.item))
             .where(
@@ -101,6 +120,10 @@ class DashboardService:
                 Batch.quantity_available > 0,
             )
         )
+        if location_ids is not None:
+            query = query.where(Batch.location_id.in_(location_ids))
+
+        result = await self.db.execute(query)
         batches = result.scalars().all()
         
         # value_by_currency mirrors get_inventory_value's pattern: summing
@@ -161,10 +184,20 @@ class DashboardService:
             }
         }
     
-    async def get_low_stock_items(self) -> List[Dict[str, Any]]:
-        """Get items below reorder point"""
+    async def get_low_stock_items(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> List[Dict[str, Any]]:
+        """Get items below reorder point.
+
+        reorder_point/min_stock are global, item-level thresholds - when
+        location_ids is set, "low stock" means "low at these locations,"
+        which is the intended meaning for a location-scoped worker (they
+        shouldn't be alarmed by a shortage in a warehouse they don't
+        operate). There's no per-location reorder point in the schema, so
+        the thresholds themselves stay unscoped.
+        """
         result = await self.db.execute(
-            select(Item).options(selectinload(Item.batches))
+            select(Item).options(_items_batches_loader(location_ids))
         )
         items = result.scalars().all()
         
@@ -190,18 +223,30 @@ class DashboardService:
         low_stock.sort(key=lambda x: x["shortage"], reverse=True)
         return low_stock
     
-    async def get_recent_activity(self, days: int = 7) -> Dict[str, Any]:
-        """Get recent activity summary"""
+    async def get_recent_activity(
+        self, days: int = 7, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
+        """Get recent activity summary.
+
+        location_ids restricts movements/alerts to those tied to a batch at
+        one of those locations - None means unrestricted. Delivery notes
+        stay unscoped: they aren't attributable to a single warehouse
+        location in this schema.
+        """
         today = date.today()
         start_date = today - timedelta(days=days)
-        
+
         # Get movements
-        result = await self.db.execute(
-            select(Movement)
-            .where(func.date(Movement.timestamp) >= start_date)
+        movements_query = select(Movement).where(
+            func.date(Movement.timestamp) >= start_date
         )
+        if location_ids is not None:
+            movements_query = movements_query.join(Batch, Movement.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        result = await self.db.execute(movements_query)
         movements = result.scalars().all()
-        
+
         receipts = sum(
             m.quantity for m in movements if m.movement_type == MovementType.RECEIPT
         )
@@ -211,21 +256,27 @@ class DashboardService:
         scraps = sum(
             m.quantity for m in movements if m.movement_type == MovementType.SCRAP
         )
-        
+
         # Get delivery notes
         result = await self.db.execute(
             select(func.count(DeliveryNote.id))
             .where(func.date(DeliveryNote.created_at) >= start_date)
         )
         delivery_notes_count = result.scalar() or 0
-        
-        # Get new alerts
-        result = await self.db.execute(
-            select(func.count(Alert.id))
-            .where(func.date(Alert.created_at) >= start_date)
+
+        # Get new alerts (item-only alerts are excluded when scoped, same
+        # convention as the alerts endpoint - they aren't attributable to
+        # one location)
+        alerts_query = select(func.count(Alert.id)).where(
+            func.date(Alert.created_at) >= start_date
         )
+        if location_ids is not None:
+            alerts_query = alerts_query.join(Batch, Alert.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        result = await self.db.execute(alerts_query)
         alerts_count = result.scalar() or 0
-        
+
         return {
             "period_days": days,
             "start_date": start_date.isoformat(),
@@ -238,23 +289,35 @@ class DashboardService:
             "movements_count": len(movements),
         }
 
-    async def get_movement_trend(self, days: int = 7) -> Dict[str, Any]:
+    async def get_movement_trend(
+        self, days: int = 7, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
         """Get daily receipts/dispatches/scraps for the trailing period,
         zero-filled so a trend chart has no gaps on days without movements.
         Uses the same start_date window as get_recent_activity so both
-        endpoints agree on what "last N days" covers."""
+        endpoints agree on what "last N days" covers.
+
+        location_ids restricts to movements whose batch is at one of those
+        locations - None means unrestricted.
+        """
         today = date.today()
         start_date = today - timedelta(days=days)
 
-        result = await self.db.execute(
+        query = (
             select(
                 func.date(Movement.timestamp).label("day"),
                 Movement.movement_type,
                 func.sum(Movement.quantity).label("total"),
             )
             .where(func.date(Movement.timestamp) >= start_date)
-            .group_by(func.date(Movement.timestamp), Movement.movement_type)
         )
+        if location_ids is not None:
+            query = query.join(Batch, Movement.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        query = query.group_by(func.date(Movement.timestamp), Movement.movement_type)
+
+        result = await self.db.execute(query)
 
         # func.date() comes back as a str on SQLite (tests) but as a date
         # object on Postgres (asyncpg, used in prod) - normalize both.
@@ -306,7 +369,9 @@ class DashboardService:
             Decimal("0"),
         )
 
-    async def get_kpi_summary(self) -> Dict[str, Any]:
+    async def get_kpi_summary(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
         """Get all KPIs for dashboard.
 
         Fetches Items+Batches once and derives inventory value, at-risk
@@ -315,11 +380,16 @@ class DashboardService:
         (the old private at-risk helper) independently - each of those
         used to re-run its own `select(Item).options(selectinload(...))`
         over the same rows.
+
+        location_ids restricts everything below (batches, activity, unread
+        alerts) to those locations - None means unrestricted. Delivery-note
+        counts inside get_recent_activity stay unscoped (not location
+        attributable in this schema).
         """
         today = date.today()
 
         result = await self.db.execute(
-            select(Item).options(selectinload(Item.batches))
+            select(Item).options(_items_batches_loader(location_ids))
         )
         items = result.scalars().all()
 
@@ -351,13 +421,18 @@ class DashboardService:
         inventory_totals = {ccy: float(v) for ccy, v in totals_by_currency.items()}
         at_risk_totals = {ccy: float(v) for ccy, v in at_risk_by_ccy.items()}
 
-        activity = await self.get_recent_activity()
+        activity = await self.get_recent_activity(location_ids=location_ids)
 
-        # Unread alerts count
-        result = await self.db.execute(
-            select(func.count(Alert.id))
-            .where(Alert.is_read == False, Alert.is_dismissed == False)
+        # Unread alerts count (item-only alerts excluded when scoped, same
+        # convention as the alerts endpoint)
+        unread_query = select(func.count(Alert.id)).where(
+            Alert.is_read == False, Alert.is_dismissed == False
         )
+        if location_ids is not None:
+            unread_query = unread_query.join(Batch, Alert.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        result = await self.db.execute(unread_query)
         unread_alerts = result.scalar() or 0
 
         # at_risk_percentage needs a single ratio, which needs converting

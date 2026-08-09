@@ -83,12 +83,21 @@ class AlertService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
     
-    async def get_unread_count(self) -> int:
-        """Get count of unread alerts"""
-        result = await self.db.execute(
-            select(func.count(Alert.id))
-            .where(Alert.is_read == False, Alert.is_dismissed == False)
+    async def get_unread_count(self, location_ids: Optional[List[UUID]] = None) -> int:
+        """Get count of unread alerts.
+
+        location_ids restricts to alerts whose batch sits at one of those
+        locations (item-only alerts are excluded when scoped, since they
+        aren't attributable to a single location) - None means unrestricted.
+        """
+        query = select(func.count(Alert.id)).where(
+            Alert.is_read == False, Alert.is_dismissed == False
         )
+        if location_ids is not None:
+            query = query.join(Batch, Alert.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        result = await self.db.execute(query)
         return result.scalar() or 0
     
     async def mark_as_read(self, alert_id: UUID) -> None:
@@ -101,15 +110,25 @@ class AlertService:
             alert.is_read = True
             await self.db.flush()
     
-    async def mark_all_as_read(self) -> int:
-        """Mark all alerts as read, return count"""
+    async def mark_all_as_read(self, location_ids: Optional[List[UUID]] = None) -> int:
+        """Mark all alerts as read, return count.
+
+        location_ids restricts the bulk update to alerts whose batch sits
+        at one of those locations, so a scoped user can't blanket-dismiss
+        alerts outside their own view - None means unrestricted.
+        """
         from sqlalchemy import update
-        
-        result = await self.db.execute(
-            update(Alert)
-            .where(Alert.is_read == False)
-            .values(is_read=True)
-        )
+
+        query = update(Alert).where(Alert.is_read == False)
+        if location_ids is not None:
+            query = query.where(
+                Alert.batch_id.in_(
+                    select(Batch.id).where(Batch.location_id.in_(location_ids))
+                )
+            )
+        query = query.values(is_read=True)
+
+        result = await self.db.execute(query)
         await self.db.flush()
         return result.rowcount
     

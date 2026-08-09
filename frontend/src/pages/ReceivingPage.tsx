@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useForm } from 'react-hook-form'
+import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { PackagePlus, Barcode, Plus, X, XCircle, Loader2, Camera, ScanLine, Pencil } from 'lucide-react'
@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { QuantityInput } from '@/components/ui/quantity-input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -82,6 +83,7 @@ export function ReceivingPage() {
     reset,
     setValue,
     watch,
+    control,
     formState: { errors },
   } = useForm<ReceiveFormData>({
     resolver: zodResolver(receiveSchema),
@@ -364,7 +366,7 @@ export function ReceivingPage() {
     autoFilledFields.has(name) ? 'ring-2 ring-primary/40 transition-all' : ''
 
   return (
-    <div className="space-y-6">
+    <div className={cn('space-y-6', receiveList.length > 0 && 'pb-20 md:pb-0')}>
       <Header title={t('receiving.title')} />
 
       {/* Camera Scanner Modal */}
@@ -489,11 +491,17 @@ export function ReceivingPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="expiration_date">{t('receiving.expirationDate')} *</Label>
-                <Input
-                  id="expiration_date"
-                  type="date"
-                  {...register('expiration_date')}
-                  className={fieldClass('expiration_date')}
+                <Controller
+                  name="expiration_date"
+                  control={control}
+                  render={({ field }) => (
+                    <DateField
+                      id="expiration_date"
+                      value={field.value}
+                      onChange={field.onChange}
+                      className={fieldClass('expiration_date')}
+                    />
+                  )}
                 />
                 {errors.expiration_date && (
                   <p className="text-sm text-destructive">{t(errors.expiration_date.message ?? '')}</p>
@@ -502,11 +510,17 @@ export function ReceivingPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="manufacturing_date">{t('receiving.manufacturingDate')}</Label>
-                <Input
-                  id="manufacturing_date"
-                  type="date"
-                  {...register('manufacturing_date')}
-                  className={fieldClass('manufacturing_date')}
+                <Controller
+                  name="manufacturing_date"
+                  control={control}
+                  render={({ field }) => (
+                    <DateField
+                      id="manufacturing_date"
+                      value={field.value}
+                      onChange={field.onChange}
+                      className={fieldClass('manufacturing_date')}
+                    />
+                  )}
                 />
               </div>
             </div>
@@ -547,10 +561,12 @@ export function ReceivingPage() {
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-4">
               <CardTitle className="text-lg">{t('receiving.listTitle', { count: receiveList.length })}</CardTitle>
+              {/* Desktop only here - the mobile equivalent is the sticky
+                  bar below, reachable without scrolling past the list. */}
               <Button
                 onClick={handleReceiveAll}
                 disabled={submitting}
-                className="touch-manipulation"
+                className="hidden md:inline-flex touch-manipulation"
               >
                 {submitting ? (
                   <>
@@ -629,6 +645,31 @@ export function ReceivingPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Mobile sticky action bar: reachable without scrolling past a long
+          receive list, sitting just above the bottom tab bar (which
+          AppLayout reserves pb-20 of space for on <main>). */}
+      {receiveList.length > 0 && (
+        <div className="md:hidden fixed inset-x-0 bottom-20 z-30 px-4 py-3 bg-background/95 backdrop-blur-sm border-t safe-area-bottom">
+          <Button
+            onClick={handleReceiveAll}
+            disabled={submitting}
+            className="w-full touch-manipulation"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="w-4 h-4 me-2 animate-spin" />
+                {t('receiving.recording')}
+              </>
+            ) : (
+              <>
+                <PackagePlus className="w-4 h-4 me-2" />
+                {t('receiving.receiveAll')}
+              </>
+            )}
+          </Button>
+        </div>
       )}
     </div>
   )

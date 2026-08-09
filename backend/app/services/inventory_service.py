@@ -186,8 +186,14 @@ class InventoryService:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         limit: int = 100,
+        location_ids: Optional[List[UUID]] = None,
     ) -> List[Movement]:
-        """Get movement history with filters"""
+        """Get movement history with filters.
+
+        location_ids restricts to movements whose batch currently sits at
+        one of those locations (used for staff location-scoping) - None
+        means unrestricted.
+        """
         query = (
             select(Movement)
             .options(
@@ -196,24 +202,32 @@ class InventoryService:
             )
             .order_by(Movement.timestamp.desc())
         )
-        
+
+        joined_batch = False
+
         if batch_id:
             query = query.where(Movement.batch_id == batch_id)
-        
+
         if item_id:
             query = query.join(Batch).where(Batch.item_id == item_id)
-        
+            joined_batch = True
+
+        if location_ids is not None:
+            if not joined_batch:
+                query = query.join(Batch)
+            query = query.where(Batch.location_id.in_(location_ids))
+
         if movement_type:
             query = query.where(Movement.movement_type == movement_type)
-        
+
         if start_date:
             query = query.where(func.date(Movement.timestamp) >= start_date)
-        
+
         if end_date:
             query = query.where(func.date(Movement.timestamp) <= end_date)
-        
+
         query = query.limit(limit)
-        
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
     

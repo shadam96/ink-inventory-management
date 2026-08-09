@@ -9,11 +9,13 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+from app.models.user_location import user_locations
 
 if TYPE_CHECKING:
     from app.models.customer import Customer
     from app.models.movement import Movement
     from app.models.delivery_note import DeliveryNote
+    from app.models.location import Location
 
 
 class UserRole(str, enum.Enum):
@@ -106,6 +108,12 @@ class User(BaseModel):
     delivery_notes: Mapped[List["DeliveryNote"]] = relationship(
         "DeliveryNote",
         back_populates="created_by_user",
+        lazy="selectin"
+    )
+    locations: Mapped[List["Location"]] = relationship(
+        "Location",
+        secondary=user_locations,
+        back_populates="assigned_users",
         lazy="selectin"
     )
 

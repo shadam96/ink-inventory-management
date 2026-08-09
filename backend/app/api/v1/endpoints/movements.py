@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import DbSession, StaffUser, Scope
 from app.models.movement import MovementType, Movement
 from app.models.batch import Batch
 from app.services.inventory_service import InventoryService
@@ -28,7 +28,8 @@ class MovementHistoryResponse(BaseModel):
 @router.get("", response_model=MovementHistoryResponse)
 async def get_movement_history(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
     batch_id: Optional[UUID] = None,
     item_id: Optional[UUID] = None,
     movement_type: Optional[MovementType] = None,
@@ -38,11 +39,11 @@ async def get_movement_history(
 ) -> MovementHistoryResponse:
     """
     Get movement history with optional filters.
-    
+
     Provides audit trail for inventory changes.
     """
     service = InventoryService(db)
-    
+
     movements = await service.get_movements_history(
         batch_id=batch_id,
         item_id=item_id,
@@ -50,6 +51,7 @@ async def get_movement_history(
         start_date=start_date,
         end_date=end_date,
         limit=limit,
+        location_ids=scope.location_ids,
     )
     
     # Convert to response format
@@ -82,15 +84,17 @@ async def get_movement_history(
 async def get_batch_movements(
     batch_id: UUID,
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
     limit: int = Query(50, ge=1, le=200),
 ) -> dict:
     """Get all movements for a specific batch"""
     service = InventoryService(db)
-    
+
     movements = await service.get_movements_history(
         batch_id=batch_id,
         limit=limit,
+        location_ids=scope.location_ids,
     )
     
     movements_data = []
@@ -118,19 +122,21 @@ async def get_batch_movements(
 async def get_item_movements(
     item_id: UUID,
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     limit: int = Query(100, ge=1, le=500),
 ) -> dict:
     """Get all movements for a specific item across all batches"""
     service = InventoryService(db)
-    
+
     movements = await service.get_movements_history(
         item_id=item_id,
         start_date=start_date,
         end_date=end_date,
         limit=limit,
+        location_ids=scope.location_ids,
     )
     
     # Calculate summary
@@ -175,7 +181,8 @@ async def get_item_movements(
 @router.get("/export/excel")
 async def export_movements_excel(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> StreamingResponse:
     """Export all movements to Excel"""
     query = (
@@ -187,16 +194,19 @@ async def export_movements_excel(
         .order_by(Movement.timestamp.desc())
         .limit(1000)  # Limit to prevent huge exports
     )
+    if scope.location_ids is not None:
+        query = query.join(Batch).where(Batch.location_id.in_(scope.location_ids))
     result = await db.execute(query)
     movements = result.scalars().all()
-    
+
     return export_service.export_movements_excel(list(movements))
 
 
 @router.get("/export/csv")
 async def export_movements_csv(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> StreamingResponse:
     """Export all movements to CSV"""
     query = (
@@ -208,8 +218,10 @@ async def export_movements_csv(
         .order_by(Movement.timestamp.desc())
         .limit(1000)  # Limit to prevent huge exports
     )
+    if scope.location_ids is not None:
+        query = query.join(Batch).where(Batch.location_id.in_(scope.location_ids))
     result = await db.execute(query)
     movements = result.scalars().all()
-    
+
     return export_service.export_movements_csv(list(movements))
 

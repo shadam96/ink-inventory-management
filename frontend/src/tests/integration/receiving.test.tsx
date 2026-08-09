@@ -30,7 +30,9 @@ vi.mock('@/lib/api', () => ({
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
-    i18n: { language: 'he' },
+    // dir() is used by DirectionalIcon.tsx (ChevronStart/ChevronEnd, now
+    // rendered by DateField's month-nav) - matches the 'he' language above.
+    i18n: { language: 'he', dir: () => 'rtl' },
   }),
 }))
 
@@ -183,8 +185,13 @@ describe('Receiving Operations', () => {
     const quantityInput = document.getElementById('quantity') as HTMLInputElement
     fireEvent.change(quantityInput, { target: { value: '2.5' } })
 
-    const expirationInput = document.getElementById('expiration_date') as HTMLInputElement
-    fireEvent.change(expirationInput, { target: { value: '2028-01-01' } })
+    // expiration_date is a DateField now (a button opening a calendar
+    // popover, not a native input) - fireEvent.change doesn't apply.
+    // The exact date doesn't matter for this test's intent (fractional
+    // quantity acceptance), so just pick "today" via the popover.
+    const expirationTrigger = document.getElementById('expiration_date') as HTMLButtonElement
+    fireEvent.click(expirationTrigger)
+    fireEvent.click(await screen.findByText('common.today'))
 
     const addButton = screen.getByRole('button', { name: /receiving\.addToList/i })
     fireEvent.submit(addButton.closest('form')!)
@@ -220,8 +227,9 @@ describe('Receiving Operations', () => {
     const quantityInput = document.getElementById('quantity') as HTMLInputElement
     fireEvent.change(quantityInput, { target: { value: '0' } })
 
-    const expirationInput = document.getElementById('expiration_date') as HTMLInputElement
-    fireEvent.change(expirationInput, { target: { value: '2028-01-01' } })
+    const expirationTrigger = document.getElementById('expiration_date') as HTMLButtonElement
+    fireEvent.click(expirationTrigger)
+    fireEvent.click(await screen.findByText('common.today'))
 
     const addButton = screen.getByRole('button', { name: /receiving\.addToList/i })
     fireEvent.submit(addButton.closest('form')!)
@@ -257,8 +265,12 @@ describe('Receiving Operations', () => {
     await user.type(barcodeInput, 'BARCODE-A')
     fireEvent.submit(barcodeInput.closest('form')!)
 
+    // expiration_date is now a DateField (a button, not a native input) -
+    // toHaveValue() no longer applies. It renders the picked date's year
+    // as text regardless of locale digit-grouping/ordering, so assert on
+    // that instead of the exact formatted string.
     await waitFor(() => {
-      expect(screen.getByLabelText(/receiving\.expirationDate/i)).toHaveValue('2027-06-15')
+      expect(screen.getByLabelText(/receiving\.expirationDate/i)).toHaveTextContent('2027')
     })
     expect(screen.getByLabelText(/receiving\.quantity/i)).toHaveValue(50)
 
@@ -279,7 +291,10 @@ describe('Receiving Operations', () => {
     await waitFor(() => {
       expect(api.receivingApi.validateBarcode).toHaveBeenCalledWith('BARCODE-B')
     })
-    expect(screen.getByLabelText(/receiving\.expirationDate/i)).toHaveValue('')
+    // Cleared DateField falls back to its placeholder (the mocked t()
+    // echoes the translation key verbatim, so this is the literal string
+    // DateField renders when `value` is empty).
+    expect(screen.getByLabelText(/receiving\.expirationDate/i)).toHaveTextContent('common.selectDate')
     expect(screen.getByLabelText(/receiving\.quantity/i)).toHaveValue(1)
   })
 
@@ -313,10 +328,14 @@ describe('Receiving Operations', () => {
       </BrowserRouter>
     )
 
-    const receiveAllButton = await screen.findByRole('button', {
+    // ReceivingPage renders two "receive all" buttons (a desktop one and a
+    // mobile sticky-bar one, shown/hidden via responsive classes only -
+    // jsdom doesn't evaluate real CSS, so both are query-visible here).
+    // They call the same handler, so clicking either is equivalent.
+    const receiveAllButtons = await screen.findAllByRole('button', {
       name: /receiving\.receiveAll/i,
     })
-    await user.click(receiveAllButton)
+    await user.click(receiveAllButtons[0])
 
     await waitFor(() => {
       expect(offline.addPendingOperation).toHaveBeenCalled()
@@ -398,10 +417,14 @@ describe('Receiving Operations', () => {
       </BrowserRouter>
     )
 
-    const receiveAllButton = await screen.findByRole('button', {
+    // ReceivingPage renders two "receive all" buttons (a desktop one and a
+    // mobile sticky-bar one, shown/hidden via responsive classes only -
+    // jsdom doesn't evaluate real CSS, so both are query-visible here).
+    // They call the same handler, so clicking either is equivalent.
+    const receiveAllButtons = await screen.findAllByRole('button', {
       name: /receiving\.receiveAll/i,
     })
-    await user.click(receiveAllButton)
+    await user.click(receiveAllButtons[0])
 
     // Only the eligible item was submitted...
     await waitFor(() => {

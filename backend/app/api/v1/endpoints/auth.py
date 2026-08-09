@@ -135,7 +135,9 @@ async def get_current_user_info(
     current_user: CurrentUser,
 ) -> UserResponse:
     """Get current authenticated user information"""
-    return UserResponse.model_validate(current_user)
+    response = UserResponse.model_validate(current_user)
+    response.location_ids = [loc.id for loc in current_user.locations]
+    return response
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

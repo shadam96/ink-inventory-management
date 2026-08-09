@@ -281,6 +281,9 @@ function AdminPickingView() {
     activeStrategy === 'lifo' ? lifoSuggestions :
     suggestions
 
+  const dispatchDisabled =
+    !canFulfill || submitting || activeSuggestions.length === 0 || !canSelectCustomer
+
   return (
     <>
       {showScanner && (
@@ -290,7 +293,7 @@ function AdminPickingView() {
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-20 md:pb-0">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -299,7 +302,7 @@ function AdminPickingView() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit(handleDispatch)} className="space-y-4">
+            <form id="admin-pick-form" onSubmit={handleSubmit(handleDispatch)} className="space-y-4">
               <Button
                 type="button"
                 variant="outline"
@@ -406,15 +409,13 @@ function AdminPickingView() {
                 />
               </div>
 
+              {/* Desktop only here - the mobile equivalent is the sticky
+                  bar below, reachable without scrolling past the
+                  suggestions panel that follows this form. */}
               <Button
                 type="submit"
-                className="w-full touch-manipulation"
-                disabled={
-                  !canFulfill ||
-                  submitting ||
-                  activeSuggestions.length === 0 ||
-                  !canSelectCustomer
-                }
+                className="hidden md:inline-flex w-full touch-manipulation"
+                disabled={dispatchDisabled}
               >
                 {submitting ? (
                   <>
@@ -483,6 +484,31 @@ function AdminPickingView() {
             />
           </CardContent>
         </Card>
+      </div>
+
+      {/* Mobile sticky action bar: reachable without scrolling past the
+          suggestions panel, sitting just above the bottom tab bar (which
+          AppLayout reserves pb-20 of space for on <main>). Submits the
+          form above via the form= attribute rather than nesting. */}
+      <div className="md:hidden fixed inset-x-0 bottom-20 z-30 px-4 py-3 bg-background/95 backdrop-blur-sm border-t safe-area-bottom">
+        <Button
+          type="submit"
+          form="admin-pick-form"
+          className="w-full touch-manipulation"
+          disabled={dispatchDisabled}
+        >
+          {submitting ? (
+            <>
+              <Loader2 className="w-4 h-4 me-2 animate-spin" />
+              {t('picking.picking')}
+            </>
+          ) : (
+            <>
+              <PackageMinus className="w-4 h-4 me-2" />
+              {t('picking.pick')}
+            </>
+          )}
+        </Button>
       </div>
 
       <PostPickDialog

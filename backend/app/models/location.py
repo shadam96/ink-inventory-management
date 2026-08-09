@@ -5,9 +5,11 @@ from sqlalchemy import String, Text, Boolean
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+from app.models.user_location import user_locations
 
 if TYPE_CHECKING:
     from app.models.batch import Batch
+    from app.models.user import User
 
 
 class Location(BaseModel):
@@ -49,6 +51,11 @@ class Location(BaseModel):
         "Batch",
         back_populates="location",
         lazy="selectin"
+    )
+    assigned_users: Mapped[List["User"]] = relationship(
+        "User",
+        secondary=user_locations,
+        back_populates="locations"
     )
     
     def __repr__(self) -> str:

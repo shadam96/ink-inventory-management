@@ -8,13 +8,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession, WarehouseUser
+from app.api.deps import DbSession, WarehouseUser, StaffUser, Scope
 from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.location import Location
 from app.schemas.batch import BatchCreate, BatchResponse, BatchUpdate
 from app.schemas.common import PaginatedResponse, MessageResponse
 from app.services.export_service import export_service
+from app.services.scoping import batch_location_filter
 
 router = APIRouter()
 
@@ -22,7 +23,8 @@ router = APIRouter()
 @router.get("", response_model=PaginatedResponse[BatchResponse])
 async def list_batches(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     item_id: Optional[UUID] = None,
@@ -36,6 +38,10 @@ async def list_batches(
         select(Batch)
         .options(selectinload(Batch.item), selectinload(Batch.location))
     )
+
+    location_clause = batch_location_filter(scope)
+    if location_clause is not None:
+        query = query.where(location_clause)
 
     # Apply filters
     if item_id:
@@ -94,14 +100,15 @@ async def list_batches(
 @router.get("/expiring-soon", response_model=List[BatchResponse])
 async def get_expiring_batches(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
     days: int = Query(30, ge=1, le=365),
 ) -> List[BatchResponse]:
     """Get batches expiring within specified days"""
     from datetime import timedelta
-    
+
     expiration_threshold = date.today() + timedelta(days=days)
-    
+
     query = (
         select(Batch)
         .options(selectinload(Batch.item), selectinload(Batch.location))
@@ -112,7 +119,11 @@ async def get_expiring_batches(
         )
         .order_by(Batch.expiration_date.asc())
     )
-    
+
+    location_clause = batch_location_filter(scope)
+    if location_clause is not None:
+        query = query.where(location_clause)
+
     result = await db.execute(query)
     batches = result.scalars().all()
     
@@ -134,7 +145,8 @@ async def get_expiring_batches(
 async def get_batch(
     batch_id: UUID,
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> BatchResponse:
     """Get batch by ID"""
     result = await db.execute(
@@ -143,13 +155,15 @@ async def get_batch(
         .where(Batch.id == batch_id)
     )
     batch = result.scalar_one_or_none()
-    
-    if batch is None:
+
+    if batch is None or (
+        scope.location_ids is not None and batch.location_id not in scope.location_ids
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="אצווה לא נמצאה",  # Batch not found
         )
-    
+
     response = BatchResponse.model_validate(batch)
     response.days_until_expiration = (batch.expiration_date - date.today()).days
     response.is_expired = batch.expiration_date < date.today()
@@ -166,6 +180,7 @@ async def mark_batch_as_scrap(
     batch_id: UUID,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
     reason: Optional[str] = None,
 ) -> BatchResponse:
     """Mark a batch as scrap (גריטה)"""
@@ -175,8 +190,10 @@ async def mark_batch_as_scrap(
         .where(Batch.id == batch_id)
     )
     batch = result.scalar_one_or_none()
-    
-    if batch is None:
+
+    if batch is None or (
+        scope.location_ids is not None and batch.location_id not in scope.location_ids
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="אצווה לא נמצאה",
@@ -211,6 +228,7 @@ async def update_batch(
     batch_data: BatchUpdate,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
 ) -> BatchResponse:
     """Update batch details"""
     result = await db.execute(
@@ -219,8 +237,10 @@ async def update_batch(
         .where(Batch.id == batch_id)
     )
     batch = result.scalar_one_or_none()
-    
-    if batch is None:
+
+    if batch is None or (
+        scope.location_ids is not None and batch.location_id not in scope.location_ids
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="אצווה לא נמצאה",
@@ -281,7 +301,8 @@ async def update_batch(
 @router.get("/export/excel")
 async def export_batches_excel(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> StreamingResponse:
     """Export all batches to Excel"""
     query = (
@@ -289,16 +310,20 @@ async def export_batches_excel(
         .options(selectinload(Batch.item), selectinload(Batch.location))
         .order_by(Batch.expiration_date)
     )
+    location_clause = batch_location_filter(scope)
+    if location_clause is not None:
+        query = query.where(location_clause)
     result = await db.execute(query)
     batches = result.scalars().all()
-    
+
     return export_service.export_batches_excel(list(batches))
 
 
 @router.get("/export/csv")
 async def export_batches_csv(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> StreamingResponse:
     """Export all batches to CSV"""
     query = (
@@ -306,9 +331,12 @@ async def export_batches_csv(
         .options(selectinload(Batch.item), selectinload(Batch.location))
         .order_by(Batch.expiration_date)
     )
+    location_clause = batch_location_filter(scope)
+    if location_clause is not None:
+        query = query.where(location_clause)
     result = await db.execute(query)
     batches = result.scalars().all()
-    
+
     return export_service.export_batches_csv(list(batches))
 
 

@@ -107,6 +107,11 @@ export const authApi = {
     const response = await api.get('/auth/me')
     return response.data
   },
+
+  register: async (data: CreateUserData) => {
+    const response = await api.post('/auth/register', data)
+    return response.data as ManagedUser
+  },
 }
 
 // Items API
@@ -348,6 +353,37 @@ export const customersApi = {
   },
 }
 
+// Users API (admin-only management)
+export const usersApi = {
+  list: async (params?: { page?: number; page_size?: number; role?: string; search?: string; is_active?: boolean }) => {
+    const response = await api.get('/users', { params })
+    return response.data as PaginatedResponse<ManagedUser>
+  },
+
+  get: async (id: string) => {
+    const response = await api.get(`/users/${id}`)
+    return response.data as ManagedUser
+  },
+
+  update: async (id: string, data: UpdateUserData) => {
+    const response = await api.put(`/users/${id}`, data)
+    return response.data as ManagedUser
+  },
+
+  updateLocations: async (id: string, locationIds: string[]) => {
+    const response = await api.put(`/users/${id}/locations`, { location_ids: locationIds })
+    return response.data as ManagedUser
+  },
+}
+
+// Locations API
+export const locationsApi = {
+  list: async (params?: { page?: number; page_size?: number; warehouse?: string; is_active?: boolean }) => {
+    const response = await api.get('/locations', { params })
+    return response.data as PaginatedResponse<Location>
+  },
+}
+
 // Types
 export type ItemColor = 'cyan' | 'magenta' | 'yellow' | 'black' | 'white' | 'other'
 
@@ -579,6 +615,51 @@ export interface CreateCustomerData {
   is_vmi_customer?: boolean
   notes?: string
   machines?: CustomerMachineInput[]
+}
+
+export type ManagedUserRole = 'admin' | 'manager' | 'warehouse_worker' | 'viewer' | 'customer'
+
+export interface ManagedUser {
+  id: string
+  username: string
+  email: string
+  full_name: string
+  role: ManagedUserRole
+  is_active: boolean
+  customer_id?: string
+  location_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateUserData {
+  username: string
+  email: string
+  full_name: string
+  password: string
+  role: ManagedUserRole
+  customer_id?: string
+}
+
+export interface UpdateUserData {
+  username?: string
+  email?: string
+  full_name?: string
+  role?: ManagedUserRole
+  is_active?: boolean
+  password?: string
+}
+
+export interface Location {
+  id: string
+  warehouse: string
+  shelf: string
+  position: string
+  location_code: string
+  description?: string
+  is_active: boolean
+  batches_count: number
+  active_batches_count: number
 }
 
 export default api

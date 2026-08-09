@@ -44,6 +44,15 @@ class UserResponse(UserBase, TimestampSchema):
     notification_email: Optional[str] = None
     email_notifications_enabled: bool = False
     customer_id: Optional[UUID] = None
+    # Populated by the endpoint from user.locations (relationship, not a
+    # plain column) - model_validate doesn't fill this automatically.
+    location_ids: List[UUID] = []
+
+
+class UserLocationAssignment(BaseSchema):
+    """Schema for replacing a user's full location assignment set"""
+
+    location_ids: List[UUID]
 
 
 class NotificationSettingsUpdate(BaseSchema):

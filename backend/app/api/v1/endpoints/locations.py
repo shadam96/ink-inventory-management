@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession, ManagerUser
+from app.api.deps import DbSession, ManagerUser, StaffUser, Scope
 from app.models.location import Location
 from app.models.batch import BatchStatus
 from app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
@@ -18,7 +18,8 @@ router = APIRouter()
 @router.get("", response_model=PaginatedResponse[LocationResponse])
 async def list_locations(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     warehouse: Optional[str] = None,
@@ -26,10 +27,13 @@ async def list_locations(
 ) -> PaginatedResponse[LocationResponse]:
     """List all locations"""
     query = select(Location).options(selectinload(Location.batches))
-    
+
+    if scope.location_ids is not None:
+        query = query.where(Location.id.in_(scope.location_ids))
+
     if warehouse:
         query = query.where(Location.warehouse.ilike(f"%{warehouse}%"))
-    
+
     if is_active is not None:
         query = query.where(Location.is_active == is_active)
     
@@ -110,7 +114,8 @@ async def create_location(
 async def get_location(
     location_id: UUID,
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> LocationResponse:
     """Get location by ID"""
     result = await db.execute(
@@ -119,8 +124,10 @@ async def get_location(
         .where(Location.id == location_id)
     )
     location = result.scalar_one_or_none()
-    
-    if location is None:
+
+    if location is None or (
+        scope.location_ids is not None and location.id not in scope.location_ids
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="מיקום לא נמצא",
@@ -141,6 +148,7 @@ async def update_location(
     location_data: LocationUpdate,
     db: DbSession,
     current_user: ManagerUser,
+    scope: Scope,
 ) -> LocationResponse:
     """Update a location"""
     result = await db.execute(
@@ -149,8 +157,10 @@ async def update_location(
         .where(Location.id == location_id)
     )
     location = result.scalar_one_or_none()
-    
-    if location is None:
+
+    if location is None or (
+        scope.location_ids is not None and location.id not in scope.location_ids
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="מיקום לא נמצא",
@@ -178,6 +188,7 @@ async def delete_location(
     location_id: UUID,
     db: DbSession,
     current_user: ManagerUser,
+    scope: Scope,
 ) -> MessageResponse:
     """Delete a location (only if no batches assigned)"""
     result = await db.execute(
@@ -186,8 +197,10 @@ async def delete_location(
         .where(Location.id == location_id)
     )
     location = result.scalar_one_or_none()
-    
-    if location is None:
+
+    if location is None or (
+        scope.location_ids is not None and location.id not in scope.location_ids
+    ):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="מיקום לא נמצא",

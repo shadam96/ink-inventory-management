@@ -19,6 +19,35 @@ interface BarcodeScannerProps {
 
 const SCANNER_ID = 'barcode-scanner-viewport'
 
+// A fixed 280x180 qrbox can be wider than the actual camera viewfinder on
+// narrow phones (html5-qrcode reports the *rendered* viewfinder size here,
+// which is already letterboxed to the container) - scale down to fit while
+// keeping the same ~280:180 (wide, good for 1D barcodes) proportions, and
+// cap the size so it doesn't balloon on a large desktop webcam preview.
+function responsiveQrbox(viewfinderWidth: number, viewfinderHeight: number) {
+  const minEdge = Math.min(viewfinderWidth, viewfinderHeight)
+  const width = Math.round(Math.min(320, minEdge * 0.85))
+  const height = Math.round(width * (180 / 280))
+  return { width, height }
+}
+
+/** Distinguish getUserMedia failure modes so the on-screen message is
+ * actually actionable instead of one generic "can't access camera" for
+ * every case - "permission denied" needs different instructions (re-enable
+ * in browser/site settings) than "no camera found" or "camera in use by
+ * another app," and iOS/Android surface these differently enough that a
+ * single message left users guessing. */
+function classifyCameraError(err: unknown): 'denied' | 'notfound' | 'inuse' | 'unknown' {
+  const name = (err as { name?: string })?.name ?? ''
+  const message = String((err as { message?: string })?.message ?? err ?? '')
+  const haystack = `${name} ${message}`
+
+  if (/NotAllowedError|PermissionDenied|Permission denied/i.test(haystack)) return 'denied'
+  if (/NotFoundError|DevicesNotFound|no camera/i.test(haystack)) return 'notfound'
+  if (/NotReadableError|TrackStartError|in use/i.test(haystack)) return 'inuse'
+  return 'unknown'
+}
+
 export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerProps) {
   const { t } = useTranslation()
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -69,8 +98,11 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
           { facingMode },
           {
             fps: 10,
-            qrbox: { width: 280, height: 180 },
-            aspectRatio: 1.0,
+            qrbox: responsiveQrbox,
+            // No forced aspectRatio: phone rear cameras stream at their own
+            // native ratio (typically 4:3 or 16:9), and forcing 1:1 here
+            // made the library crop/zoom the feed aggressively on mobile,
+            // making it harder to fit a wide 1D barcode in frame.
             disableFlip: false,
           },
           (decodedText, decodedResult) => {
@@ -158,7 +190,16 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
       } catch (err) {
         console.error('Scanner start error:', err)
         if (mountedRef.current) {
-          setError(t('scanner.cameraError'))
+          const kind = classifyCameraError(err)
+          setError(
+            kind === 'denied'
+              ? t('scanner.cameraDenied')
+              : kind === 'notfound'
+                ? t('scanner.cameraNotFound')
+                : kind === 'inuse'
+                  ? t('scanner.cameraInUse')
+                  : t('scanner.cameraError')
+          )
         }
       }
     }

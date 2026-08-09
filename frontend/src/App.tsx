@@ -11,6 +11,7 @@ import { ReceivingPage } from '@/pages/ReceivingPage'
 import { PickingPage } from '@/pages/PickingPage'
 import { DeliveryNotesPage } from '@/pages/DeliveryNotesPage'
 import { CustomersPage } from '@/pages/CustomersPage'
+import { UsersPage } from '@/pages/UsersPage'
 import { AlertsPage } from '@/pages/AlertsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { useAuthStore } from '@/store/auth'
@@ -58,6 +59,22 @@ export function StaffRoute({ children }: { children: React.ReactNode }) {
 
   if (user?.role === 'customer') {
     return <Navigate to="/picking" replace />
+  }
+
+  return <>{children}</>
+}
+
+export function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+  const token = localStorage.getItem('access_token')
+
+  // Same loading-guard as StaffRoute - see the comment there.
+  if (token && isAuthenticated && user === null) {
+    return null
+  }
+
+  if (user?.role !== 'admin') {
+    return <Navigate to="/" replace />
   }
 
   return <>{children}</>
@@ -117,6 +134,7 @@ function App() {
           <Route path="picking" element={<PickingPage />} />
           <Route path="delivery-notes" element={<StaffRoute><DeliveryNotesPage /></StaffRoute>} />
           <Route path="customers" element={<StaffRoute><CustomersPage /></StaffRoute>} />
+          <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
           <Route path="alerts" element={<StaffRoute><AlertsPage /></StaffRoute>} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

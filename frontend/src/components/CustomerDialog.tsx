@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useForm, useFieldArray } from 'react-hook-form'
+import { useForm, useFieldArray, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useTranslation } from 'react-i18next'
@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import type { Customer, CreateCustomerData } from '@/lib/api'
@@ -300,10 +301,16 @@ export function CustomerDialog({ open, onOpenChange, customer, onSubmit }: Custo
                         >
                           {t('customers.machines.installationDate')}
                         </Label>
-                        <Input
-                          id={`machines.${index}.installation_date`}
-                          type="date"
-                          {...register(`machines.${index}.installation_date`)}
+                        <Controller
+                          name={`machines.${index}.installation_date`}
+                          control={control}
+                          render={({ field }) => (
+                            <DateField
+                              id={`machines.${index}.installation_date`}
+                              value={field.value}
+                              onChange={field.onChange}
+                            />
+                          )}
                         />
                       </div>
                     </div>

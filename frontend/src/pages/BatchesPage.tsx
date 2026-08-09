@@ -153,7 +153,8 @@ export function BatchesPage() {
         </div>
       </div>
 
-      <Card>
+      {/* Desktop: table */}
+      <Card className="hidden md:block">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -221,8 +222,58 @@ export function BatchesPage() {
         </CardContent>
       </Card>
 
+      {/* Mobile: card list (the table above forces horizontal scroll on
+          narrow screens) */}
+      <div className="md:hidden space-y-3">
+        {loading ? (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">
+              {t('common.loading')}
+            </CardContent>
+          </Card>
+        ) : batches.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">
+              <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>{t('common.noData')}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          batches.map((batch) => (
+            <Card key={batch.id}>
+              <CardContent className="p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono font-medium truncate">{batch.batch_number}</p>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {batch.item_sku ? `${batch.item_sku} — ` : ''}{batch.item_name || '-'}
+                    </p>
+                  </div>
+                  {getStatusBadge(batch.status)}
+                </div>
+
+                <div className="flex items-center justify-between text-sm">
+                  <div>
+                    <span className="font-medium">{formatNumber(batch.quantity_available)}</span>
+                    <span className="text-muted-foreground">
+                      {' '}{t('batches.outOf', { total: formatNumber(batch.quantity_received) })}
+                    </span>
+                  </div>
+                  {batch.status.toLowerCase() === 'active' && getExpirationBadge(batch.expiration_date)}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{t('batches.receiptDate')}: {formatDate(batch.receipt_date)}</span>
+                  <span>{t('batches.expirationDate')}: {formatDate(batch.expiration_date)}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
       {/* Summary */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold text-primary">

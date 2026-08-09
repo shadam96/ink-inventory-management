@@ -50,7 +50,12 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
     return (
       <div
         className={cn(
-          "flex h-10 w-full items-stretch rounded-md border border-input bg-background text-sm ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
+          // overflow-hidden is the safety net: the buttons below are sized
+          // with fixed pixel heights (not h-1/2) specifically so they don't
+          // depend on percentage-height resolution inside a stretched flex
+          // item, which some mobile browser engines get wrong and render
+          // the bottom button poking out past the rounded border.
+          "flex h-10 w-full items-stretch overflow-hidden rounded-md border border-input bg-background text-sm ring-offset-background focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
           disabled && "cursor-not-allowed opacity-50",
           className
         )}
@@ -71,13 +76,18 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
           </span>
         )}
         <div className="flex flex-col border-s border-input">
+          {/* Fixed h-5 (not h-1/2): percentage heights inside a stretched
+              flex item are spec-legal but some mobile browser engines
+              don't resolve them reliably, which was letting the bottom
+              button render outside the box's bounds. Two h-5 (20px) +
+              border-box sizing add up to exactly the parent's h-10 (40px). */}
           <button
             type="button"
             tabIndex={-1}
             disabled={disabled}
             onClick={() => bump(1)}
             aria-label="Increment"
-            className="flex h-1/2 w-7 items-center justify-center rounded-se-md text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none"
+            className="flex h-5 w-7 items-center justify-center rounded-se-md text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none"
           >
             <ChevronUp className="h-3 w-3" />
           </button>
@@ -87,7 +97,7 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
             disabled={disabled}
             onClick={() => bump(-1)}
             aria-label="Decrement"
-            className="flex h-1/2 w-7 items-center justify-center rounded-ee-md border-t border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none"
+            className="flex h-5 w-7 items-center justify-center rounded-ee-md border-t border-input text-muted-foreground hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none"
           >
             <ChevronDown className="h-3 w-3" />
           </button>

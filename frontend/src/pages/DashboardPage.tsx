@@ -365,7 +365,12 @@ function LowStockCard({ lowStock }: { lowStock: LowStockResponse | null }) {
                   <div className="flex items-center justify-between text-sm mb-1 gap-2">
                     <span className="font-medium truncate">{item.name}</span>
                     <span className={critical ? 'text-status-critical shrink-0' : 'text-status-warning shrink-0'}>
-                      -{formatNumber(item.shortage)} {t('dashboard.shortage')}
+                      {/* The negative number must stay in its own LTR run -
+                          left unwrapped, Hebrew's bidi algorithm treats the
+                          "-" as a neutral character and can reorder it to
+                          the wrong side of the digits (rendering "10-"
+                          instead of "-10"). */}
+                      <span dir="ltr">{formatNumber(-item.shortage)}</span> {t('dashboard.shortage')}
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-muted overflow-hidden">
@@ -502,7 +507,7 @@ export function DashboardPage() {
       <Header title={t('dashboard.title')} alertCount={kpis?.unread_alerts || 0} />
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
         <KPICard
           title={t('dashboard.inventoryValue')}
           value={formatCurrency(inventoryValueDisplay, currency)}

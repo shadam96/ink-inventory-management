@@ -2,6 +2,7 @@
 from app.models.user import User
 from app.models.item import Item
 from app.models.location import Location
+from app.models.user_location import user_locations
 from app.models.batch import Batch
 from app.models.movement import Movement
 from app.models.customer import Customer, CustomerMachine
@@ -13,6 +14,7 @@ __all__ = [
     "User",
     "Item",
     "Location",
+    "user_locations",
     "Batch",
     "Movement",
     "Customer",

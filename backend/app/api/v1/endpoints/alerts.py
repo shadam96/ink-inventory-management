@@ -6,8 +6,9 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select, func
 
-from app.api.deps import CurrentUser, DbSession, ManagerUser
+from app.api.deps import AccessScope, DbSession, ManagerUser, StaffUser, Scope
 from app.models.alert import Alert, AlertType, AlertSeverity
+from app.models.batch import Batch
 from app.services.alert_service import AlertService
 
 router = APIRouter()
@@ -38,20 +39,26 @@ class AlertSummary(BaseModel):
 @router.get("/summary", response_model=AlertSummary)
 async def get_alerts_summary(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> AlertSummary:
     """Get summary of unread alerts by severity"""
     service = AlertService(db)
-    
+
     # Count by severity
-    result = await db.execute(
+    query = (
         select(Alert.severity, func.count(Alert.id))
         .where(Alert.is_read == False, Alert.is_dismissed == False)
-        .group_by(Alert.severity)
     )
+    if scope.location_ids is not None:
+        query = query.join(Batch, Alert.batch_id == Batch.id).where(
+            Batch.location_id.in_(scope.location_ids)
+        )
+    query = query.group_by(Alert.severity)
+    result = await db.execute(query)
     counts = {row[0]: row[1] for row in result.all()}
-    
-    total = await service.get_unread_count()
+
+    total = await service.get_unread_count(location_ids=scope.location_ids)
     
     return AlertSummary(
         total_unread=total,
@@ -64,7 +71,8 @@ async def get_alerts_summary(
 @router.get("")
 async def list_alerts(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     alert_type: Optional[AlertType] = None,
@@ -76,7 +84,14 @@ async def list_alerts(
         select(Alert)
         .order_by(Alert.created_at.desc())
     )
-    
+
+    if scope.location_ids is not None:
+        # Inner join naturally excludes item-only alerts (batch_id IS NULL)
+        # for scoped users, since those aren't attributable to one location.
+        query = query.join(Batch, Alert.batch_id == Batch.id).where(
+            Batch.location_id.in_(scope.location_ids)
+        )
+
     if alert_type:
         query = query.where(Alert.alert_type == alert_type)
     
@@ -122,30 +137,50 @@ async def list_alerts(
     }
 
 
+async def _assert_alert_in_scope(db: DbSession, alert_id: UUID, scope: AccessScope) -> None:
+    """404 if the alert doesn't exist or (for scoped staff) its batch
+    isn't at one of their assigned locations."""
+    if scope.location_ids is None:
+        return
+    result = await db.execute(
+        select(Alert.id)
+        .join(Batch, Alert.batch_id == Batch.id)
+        .where(Alert.id == alert_id, Batch.location_id.in_(scope.location_ids))
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="התראה לא נמצאה",  # Alert not found
+        )
+
+
 @router.put("/{alert_id}/read")
 async def mark_alert_read(
     alert_id: UUID,
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> dict:
     """Mark an alert as read"""
+    await _assert_alert_in_scope(db, alert_id, scope)
     service = AlertService(db)
     await service.mark_as_read(alert_id)
     await db.commit()
-    
+
     return {"success": True, "alert_id": str(alert_id)}
 
 
 @router.put("/read-all")
 async def mark_all_read(
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> dict:
     """Mark all alerts as read"""
     service = AlertService(db)
-    count = await service.mark_all_as_read()
+    count = await service.mark_all_as_read(location_ids=scope.location_ids)
     await db.commit()
-    
+
     return {"success": True, "marked_count": count}
 
 
@@ -153,13 +188,15 @@ async def mark_all_read(
 async def dismiss_alert(
     alert_id: UUID,
     db: DbSession,
-    current_user: CurrentUser,
+    current_user: StaffUser,
+    scope: Scope,
 ) -> dict:
     """Dismiss an alert"""
+    await _assert_alert_in_scope(db, alert_id, scope)
     service = AlertService(db)
     await service.dismiss_alert(alert_id)
     await db.commit()
-    
+
     return {"success": True, "alert_id": str(alert_id)}
 
 
