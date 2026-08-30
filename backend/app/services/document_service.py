@@ -9,8 +9,6 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import (
     SimpleDocTemplate,
     Table,
@@ -31,6 +29,13 @@ from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.user import User
 from app.services.sequence_service import generate_sequential_number
+from app.services.pdf_text import (
+    FONT_NAME,
+    FONT_NAME_BOLD,
+    register_pdf_fonts,
+    shape,
+    shape_paragraph,
+)
 
 
 class DocumentService:
@@ -128,10 +133,12 @@ class DocumentService:
         dn = await self.get_delivery_note_with_details(delivery_note_id)
         if not dn:
             raise ValueError("תעודת משלוח לא נמצאה")
-        
+
+        register_pdf_fonts()
+
         # Create PDF buffer
         buffer = io.BytesIO()
-        
+
         # Create document
         doc = SimpleDocTemplate(
             buffer,
@@ -141,122 +148,140 @@ class DocumentService:
             topMargin=20*mm,
             bottomMargin=20*mm,
         )
-        
+
         # Styles
         styles = getSampleStyleSheet()
-        
-        # Custom styles for RTL Hebrew support
+
+        # Custom styles for RTL Hebrew support. Every style has to name a
+        # DejaVu face explicitly - the stylesheet defaults are Helvetica,
+        # which has no Hebrew glyphs.
         title_style = ParagraphStyle(
             'Title',
             parent=styles['Heading1'],
+            fontName=FONT_NAME_BOLD,
             fontSize=18,
             alignment=TA_CENTER,
             spaceAfter=20,
         )
-        
+
         header_style = ParagraphStyle(
             'Header',
             parent=styles['Normal'],
+            fontName=FONT_NAME,
             fontSize=12,
             alignment=TA_RIGHT,
         )
-        
+
         # Build document elements
         elements = []
-        
+
         # Title
         if dn.is_consignment:
             title = "תעודת משלוח - העברה לקונסיגנציה"
         else:
             title = "תעודת משלוח"
-        elements.append(Paragraph(title, title_style))
+        elements.append(Paragraph(shape(title), title_style))
         elements.append(Spacer(1, 10*mm))
-        
-        # Header info
+
+        # Header info. Value column first, label column second: the table is
+        # laid out left-to-right, so putting the label last lands it against
+        # the right margin where a Hebrew reader looks for it.
         header_data = [
-            ["מספר תעודה:", dn.delivery_note_number],
-            ["תאריך:", dn.issue_date.strftime("%d/%m/%Y") if dn.issue_date else ""],
-            ["לקוח:", dn.customer.name if dn.customer else ""],
-            ["כתובת:", dn.customer.address if dn.customer and dn.customer.address else ""],
-            ["איש קשר:", dn.customer.contact_person if dn.customer and dn.customer.contact_person else ""],
+            [shape(dn.delivery_note_number), shape("מספר תעודה:")],
+            [shape(dn.issue_date.strftime("%d/%m/%Y") if dn.issue_date else ""), shape("תאריך:")],
+            [shape(dn.customer.name if dn.customer else ""), shape("לקוח:")],
+            [shape(dn.customer.address if dn.customer and dn.customer.address else ""), shape("כתובת:")],
+            [shape(dn.customer.contact_person if dn.customer and dn.customer.contact_person else ""), shape("איש קשר:")],
         ]
-        
-        header_table = Table(header_data, colWidths=[40*mm, 120*mm])
+
+        header_table = Table(header_data, colWidths=[120*mm, 40*mm])
         header_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         elements.append(header_table)
         elements.append(Spacer(1, 10*mm))
-        
-        # Items table
-        items_header = ["#", "מק\"ט", "תיאור", "אצווה", "תפוגה", "כמות", "יח'"]
-        items_data = [items_header]
-        
+
+        # Items table, columns ordered right-to-left: the row number sits in
+        # the rightmost column and the unit in the leftmost.
+        items_header = ["יח'", "כמות", "תפוגה", "אצווה", "תיאור", "מק\"ט", "#"]
+        items_data = [[shape(cell) for cell in items_header]]
+
         for i, item in enumerate(dn.items, 1):
             items_data.append([
-                str(i),
-                item.item.sku if item.item else "",
-                item.item.name if item.item else "",
-                item.batch.batch_number if item.batch else "",
-                item.batch.expiration_date.strftime("%d/%m/%Y") if item.batch else "",
+                shape(item.item.unit_of_measure if item.item else ""),
                 f"{item.quantity:.2f}",
-                item.item.unit_of_measure if item.item else "",
+                item.batch.expiration_date.strftime("%d/%m/%Y") if item.batch else "",
+                shape(item.batch.batch_number if item.batch else ""),
+                shape(item.item.name if item.item else ""),
+                shape(item.item.sku if item.item else ""),
+                str(i),
             ])
-        
+
         # Add total row
         total_qty = sum(item.quantity for item in dn.items)
-        items_data.append(["", "", "", "", "סה\"כ:", f"{total_qty:.2f}", ""])
-        
+        items_data.append(["", f"{total_qty:.2f}", shape("סה\"כ:"), "", "", "", ""])
+
         items_table = Table(
             items_data,
-            colWidths=[10*mm, 25*mm, 50*mm, 30*mm, 25*mm, 20*mm, 15*mm]
+            colWidths=[15*mm, 20*mm, 25*mm, 30*mm, 50*mm, 25*mm, 10*mm]
         )
         items_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),
+            ('FONTNAME', (0, 0), (-1, 0), FONT_NAME_BOLD),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('ALIGN', (5, 1), (5, -1), 'CENTER'),
+            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
             ('GRID', (0, 0), (-1, -2), 0.5, colors.black),
-            ('LINEABOVE', (4, -1), (-1, -1), 1, colors.black),
-            ('FONTSIZE', (4, -1), (-1, -1), 10),
+            ('LINEABOVE', (0, -1), (2, -1), 1, colors.black),
+            ('FONTSIZE', (0, -1), (2, -1), 10),
             ('TOPPADDING', (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         elements.append(items_table)
         elements.append(Spacer(1, 15*mm))
-        
+
         # Notes
         if dn.notes:
-            elements.append(Paragraph(f"הערות: {dn.notes}", header_style))
+            elements.append(Paragraph(
+                shape_paragraph(f"הערות: {dn.notes}", FONT_NAME, 12, doc.width),
+                header_style,
+            ))
             elements.append(Spacer(1, 10*mm))
-        
-        # Signature area
+
+        # Signature area, mirrored to read right-to-left like the rest
         sig_data = [
-            ["חתימת מקבל:", "_________________", "תאריך:", "_________________"],
-            ["שם מקבל:", "_________________", "", ""],
+            ["_________________", shape("תאריך:"), "_________________", shape("חתימת מקבל:")],
+            ["", "", "_________________", shape("שם מקבל:")],
         ]
-        sig_table = Table(sig_data, colWidths=[30*mm, 50*mm, 25*mm, 50*mm])
+        sig_table = Table(sig_data, colWidths=[50*mm, 25*mm, 50*mm, 30*mm])
         sig_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
             ('TOPPADDING', (0, 0), (-1, -1), 10),
         ]))
         elements.append(sig_table)
-        
+
         # Footer
         elements.append(Spacer(1, 20*mm))
         footer_text = f"הופק על ידי: {dn.created_by_user.full_name if dn.created_by_user else ''}"
-        elements.append(Paragraph(footer_text, header_style))
-        
+        elements.append(Paragraph(
+            shape_paragraph(footer_text, FONT_NAME, 12, doc.width),
+            header_style,
+        ))
+
         # Build PDF
         doc.build(elements)
-        
+
         # Get PDF bytes
         pdf_bytes = buffer.getvalue()
         buffer.close()
-        
+
         return pdf_bytes
     
     async def get_dispatch_movements(self, reference_number: str) -> List[Movement]:
@@ -285,6 +310,8 @@ class DocumentService:
         if not movements:
             raise ValueError(f"לא נמצא ליקוט עם מספר אסמכתא {reference_number}")
 
+        register_pdf_fonts()
+
         buffer = io.BytesIO()
         doc = SimpleDocTemplate(
             buffer,
@@ -297,61 +324,66 @@ class DocumentService:
 
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle(
-            'Title', parent=styles['Heading1'], fontSize=18,
-            alignment=TA_CENTER, spaceAfter=20,
+            'Title', parent=styles['Heading1'], fontName=FONT_NAME_BOLD,
+            fontSize=18, alignment=TA_CENTER, spaceAfter=20,
         )
         header_style = ParagraphStyle(
-            'Header', parent=styles['Normal'], fontSize=12, alignment=TA_RIGHT,
+            'Header', parent=styles['Normal'], fontName=FONT_NAME,
+            fontSize=12, alignment=TA_RIGHT,
         )
 
-        elements = [Paragraph("תעודת ליקוט", title_style), Spacer(1, 10 * mm)]
+        elements = [Paragraph(shape("תעודת ליקוט"), title_style), Spacer(1, 10 * mm)]
 
         picker = movements[0].user.full_name if movements[0].user else ""
         header_data = [
-            ["מספר אסמכתא:", reference_number],
-            ["תאריך:", movements[0].timestamp.strftime("%d/%m/%Y %H:%M")],
-            ["לוקט על ידי:", picker],
+            [shape(reference_number), shape("מספר אסמכתא:")],
+            [movements[0].timestamp.strftime("%d/%m/%Y %H:%M"), shape("תאריך:")],
+            [shape(picker), shape("לוקט על ידי:")],
         ]
-        header_table = Table(header_data, colWidths=[40 * mm, 120 * mm])
+        header_table = Table(header_data, colWidths=[120 * mm, 40 * mm])
         header_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),
             ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
-            ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
         elements.append(header_table)
         elements.append(Spacer(1, 10 * mm))
 
-        items_header = ["#", "מק\"ט", "תיאור", "אצווה", "כמות", "יח'"]
-        items_data = [items_header]
+        # Columns ordered right-to-left, row number in the rightmost column.
+        items_header = ["יח'", "כמות", "אצווה", "תיאור", "מק\"ט", "#"]
+        items_data = [[shape(cell) for cell in items_header]]
         total_qty = Decimal("0")
         for i, movement in enumerate(movements, 1):
             batch = movement.batch
             item = batch.item if batch else None
             items_data.append([
-                str(i),
-                item.sku if item else "",
-                item.name if item else "",
-                batch.batch_number if batch else "",
+                shape(item.unit_of_measure if item else ""),
                 f"{movement.quantity:.2f}",
-                item.unit_of_measure if item else "",
+                shape(batch.batch_number if batch else ""),
+                shape(item.name if item else ""),
+                shape(item.sku if item else ""),
+                str(i),
             ])
             total_qty += movement.quantity
 
-        items_data.append(["", "", "", "סה\"כ:", f"{total_qty:.2f}", ""])
+        items_data.append(["", f"{total_qty:.2f}", shape("סה\"כ:"), "", "", ""])
 
         items_table = Table(
             items_data,
-            colWidths=[10 * mm, 25 * mm, 55 * mm, 30 * mm, 20 * mm, 15 * mm],
+            colWidths=[15 * mm, 20 * mm, 30 * mm, 55 * mm, 25 * mm, 10 * mm],
         )
         items_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),
+            ('FONTNAME', (0, 0), (-1, 0), FONT_NAME_BOLD),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-            ('ALIGN', (4, 1), (4, -1), 'CENTER'),
+            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
             ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
             ('GRID', (0, 0), (-1, -2), 0.5, colors.black),
-            ('LINEABOVE', (3, -1), (-1, -1), 1, colors.black),
-            ('FONTSIZE', (3, -1), (-1, -1), 10),
+            ('LINEABOVE', (0, -1), (2, -1), 1, colors.black),
+            ('FONTSIZE', (0, -1), (2, -1), 10),
             ('TOPPADDING', (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))

@@ -1,9 +1,12 @@
 """Tests for picking and dispatch functionality"""
+import base64
+import io
 from datetime import date, timedelta
 from decimal import Decimal
 from unittest.mock import patch
 from uuid import uuid4
 
+import pypdf
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -634,3 +637,118 @@ async def test_generate_delivery_note_email_without_customer_email_fails(
     data = response.json()
     assert data["success"] is False
 
+
+
+def _pdf_text(pdf_base64: str) -> str:
+    """Extract the visible text of a generated PDF.
+
+    pypdf resolves glyphs through the embedded font's ToUnicode map and
+    normalizes RTL runs back to logical order, so a correctly rendered
+    document reads back as the Hebrew we wrote.
+    """
+    reader = pypdf.PdfReader(io.BytesIO(base64.b64decode(pdf_base64)))
+    return "\n".join(page.extract_text() for page in reader.pages)
+
+
+@pytest.mark.asyncio
+async def test_pick_note_pdf_renders_readable_hebrew(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """Guards two regressions that shipped together: with no Hebrew font
+    registered every Hebrew glyph rendered as a fallback box, and with no
+    bidi pass the letters that did render came out in logical rather than
+    visual order - i.e. backwards on the page."""
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={"items": [{"batch_id": str(batches[0].id), "quantity": "20"}]},
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "pick_note", "action": "print"},
+    )
+    text = _pdf_text(response.json()["pdf_base64"])
+
+    assert "\u25a0" not in text, "Hebrew fell back to boxes - font not registered"
+    assert "תעודת ליקוט" in text
+    assert "מספר אסמכתא" in text
+    assert "סה" in text
+    assert ref_number in text
+    assert item.sku in text
+    assert item.name in text
+
+
+@pytest.mark.asyncio
+async def test_delivery_note_pdf_renders_readable_hebrew(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    customer: Customer,
+):
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={
+            "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+            "customer_id": str(customer.id),
+        },
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "delivery_note", "action": "print"},
+    )
+    text = _pdf_text(response.json()["pdf_base64"])
+
+    assert "\u25a0" not in text, "Hebrew fell back to boxes - font not registered"
+    assert "תעודת משלוח" in text
+    assert "מספר תעודה" in text
+    assert "חתימת מקבל" in text
+    assert customer.name in text
+    assert item.sku in text
+
+
+@pytest.mark.asyncio
+async def test_delivery_note_pdf_renders_non_hebrew_customer_names(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """The app ships Greek and Turkish locales, so customer data is not
+    guaranteed to be Hebrew or ASCII - the embedded font has to cover those
+    scripts too rather than boxing them."""
+    greek_turkish = Customer(name="Ελληνικά Şirketi", email="intl@example.com")
+    db_session.add(greek_turkish)
+    await db_session.commit()
+    await db_session.refresh(greek_turkish)
+
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={
+            "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+            "customer_id": str(greek_turkish.id),
+        },
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "delivery_note", "action": "print"},
+    )
+    text = _pdf_text(response.json()["pdf_base64"])
+
+    assert "\u25a0" not in text
+    assert "Ελληνικά Şirketi" in text
