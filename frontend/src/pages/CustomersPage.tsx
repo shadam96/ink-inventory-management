@@ -11,6 +11,7 @@ import { Header } from '@/components/layout/Header'
 import { SearchInput } from '@/components/SearchInput'
 import { CustomerDialog } from '@/components/CustomerDialog'
 import { customersApi, type Customer, type CreateCustomerData } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { formatDate } from '@/lib/utils'
 
 export function CustomersPage() {
@@ -70,7 +71,7 @@ export function CustomersPage() {
       toast.success(t('customers.deactivated', { name: customer.name }))
       fetchCustomers()
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || t('customers.deactivateError'))
+      toast.error(getApiErrorMessage(error, t('customers.deactivateError')))
     }
   }
 
@@ -85,7 +86,7 @@ export function CustomersPage() {
       }
       fetchCustomers()
     } catch (error: any) {
-      const message = error.response?.data?.detail || t('customers.saveError')
+      const message = getApiErrorMessage(error, t('customers.saveError'))
       toast.error(message)
       throw error
     }

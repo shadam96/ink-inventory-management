@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
 import { itemsApi, receivingApi, systemSettingsApi, type Item } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { cn, daysUntilExpiration } from '@/lib/utils'
 
@@ -350,7 +351,7 @@ export function ReceivingPage() {
       }
     } catch (error: any) {
       console.error('Failed to receive items:', error)
-      toast.error(error.response?.data?.detail || t('receiving.error'))
+      toast.error(getApiErrorMessage(error, t('receiving.error')))
       // Nothing was confirmed received - leave the full list (including
       // the eligible items just attempted) staged so nothing is lost.
     } finally {

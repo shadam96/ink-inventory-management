@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { customersApi, itemsApi, pickingApi, deliveryNotesApi, type Customer, type Item } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/apiError'
 
 interface BatchOption {
   batch_id: string
@@ -142,7 +143,7 @@ export function CreateDeliveryNoteDialog({ open, onOpenChange, onCreated }: Crea
       onCreated()
     } catch (error: any) {
       console.error('Failed to create delivery note:', error)
-      toast.error(error?.response?.data?.detail || t('deliveryNotes.createError'))
+      toast.error(getApiErrorMessage(error, t('deliveryNotes.createError')))
     } finally {
       setSubmitting(false)
     }
