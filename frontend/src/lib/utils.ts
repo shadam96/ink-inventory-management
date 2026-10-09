@@ -124,7 +124,9 @@ export function daysUntilExpiration(expirationDate: Date | string): number {
   today.setHours(0, 0, 0, 0)
   exp.setHours(0, 0, 0, 0)
   const diff = exp.getTime() - today.getTime()
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+  // Round, not ceil: across a DST transition the span between two local
+  // midnights is a whole number of days +/- one hour.
+  return Math.round(diff / (1000 * 60 * 60 * 24))
 }
 
 /**
