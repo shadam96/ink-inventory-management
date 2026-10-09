@@ -78,6 +78,7 @@ class FEFOEngine:
         item_id: UUID,
         exclude_expired: bool = True,
         strategy: str = "fefo",
+        batch_filter=None,
     ) -> List[Batch]:
         """
         Get all available batches for an item, sorted by the given strategy.
@@ -86,6 +87,9 @@ class FEFOEngine:
           fefo — First Expired, First Out (expiration_date ASC)
           fifo — First In, First Out (receipt_date ASC)
           lifo — Last In, First Out (receipt_date DESC)
+
+        batch_filter is an optional WHERE clause restricting which batches
+        the caller may see (see app.services.scoping.batch_access_filter).
         """
         query = (
             select(Batch)
@@ -107,6 +111,9 @@ class FEFOEngine:
         if exclude_expired:
             query = query.where(Batch.expiration_date >= date.today())
 
+        if batch_filter is not None:
+            query = query.where(batch_filter)
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
     
@@ -116,6 +123,7 @@ class FEFOEngine:
         quantity_needed: Decimal,
         exclude_expired: bool = True,
         strategy: str = "fefo",
+        batch_filter=None,
     ) -> List[BatchSuggestion]:
         """
         Suggest batches to pick from using the given strategy.
@@ -123,7 +131,9 @@ class FEFOEngine:
         When *quantity_needed* is 0 every available batch is returned
         with ``suggested_quantity = 0``.
         """
-        batches = await self.get_available_batches(item_id, exclude_expired, strategy=strategy)
+        batches = await self.get_available_batches(
+            item_id, exclude_expired, strategy=strategy, batch_filter=batch_filter
+        )
         
         if not batches:
             return []
@@ -160,9 +170,9 @@ class FEFOEngine:
 
         return suggestions
     
-    async def get_total_available(self, item_id: UUID) -> Decimal:
+    async def get_total_available(self, item_id: UUID, batch_filter=None) -> Decimal:
         """Get total available quantity for an item"""
-        batches = await self.get_available_batches(item_id)
+        batches = await self.get_available_batches(item_id, batch_filter=batch_filter)
         return sum(b.quantity_available for b in batches)
     
     async def can_fulfill(self, item_id: UUID, quantity_needed: Decimal) -> bool:
@@ -174,6 +184,7 @@ class FEFOEngine:
         self,
         batch_id: UUID,
         quantity: Decimal,
+        batch_filter=None,
     ) -> PickingValidation:
         """
         Validate a picking operation.
@@ -183,16 +194,22 @@ class FEFOEngine:
         - Batch is not expired
         - Sufficient quantity available
         - No earlier expiring batches are skipped
+
+        A batch outside batch_filter is reported exactly like a missing one,
+        and only batches inside it count toward the FEFO-violation warning.
         """
         errors = []
         warnings = []
         
         # Get the batch
-        result = await self.db.execute(
+        query = (
             select(Batch)
             .options(selectinload(Batch.item))
             .where(Batch.id == batch_id)
         )
+        if batch_filter is not None:
+            query = query.where(batch_filter)
+        result = await self.db.execute(query)
         batch = result.scalar_one_or_none()
         
         if not batch:
@@ -245,7 +262,7 @@ class FEFOEngine:
             )
         
         # Check for FEFO violations - are there earlier expiring batches?
-        earlier_batches = await self.db.execute(
+        earlier_query = (
             select(Batch)
             .where(
                 Batch.item_id == batch.item_id,
@@ -257,6 +274,9 @@ class FEFOEngine:
             )
             .order_by(Batch.expiration_date.asc())
         )
+        if batch_filter is not None:
+            earlier_query = earlier_query.where(batch_filter)
+        earlier_batches = await self.db.execute(earlier_query)
         earlier = list(earlier_batches.scalars().all())
         
         if earlier:
@@ -281,11 +301,13 @@ class FEFOEngine:
             warnings=warnings,
         )
     
-    async def get_expiration_summary(self, item_id: UUID) -> dict:
+    async def get_expiration_summary(self, item_id: UUID, batch_filter=None) -> dict:
         """
         Get expiration breakdown for an item's inventory.
         """
-        batches = await self.get_available_batches(item_id, exclude_expired=False)
+        batches = await self.get_available_batches(
+            item_id, exclude_expired=False, batch_filter=batch_filter
+        )
         today = date.today()
         
         summary = {
