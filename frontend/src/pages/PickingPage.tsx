@@ -25,7 +25,8 @@ import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
 import { PostPickDialog } from '@/components/PostPickDialog'
 import { formatDate, daysUntilExpiration, getExpirationStatus, cn } from '@/lib/utils'
-import { itemsApi, customersApi, pickingApi, receivingApi, type Item } from '@/lib/api'
+import { customersApi, pickingApi, receivingApi, type Item } from '@/lib/api'
+import { fetchAllItems } from '@/lib/fetchAllItems'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { useAuthStore } from '@/store/auth'
 
@@ -135,10 +136,9 @@ function AdminPickingView() {
 
   async function fetchItems() {
     try {
-      const response = await itemsApi.list({ page_size: 100 })
       // Surface every item so the operator can see what exists; out-of-stock
       // ones are rendered as disabled options below to make the reason visible.
-      setItems(response.items)
+      setItems(await fetchAllItems())
     } catch (error) {
       console.error('Failed to fetch items:', error)
       toast.error(t('picking.fetchItemsError'))
@@ -563,8 +563,7 @@ function CustomerPickingView() {
 
   async function fetchItems() {
     try {
-      const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items)
+      setItems(await fetchAllItems())
     } catch (error) {
       console.error('Failed to fetch items:', error)
       toast.error(t('picking.fetchItemsError'))

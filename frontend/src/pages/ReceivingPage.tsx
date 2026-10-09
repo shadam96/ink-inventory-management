@@ -16,7 +16,8 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
-import { itemsApi, receivingApi, systemSettingsApi, type Item } from '@/lib/api'
+import { receivingApi, systemSettingsApi, type Item } from '@/lib/api'
+import { fetchAllItems } from '@/lib/fetchAllItems'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { cn, daysUntilExpiration } from '@/lib/utils'
 
@@ -98,8 +99,7 @@ export function ReceivingPage() {
 
   async function fetchItems() {
     try {
-      const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items)
+      setItems(await fetchAllItems())
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
