@@ -114,6 +114,26 @@ describe('daysUntilExpiration', () => {
       expect(utcDays).toBe(180)
       expect(positiveOffsetDays).toBe(180)
     })
+
+    it('counts whole calendar days across a DST transition', () => {
+      // Israel leaves DST on 2026-10-25 and enters it on 2026-03-27, so the
+      // span between two local midnights is a whole number of days plus or
+      // minus one hour - which must not round into an extra/missing day.
+      vi.useFakeTimers()
+      process.env.TZ = 'Asia/Jerusalem'
+
+      // Today in summer time, expiry in winter time (span is 30d + 1h)
+      vi.setSystemTime(new Date('2026-10-09T09:00:00Z'))
+      expect(daysUntilExpiration('2026-11-08')).toBe(30)
+
+      // Today in winter time, expiry in summer time (span is 30d - 1h)
+      vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+      expect(daysUntilExpiration('2026-04-19')).toBe(30)
+
+      // Already expired, today in summer time, expiry in winter time
+      vi.setSystemTime(new Date('2026-04-19T09:00:00Z'))
+      expect(daysUntilExpiration('2026-03-20')).toBe(-30)
+    })
   })
 })
 

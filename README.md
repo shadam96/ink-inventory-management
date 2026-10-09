@@ -111,15 +111,20 @@ cd frontend && npm test
 
 | Service | Provider | Config |
 |---------|----------|--------|
-| Backend | Render (free tier) | `backend/Procfile` |
+| Backend | Railway | `backend/Procfile` |
 | Frontend | Vercel | `frontend/vercel.json` |
-| Database | Neon / Render PostgreSQL | `DATABASE_URL` env var |
+| Database | Neon (PostgreSQL) | `DATABASE_URL` env var |
+
+There are two Railway backend services: one tracks `dev/stability` (staging) and one
+tracks `main` (production). Each has its own Neon branch. Migrations run on boot
+(`alembic upgrade head` in the Procfile) — never run them from a local machine against
+a deployed database.
 
 ## Tech Stack
 
-**Backend:** FastAPI, SQLAlchemy 2.0 async, PostgreSQL, Alembic, JWT, APScheduler, aiosmtplib
+**Backend:** FastAPI, SQLAlchemy 2.0 async, PostgreSQL, Alembic, JWT, APScheduler, Resend (email), ReportLab (PDF)
 
-**Frontend:** React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, Recharts, i18next (Hebrew RTL)
+**Frontend:** React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Zustand, Recharts, i18next (Hebrew RTL, plus English, Greek, Turkish), html5-qrcode
 
 ## License
 

@@ -37,9 +37,18 @@ class ReceivingService:
         """Generate unique batch number: GR-YYMMDD-XXX"""
         return await generate_sequential_number(self.db, Batch.batch_number, prefix, pad_width=3)
 
+    async def generate_reference_number(self, prefix: str) -> str:
+        """Generate a movement reference number (GRN/DSP/CON-YYMMDD-XXX).
+        Sequenced against Movement.reference_number, where these numbers
+        live - not Batch.batch_number, which would restart at 001 every
+        time since no batch ever carries one."""
+        return await generate_sequential_number(
+            self.db, Movement.reference_number, prefix, pad_width=3
+        )
+
     async def generate_grn_number(self) -> str:
         """Generate Goods Receipt Note number"""
-        return await self.generate_batch_number(prefix="GRN")
+        return await self.generate_reference_number(prefix="GRN")
 
     async def _create_batch_with_generated_number(
         self,

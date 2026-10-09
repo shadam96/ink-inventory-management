@@ -84,7 +84,7 @@ class ItemResponse(ItemBase, TimestampSchema):
     id: UUID
     barcode: Optional[str]
     description: Optional[str]
-    cost_price: Decimal
+    cost_price: Optional[Decimal]  # None when the caller is a customer
     currency: Currency
     reorder_point: int
     min_stock: int

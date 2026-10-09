@@ -58,8 +58,14 @@ class DocumentService:
         is_consignment: bool = False,
         notes: Optional[str] = None,
         issue_date: Optional[date] = None,
+        location_ids: Optional[List[UUID]] = None,
     ) -> DeliveryNote:
-        """Create a new delivery note"""
+        """Create a new delivery note.
+
+        location_ids restricts which batches may be put on it (staff
+        location-scoping) - a batch elsewhere is reported as not found.
+        None means unrestricted.
+        """
         # Validate customer
         result = await self.db.execute(
             select(Customer).where(Customer.id == customer_id)
@@ -88,9 +94,10 @@ class DocumentService:
         # Add items
         for item_data in items:
             # Get batch to find item_id
-            result = await self.db.execute(
-                select(Batch).where(Batch.id == item_data["batch_id"])
-            )
+            batch_query = select(Batch).where(Batch.id == item_data["batch_id"])
+            if location_ids is not None:
+                batch_query = batch_query.where(Batch.location_id.in_(location_ids))
+            result = await self.db.execute(batch_query)
             batch = result.scalar_one_or_none()
             if not batch:
                 raise ValueError(f"אצווה לא נמצאה: {item_data['batch_id']}")

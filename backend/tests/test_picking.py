@@ -236,6 +236,30 @@ async def test_create_dispatch(
 
 
 @pytest.mark.asyncio
+async def test_same_day_dispatches_get_distinct_reference_numbers(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """DSP numbers live on movements, not batches - sequencing them against
+    batch numbers gave every same-day dispatch DSP-YYMMDD-001, merging
+    their pick notes into one document."""
+    item, batches = item_with_stock
+
+    refs = []
+    for _ in range(2):
+        response = await client.post(
+            "/api/v1/picking/dispatch",
+            headers=auth_headers,
+            json={"items": [{"batch_id": str(batches[0].id), "quantity": "1"}]},
+        )
+        assert response.status_code == 200
+        refs.append(response.json()["reference_number"])
+
+    assert refs[0] != refs[1]
+
+
+@pytest.mark.asyncio
 async def test_dispatch_atomic_rollback(
     client: AsyncClient,
     auth_headers: dict,

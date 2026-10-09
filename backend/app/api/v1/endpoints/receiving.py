@@ -7,8 +7,9 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from app.api.deps import DbSession, WarehouseUser
+from app.api.deps import DbSession, PickingUser, WarehouseUser
 from app.api.error_handling import translate_value_error
+from app.models.user import UserRole
 from app.services.receiving_service import ReceivingService
 from app.schemas.batch import BatchResponse
 from app.schemas.common import MessageResponse
@@ -236,13 +237,16 @@ class BarcodeRequest(BaseModel):
 async def validate_barcode(
     request: BarcodeRequest,
     db: DbSession,
-    current_user: WarehouseUser,
+    current_user: PickingUser,
 ) -> dict:
     """
     Validate a scanned barcode/SKU and return item info.
     Searches barcode column, then SKU by exact match.
     If no exact match, tries each space-separated token from the scanned
     string (handles structured QR codes that embed the SKU among other data).
+
+    Also used by the customer picking screen, so customers may call it -
+    but never get the cost price back.
     """
     from sqlalchemy import func, literal, select, or_
     from app.models.item import Item
@@ -283,17 +287,20 @@ async def validate_barcode(
     # Try to parse structured QR data
     parsed_data = _parse_qr_data(scanned)
 
+    item_info = {
+        "id": str(item.id),
+        "sku": item.sku,
+        "barcode": item.barcode,
+        "name": item.name,
+        "supplier": item.supplier,
+        "unit_of_measure": item.unit_of_measure,
+    }
+    if current_user.role != UserRole.CUSTOMER:
+        item_info["cost_price"] = float(item.cost_price)
+
     return {
         "valid": True,
-        "item": {
-            "id": str(item.id),
-            "sku": item.sku,
-            "barcode": item.barcode,
-            "name": item.name,
-            "supplier": item.supplier,
-            "unit_of_measure": item.unit_of_measure,
-            "cost_price": float(item.cost_price),
-        },
+        "item": item_info,
         **({"parsed_data": parsed_data} if parsed_data else {}),
     }
 

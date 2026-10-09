@@ -180,11 +180,26 @@ async def scoping_world(db_session: AsyncSession):
         "item": item,
         "batch_a": batch_a,
         "batch_b": batch_b,
+        "customer": customer,
         "admin_headers": _headers(admin_user),
         "unassigned_worker_headers": _headers(unassigned_worker),
         "scoped_worker_headers": _headers(scoped_worker),
         "customer_headers": _headers(customer_user),
     }
+
+
+async def _create_delivery_note(client: AsyncClient, world: dict, batch: Batch) -> dict:
+    """Create a DN for world's customer as admin (no stock movement)."""
+    response = await client.post(
+        "/api/v1/delivery-notes",
+        json={
+            "customer_id": str(world["customer"].id),
+            "items": [{"batch_id": str(batch.id), "quantity": 5}],
+        },
+        headers=world["admin_headers"],
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
 
 
 @pytest.mark.asyncio
@@ -338,3 +353,347 @@ async def test_customer_still_reaches_inventory(client: AsyncClient, scoping_wor
         "/api/v1/inventory/total-cost", headers=headers
     )
     assert total_cost_response.status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Picking honors location scope
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_picking_suggestions_only_include_assigned_location(
+    client: AsyncClient, scoping_world
+):
+    payload = {"item_id": str(scoping_world["item"].id), "quantity_needed": 0}
+
+    admin_response = await client.post(
+        "/api/v1/picking/suggest-batches", json=payload, headers=scoping_world["admin_headers"]
+    )
+    assert admin_response.status_code == 200
+    assert {s["batch_number"] for s in admin_response.json()["suggestions"]} == {
+        "SCOPE-BT-A",
+        "SCOPE-BT-B",
+    }
+
+    response = await client.post(
+        "/api/v1/picking/suggest-batches",
+        json=payload,
+        headers=scoping_world["scoped_worker_headers"],
+    )
+    assert response.status_code == 200
+    body = response.json()
+    for key in ("suggestions", "fifo_suggestions", "lifo_suggestions"):
+        assert {s["batch_number"] for s in body[key]} == {"SCOPE-BT-A"}, key
+    assert body["total_available"] == 50
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_cannot_pick_out_of_scope_batch(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    """Every picking write path rejects an out-of-scope batch exactly like a
+    nonexistent one, and leaves its stock untouched."""
+    headers = scoping_world["scoped_worker_headers"]
+    batch_b = scoping_world["batch_b"]
+
+    for path, payload in [
+        ("/api/v1/picking/validate-pick", {"batch_id": str(batch_b.id), "quantity": 1}),
+        ("/api/v1/picking/execute-pick", {"batch_id": str(batch_b.id), "quantity": 1}),
+        ("/api/v1/picking/dispatch", {"items": [{"batch_id": str(batch_b.id), "quantity": 1}]}),
+        ("/api/v1/picking/consume", {"batch_id": str(batch_b.id), "quantity": 1}),
+    ]:
+        response = await client.post(path, json=payload, headers=headers)
+        assert response.status_code == 400, path
+        assert response.json()["detail"]["errors"] == ["אצווה לא נמצאה"], path
+
+    await db_session.refresh(batch_b)
+    assert batch_b.quantity_available == Decimal("30")
+
+    own_response = await client.post(
+        "/api/v1/picking/execute-pick",
+        json={"batch_id": str(scoping_world["batch_a"].id), "quantity": 1},
+        headers=headers,
+    )
+    assert own_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_fefo_warning_ignores_out_of_scope_batches(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    """An earlier-expiring batch the worker can't see or pick must not
+    trigger a FEFO-violation warning (or leak its batch number)."""
+    db_session.add(
+        Batch(
+            batch_number="SCOPE-BT-B-EARLY",
+            item_id=scoping_world["item"].id,
+            location_id=scoping_world["location_b"].id,
+            expiration_date=date.today() + timedelta(days=45),
+            receipt_date=date.today(),
+            quantity_received=Decimal("10"),
+            quantity_available=Decimal("10"),
+            status=BatchStatus.ACTIVE,
+        )
+    )
+    await db_session.commit()
+    payload = {"batch_id": str(scoping_world["batch_a"].id), "quantity": 1}
+
+    admin_response = await client.post(
+        "/api/v1/picking/validate-pick", json=payload, headers=scoping_world["admin_headers"]
+    )
+    assert any("SCOPE-BT-B-EARLY" in w for w in admin_response.json()["warnings"])
+
+    response = await client.post(
+        "/api/v1/picking/validate-pick",
+        json=payload,
+        headers=scoping_world["scoped_worker_headers"],
+    )
+    assert response.status_code == 200
+    assert not any("SCOPE-BT-B-EARLY" in w for w in response.json()["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_expiration_summary_only_counts_assigned_location(
+    client: AsyncClient, scoping_world
+):
+    response = await client.get(
+        f"/api/v1/picking/expiration-summary/{scoping_world['item'].id}",
+        headers=scoping_world["scoped_worker_headers"],
+    )
+    assert response.status_code == 200
+    assert response.json()["total_quantity"] == 50
+    assert response.json()["total_batches"] == 1
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_cannot_print_out_of_scope_pick_note(
+    client: AsyncClient, scoping_world
+):
+    async def dispatch_as_admin(batch: Batch) -> str:
+        response = await client.post(
+            "/api/v1/picking/dispatch",
+            json={"items": [{"batch_id": str(batch.id), "quantity": 1}]},
+            headers=scoping_world["admin_headers"],
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["reference_number"]
+
+    ref_a = await dispatch_as_admin(scoping_world["batch_a"])
+    ref_b = await dispatch_as_admin(scoping_world["batch_b"])
+    headers = scoping_world["scoped_worker_headers"]
+    body = {"document_type": "pick_note", "action": "print"}
+
+    other_response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_b}/document", json=body, headers=headers
+    )
+    assert other_response.status_code == 404
+
+    own_response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_a}/document", json=body, headers=headers
+    )
+    assert own_response.status_code == 200
+    assert own_response.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_items_stock_counts_only_assigned_location(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    """The picking screen greys out items by /items stock, so it has to
+    agree with the (scoped) batch suggestions."""
+    response = await client.get(
+        f"/api/v1/items/{scoping_world['item'].id}",
+        headers=scoping_world["scoped_worker_headers"],
+    )
+    assert response.status_code == 200
+    assert float(response.json()["total_quantity_available"]) == 50
+
+    db_session.expire_all()  # see test_scoped_worker_dashboard_kpis_... above
+    list_response = await client.get(
+        "/api/v1/items", headers=scoping_world["scoped_worker_headers"]
+    )
+    row = next(i for i in list_response.json()["items"] if i["sku"] == "SCOPE-ITEM-001")
+    assert float(row["total_quantity_available"]) == 50
+
+
+# ---------------------------------------------------------------------------
+# Delivery notes honor location scope
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_only_sees_delivery_notes_for_assigned_location(
+    client: AsyncClient, scoping_world
+):
+    dn_a = await _create_delivery_note(client, scoping_world, scoping_world["batch_a"])
+    dn_b = await _create_delivery_note(client, scoping_world, scoping_world["batch_b"])
+    headers = scoping_world["scoped_worker_headers"]
+
+    list_response = await client.get("/api/v1/delivery-notes", headers=headers)
+    assert list_response.status_code == 200
+    assert {dn["id"] for dn in list_response.json()["items"]} == {dn_a["id"]}
+
+    for method, path, kwargs in [
+        ("GET", f"/api/v1/delivery-notes/{dn_b['id']}", {}),
+        ("GET", f"/api/v1/delivery-notes/{dn_b['id']}/pdf", {}),
+        ("PUT", f"/api/v1/delivery-notes/{dn_b['id']}/status", {"json": {"status": "issued"}}),
+    ]:
+        response = await client.request(method, path, headers=headers, **kwargs)
+        assert response.status_code == 404, f"{method} {path}"
+
+    own_response = await client.get(f"/api/v1/delivery-notes/{dn_a['id']}", headers=headers)
+    assert own_response.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_scoped_worker_cannot_put_out_of_scope_batch_on_delivery_note(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    response = await client.post(
+        "/api/v1/delivery-notes",
+        json={
+            "customer_id": str(scoping_world["customer"].id),
+            "items": [{"batch_id": str(scoping_world["batch_b"].id), "quantity": 1}],
+        },
+        headers=scoping_world["scoped_worker_headers"],
+    )
+    assert response.status_code == 400
+
+    # In production get_db rolls the failed request back; the test client
+    # shares one session across requests, so do that rollback here.
+    await db_session.rollback()
+    list_response = await client.get(
+        "/api/v1/delivery-notes", headers=scoping_world["admin_headers"]
+    )
+    assert list_response.json()["total"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Customers only see stock delivered to them, and never cost prices
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_customer_suggestions_only_include_batches_delivered_to_them(
+    client: AsyncClient, scoping_world
+):
+    payload = {"item_id": str(scoping_world["item"].id), "quantity_needed": 0}
+    headers = scoping_world["customer_headers"]
+
+    before = await client.post("/api/v1/picking/suggest-batches", json=payload, headers=headers)
+    assert before.status_code == 200
+    assert before.json()["suggestions"] == []
+    assert before.json()["total_available"] == 0
+
+    await _create_delivery_note(client, scoping_world, scoping_world["batch_a"])
+
+    after = await client.post("/api/v1/picking/suggest-batches", json=payload, headers=headers)
+    assert {s["batch_number"] for s in after.json()["suggestions"]} == {"SCOPE-BT-A"}
+
+
+@pytest.mark.asyncio
+async def test_customer_items_hide_cost_and_count_only_delivered_stock(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    await _create_delivery_note(client, scoping_world, scoping_world["batch_a"])
+    item_id = scoping_world["item"].id  # read before expire_all() below
+    db_session.expire_all()
+    headers = scoping_world["customer_headers"]
+
+    list_response = await client.get("/api/v1/items", headers=headers)
+    assert list_response.status_code == 200
+    row = next(i for i in list_response.json()["items"] if i["sku"] == "SCOPE-ITEM-001")
+    assert row["cost_price"] is None
+    assert row["total_inventory_value"] is None
+    assert float(row["total_quantity_available"]) == 50
+
+    db_session.expire_all()
+    get_response = await client.get(f"/api/v1/items/{item_id}", headers=headers)
+    assert get_response.status_code == 200
+    assert get_response.json()["cost_price"] is None
+    assert get_response.json()["total_inventory_value"] is None
+
+    db_session.expire_all()
+    staff_response = await client.get(
+        f"/api/v1/items/{item_id}", headers=scoping_world["admin_headers"]
+    )
+    assert float(staff_response.json()["cost_price"]) == 10.0
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_export_item_catalog(client: AsyncClient, scoping_world):
+    for path in ("/api/v1/items/export/excel", "/api/v1/items/export/csv"):
+        response = await client.get(path, headers=scoping_world["customer_headers"])
+        assert response.status_code == 403, path
+
+
+@pytest.mark.asyncio
+async def test_customer_can_scan_barcode_without_seeing_cost(
+    client: AsyncClient, scoping_world
+):
+    response = await client.post(
+        "/api/v1/receiving/validate-barcode",
+        json={"barcode": "SCOPE-ITEM-001"},
+        headers=scoping_world["customer_headers"],
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+    assert "cost_price" not in response.json()["item"]
+
+    staff_response = await client.post(
+        "/api/v1/receiving/validate-barcode",
+        json={"barcode": "SCOPE-ITEM-001"},
+        headers=scoping_world["admin_headers"],
+    )
+    assert staff_response.json()["item"]["cost_price"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_customer_inventory_hides_cost(client: AsyncClient, scoping_world):
+    await _create_delivery_note(client, scoping_world, scoping_world["batch_a"])
+    headers = scoping_world["customer_headers"]
+
+    response = await client.get("/api/v1/inventory", headers=headers)
+    assert response.status_code == 200
+    rows = response.json()["items"]
+    assert [r["batch_number"] for r in rows] == ["SCOPE-BT-A"]
+    assert rows[0]["cost_price"] is None
+
+    total_response = await client.get("/api/v1/inventory/total-cost", headers=headers)
+    assert total_response.status_code == 200
+    assert total_response.json()["totals"] == {}
+    assert total_response.json()["product_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_customer_without_linked_customer_sees_no_stock(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    """A CUSTOMER-role user with no customer record linked must fail closed,
+    not fall through to the staff (full warehouse) path."""
+    unlinked = User(
+        username="scope_unlinked_customer",
+        email="scope_unlinked_customer@test.com",
+        hashed_password=get_password_hash("testpass123"),
+        full_name="Unlinked Customer",
+        role=UserRole.CUSTOMER,
+        is_active=True,
+    )
+    db_session.add(unlinked)
+    await db_session.commit()
+    await db_session.refresh(unlinked)
+    headers = _headers(unlinked)
+
+    inventory = await client.get("/api/v1/inventory", headers=headers)
+    assert inventory.status_code == 200
+    assert inventory.json()["items"] == []
+
+    total = await client.get("/api/v1/inventory/total-cost", headers=headers)
+    assert float(total.json()["total_quantity"]) == 0
+
+    suggestions = await client.post(
+        "/api/v1/picking/suggest-batches",
+        json={"item_id": str(scoping_world["item"].id), "quantity_needed": 0},
+        headers=headers,
+    )
+    assert suggestions.json()["suggestions"] == []

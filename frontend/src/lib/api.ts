@@ -396,7 +396,7 @@ export interface Item {
   supplier: string
   unit_of_measure: string
   color: ItemColor
-  cost_price: number
+  cost_price: number | null // null when the viewer is a customer
   currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
   reorder_point: number
   min_stock: number
@@ -591,7 +591,7 @@ export interface InventoryRow {
   batch_number: string
   quantity_available: number
   unit_of_measure: string
-  cost_price: number
+  cost_price: number | null // null when the viewer is a customer
   currency: string
   supplier: string
   expiration_date: string

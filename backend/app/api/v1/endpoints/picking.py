@@ -9,14 +9,16 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import DbSession, PickingUser, WarehouseUser
+from app.api.deps import DbSession, PickingUser, Scope, WarehouseUser
 from app.api.error_handling import translate_value_error
 from app.services.document_service import DocumentService
 from app.services.email_service import email_service
 from app.services.fefo_engine import FEFOEngine
 from app.services.inventory_service import InventoryService
+from app.services.scoping import batch_access_filter, batch_location_filter
+from app.models.batch import Batch
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem, DeliveryNoteStatus
-from app.models.movement import MovementType
+from app.models.movement import Movement, MovementType
 from app.models.user import UserRole
 
 router = APIRouter()
@@ -89,6 +91,7 @@ async def suggest_batches_for_picking(
     request: PickingSuggestionRequest,
     db: DbSession,
     current_user: PickingUser,
+    scope: Scope,
 ) -> dict:
     """
     Get batch suggestions for picking using FEFO, FIFO, and LIFO strategies.
@@ -96,26 +99,33 @@ async def suggest_batches_for_picking(
     Never returns 400 for insufficient quantity — instead ``can_fulfill``
     is ``false`` and the available batches are still returned so the UI
     can show what exists.
+
+    Only batches the caller may access are considered: a customer's
+    delivered stock, or a scoped staff user's assigned locations.
     """
     fefo = FEFOEngine(db)
+    batch_filter = batch_access_filter(current_user, scope)
 
-    total_available = await fefo.get_total_available(request.item_id)
+    total_available = await fefo.get_total_available(request.item_id, batch_filter=batch_filter)
     can_fulfill = total_available >= request.quantity_needed if request.quantity_needed > 0 else True
 
     fefo_suggestions = await fefo.suggest_batches_for_picking(
         item_id=request.item_id,
         quantity_needed=request.quantity_needed,
         strategy="fefo",
+        batch_filter=batch_filter,
     )
     fifo_suggestions = await fefo.suggest_batches_for_picking(
         item_id=request.item_id,
         quantity_needed=request.quantity_needed,
         strategy="fifo",
+        batch_filter=batch_filter,
     )
     lifo_suggestions = await fefo.suggest_batches_for_picking(
         item_id=request.item_id,
         quantity_needed=request.quantity_needed,
         strategy="lifo",
+        batch_filter=batch_filter,
     )
 
     return {
@@ -134,18 +144,20 @@ async def validate_pick(
     request: BatchPickRequest,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
 ) -> dict:
     """
     Validate a picking operation before execution.
-    
+
     Checks batch availability, expiration, and FEFO compliance.
     Returns warnings if picking from a batch with earlier-expiring alternatives.
     """
     fefo = FEFOEngine(db)
-    
+
     validation = await fefo.validate_picking(
         batch_id=request.batch_id,
         quantity=request.quantity,
+        batch_filter=batch_access_filter(current_user, scope),
     )
     
     if not validation.is_valid:
@@ -166,6 +178,7 @@ async def execute_pick(
     request: BatchPickRequest,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
     reference_number: Optional[str] = None,
     notes: Optional[str] = None,
 ) -> dict:
@@ -175,11 +188,12 @@ async def execute_pick(
     """
     fefo = FEFOEngine(db)
     inventory = InventoryService(db)
-    
+
     # Validate first
     validation = await fefo.validate_picking(
         batch_id=request.batch_id,
         quantity=request.quantity,
+        batch_filter=batch_access_filter(current_user, scope),
     )
     
     if not validation.is_valid:
@@ -218,21 +232,24 @@ async def create_dispatch(
     request: DispatchRequest,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
 ) -> DispatchResponse:
     """
     Create a dispatch with multiple items.
-    
+
     Validates all picks using FEFO, then executes them atomically.
     """
     fefo = FEFOEngine(db)
     inventory = InventoryService(db)
-    
+    batch_filter = batch_access_filter(current_user, scope)
+
     # Validate all picks first
     all_warnings = []
     for item in request.items:
         validation = await fefo.validate_picking(
             batch_id=item.batch_id,
             quantity=item.quantity,
+            batch_filter=batch_filter,
         )
         
         if not validation.is_valid:
@@ -270,7 +287,7 @@ async def create_dispatch(
     elif not ref_number:
         from app.services.receiving_service import ReceivingService
         receiving = ReceivingService(db)
-        ref_number = await receiving.generate_batch_number(prefix="DSP")
+        ref_number = await receiving.generate_reference_number(prefix="DSP")
 
     # Execute all picks
     movements = []
@@ -315,6 +332,7 @@ async def generate_dispatch_document(
     request: DispatchDocumentRequest,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
 ) -> DispatchDocumentResponse:
     """Generate or send a document for a dispatch (pick note or delivery note).
 
@@ -326,17 +344,36 @@ async def generate_dispatch_document(
     reference number as its delivery_note_number). If not, there is nothing
     to generate - this is reported back as a clear, honest failure rather
     than a 404, since the dispatch itself is real, only the document isn't.
+
+    A scoped staff user only sees dispatches that took stock from at least
+    one of their locations - anything else is reported as not found.
     """
+    not_found = HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail=f"לא נמצא ליקוט עם מספר אסמכתא {reference_number}",
+    )
+    location_clause = batch_location_filter(scope)
+    if location_clause is not None:
+        in_scope = await db.execute(
+            select(Movement.id)
+            .join(Batch, Movement.batch_id == Batch.id)
+            .where(
+                Movement.reference_number == reference_number,
+                Movement.movement_type == MovementType.DISPATCH,
+                location_clause,
+            )
+            .limit(1)
+        )
+        if in_scope.first() is None:
+            raise not_found
+
     doc_service = DocumentService(db)
 
     if request.document_type == "pick_note":
         try:
             pdf_bytes = await doc_service.generate_pick_note_pdf(reference_number)
         except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"לא נמצא ליקוט עם מספר אסמכתא {reference_number}",
-            )
+            raise not_found
 
         if request.action == "print":
             return DispatchDocumentResponse(
@@ -421,6 +458,7 @@ async def consume_item(
     request: ConsumeRequest,
     db: DbSession,
     current_user: PickingUser,
+    scope: Scope,
 ) -> dict:
     """
     Record customer consumption of an item.
@@ -451,6 +489,7 @@ async def consume_item(
     validation = await fefo.validate_picking(
         batch_id=request.batch_id,
         quantity=request.quantity,
+        batch_filter=batch_access_filter(current_user, scope),
     )
 
     if not validation.is_valid:
@@ -471,7 +510,7 @@ async def consume_item(
 
     from app.services.receiving_service import ReceivingService
     receiving = ReceivingService(db)
-    ref_number = await receiving.generate_batch_number(prefix="CON")
+    ref_number = await receiving.generate_reference_number(prefix="CON")
 
     movement = await inventory.record_movement(
         batch_id=request.batch_id,
@@ -500,13 +539,16 @@ async def get_expiration_summary(
     item_id: UUID,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
 ) -> dict:
     """
     Get expiration breakdown for an item's inventory.
     Shows quantities by expiration risk level.
     """
     fefo = FEFOEngine(db)
-    summary = await fefo.get_expiration_summary(item_id)
+    summary = await fefo.get_expiration_summary(
+        item_id, batch_filter=batch_access_filter(current_user, scope)
+    )
     
     # Convert Decimals to floats for JSON serialization
     return {
