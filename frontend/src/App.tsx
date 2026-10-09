@@ -16,7 +16,6 @@ import { AlertsPage } from '@/pages/AlertsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { useAuthStore } from '@/store/auth'
 import { useUIStore } from '@/store/ui'
-import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
 import { initDB } from '@/lib/offline'
 
 // Initialize IndexedDB on app load
@@ -141,9 +140,6 @@ function App() {
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-
-      {/* PWA Install Prompt */}
-      <PWAInstallPrompt />
     </BrowserRouter>
   )
 }
