@@ -27,11 +27,9 @@ const DEFAULT_MIN_SHELF_LIFE_DAYS = 180
 
 const receiveSchema = z.object({
   item_id: z.string().min(1, 'receiving.itemRequired'),
-  // Decimal, not integer: items are commonly measured in KG/L (see
-  // Item.unit_of_measure, default "KG") and the backend stores quantity as
-  // Numeric(12, 3) - forcing whole numbers here made it impossible to
-  // receive an accurately-weighed real-world shipment (e.g. "37.5 KG").
-  quantity: z.number().positive('receiving.quantityPositive'),
+  // Received boxes always hold a whole number of liters (the backend
+  // enforces this too), so a fractional quantity is a data-entry error.
+  quantity: z.number().int('receiving.quantityInteger').min(1, 'receiving.quantityPositive'),
   expiration_date: z.string().min(1, 'receiving.expirationDateRequired'),
   manufacturing_date: z.string().optional(),
   batch_number: z.string().optional(),
@@ -479,9 +477,12 @@ export function ReceivingPage() {
                   id="quantity"
                   {...register('quantity', { valueAsNumber: true })}
                   step={1}
-                  min={0.001}
+                  // A number input's step counts from min, so min must be
+                  // a whole number too - 0.001 made 10 "invalid" (only
+                  // 0.001, 1.001, ... passed) and the browser blocked it.
+                  min={1}
                   unit={t('common.liter')}
-                  inputMode="decimal"
+                  inputMode="numeric"
                   className={fieldClass('quantity')}
                 />
                 {errors.quantity && (
