@@ -19,7 +19,9 @@ router = APIRouter()
 class GoodsReceiptItem(BaseModel):
     """Single item in goods receipt"""
     item_id: UUID
-    quantity: Decimal = Field(..., gt=0)
+    # Received boxes always hold a whole number of liters, so a fractional
+    # quantity can only be a data-entry error - int rejects e.g. 10.5.
+    quantity: int = Field(..., gt=0)
     expiration_date: date
     manufacturing_date: Optional[date] = None
     batch_number: Optional[str] = None
@@ -45,7 +47,7 @@ class GoodsReceiptResponse(BaseModel):
 class SingleReceiptRequest(BaseModel):
     """Request to receive a single item"""
     item_id: UUID
-    quantity: Decimal = Field(..., gt=0)
+    quantity: int = Field(..., gt=0)  # whole liters - see GoodsReceiptItem
     expiration_date: date
     manufacturing_date: Optional[date] = None
     batch_number: Optional[str] = None
@@ -82,7 +84,7 @@ async def receive_single_item(
 
     batch, movement, grn_number = await service.receive_goods(
         item_id=receipt.item_id,
-        quantity=receipt.quantity,
+        quantity=Decimal(receipt.quantity),
         expiration_date=receipt.expiration_date,
         user_id=current_user.id,
         batch_number=receipt.batch_number,

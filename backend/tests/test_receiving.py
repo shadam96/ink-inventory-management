@@ -63,20 +63,41 @@ async def test_receive_single_item(
         headers=auth_headers,
         json={
             "item_id": str(test_item.id),
-            "quantity": "100.5",
+            "quantity": 100,
             "expiration_date": expiration_date.isoformat(),
             "location_id": str(test_location.id),
             "notes": "Test receipt",
         },
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert "grn_number" in data
     assert data["grn_number"].startswith("GRN-")
     assert "batch_number" in data
     assert data["batch_number"].startswith("GR-")
-    assert float(data["quantity"]) == 100.5
+    assert float(data["quantity"]) == 100
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["/api/v1/receiving/receive", "/api/v1/receiving/receive-multiple"])
+async def test_receive_rejects_fractional_quantity(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+    endpoint: str,
+):
+    """Scanned boxes are always whole liters - a fractional quantity is a data-entry error"""
+    line = {
+        "item_id": str(test_item.id),
+        "quantity": 100.5,
+        "expiration_date": (date.today() + timedelta(days=365)).isoformat(),
+    }
+    body = line if endpoint.endswith("/receive") else {"items": [line]}
+
+    response = await client.post(endpoint, headers=auth_headers, json=body)
+
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

@@ -165,7 +165,26 @@ describe('Receiving Operations', () => {
     // Simplified test - actual implementation would be more detailed
   })
 
-  it('should accept a fractional quantity (items are commonly measured in KG/L) and add it to the receive list', async () => {
+  it('should let the browser accept a whole-liter scanned quantity', async () => {
+    // Regression: the input had step=1 with min=0.001, and a number input's
+    // step counts from its min - so the only "valid" values were 0.001,
+    // 1.001, 2.001, ... and the browser's own constraint validation blocked
+    // adding a scanned box quantity like 10 L. fireEvent.submit bypasses
+    // that validation, so check the input's validity state directly.
+    render(
+      <BrowserRouter>
+        <ReceivingPage />
+      </BrowserRouter>
+    )
+
+    const quantityInput = document.getElementById('quantity') as HTMLInputElement
+    for (const value of ['1', '10', '20', '200']) {
+      fireEvent.change(quantityInput, { target: { value } })
+      expect(quantityInput.validity.valid).toBe(true)
+    }
+  })
+
+  it('should reject a fractional quantity (scanned boxes are always whole liters)', async () => {
     render(
       <BrowserRouter>
         <ReceivingPage />
@@ -187,8 +206,8 @@ describe('Receiving Operations', () => {
 
     // expiration_date is a DateField now (a button opening a calendar
     // popover, not a native input) - fireEvent.change doesn't apply.
-    // The exact date doesn't matter for this test's intent (fractional
-    // quantity acceptance), so just pick "today" via the popover.
+    // The exact date doesn't matter for this test's intent, so just pick
+    // "today" via the popover.
     const expirationTrigger = document.getElementById('expiration_date') as HTMLButtonElement
     fireEvent.click(expirationTrigger)
     fireEvent.click(await screen.findByText('common.today'))
@@ -196,14 +215,13 @@ describe('Receiving Operations', () => {
     const addButton = screen.getByRole('button', { name: /receiving\.addToList/i })
     fireEvent.submit(addButton.closest('form')!)
 
-    // No validation error, and the fractional-quantity item was added.
     await waitFor(() => {
-      expect(screen.getByText(/receiving\.listTitle/)).toBeInTheDocument()
+      expect(screen.getByText('receiving.quantityInteger')).toBeInTheDocument()
     })
-    expect(screen.queryByText('receiving.quantityPositive')).not.toBeInTheDocument()
+    expect(screen.queryByText(/receiving\.listTitle/)).not.toBeInTheDocument()
 
     // ReceivingPage persists the list to localStorage on every mutation -
-    // clear it so it doesn't leak into the next test.
+    // clear it so a regression here doesn't leak into the next test.
     localStorage.removeItem('receiveList')
   })
 
@@ -456,7 +474,7 @@ describe('Receiving Operations', () => {
           item_id: '1',
           item_name: mockItems[0].name,
           item_sku: mockItems[0].sku,
-          quantity: 12.5,
+          quantity: 12,
           expiration_date: '2028-01-01',
           manufacturing_date: '',
           batch_number: 'BATCH-EDIT',
@@ -477,9 +495,9 @@ describe('Receiving Operations', () => {
     // Removed from the staged list...
     expect(screen.queryByText(/receiving\.listTitle/)).not.toBeInTheDocument()
 
-    // ...and its data (including the fractional quantity and batch number
-    // that a full remove-and-re-add would have lost) is back in the form.
-    expect(document.getElementById('quantity')).toHaveValue(12.5)
+    // ...and its data (including the quantity and batch number that a
+    // full remove-and-re-add would have lost) is back in the form.
+    expect(document.getElementById('quantity')).toHaveValue(12)
     expect(document.getElementById('batch_number')).toHaveValue('BATCH-EDIT')
 
     localStorage.removeItem('receiveList')
