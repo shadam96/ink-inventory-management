@@ -680,7 +680,9 @@ function CustomerPickingView() {
               >
                 <option value="">{t('picking.selectItemPlaceholder')}</option>
                 {items.map((item) => {
-                  const isOOS = (item.total_quantity_available ?? 0) <= (item.min_stock ?? 0)
+                  // A customer's count is only their own delivered stock, so the
+                  // warehouse's min_stock floor doesn't apply here.
+                  const isOOS = (item.total_quantity_available ?? 0) <= 0
                   return (
                     <option key={item.id} value={item.id} disabled={isOOS}>
                       {item.sku} - {item.name}

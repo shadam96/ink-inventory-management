@@ -142,3 +142,46 @@ describe('PickingPage (admin view)', () => {
     expect(screen.queryByText('picking.insufficientStock')).not.toBeInTheDocument()
   })
 })
+
+describe('PickingPage (customer view)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useAuthStore.setState({
+      user: {
+        id: 'customer-1',
+        username: 'customer',
+        email: 'customer@test.com',
+        full_name: 'Customer',
+        role: 'customer',
+        is_active: true,
+        customer_id: 'cust-1',
+      },
+      isAuthenticated: true,
+    })
+  })
+
+  it("enables items by the customer's own stock, ignoring the warehouse min_stock floor", async () => {
+    // For a customer, total_quantity_available is only the stock delivered
+    // to them - 3 left must stay consumable even though min_stock is 5.
+    vi.mocked(api.itemsApi.list).mockResolvedValue({
+      items: [
+        { ...mockItem, id: 'item-low', sku: 'INK-LOW', total_quantity_available: 3 },
+        { ...mockItem, id: 'item-none', sku: 'INK-NONE', total_quantity_available: 0 },
+      ],
+      total: 2,
+      page: 1,
+      page_size: 100,
+    })
+
+    renderPickingPage()
+
+    const itemSelect = await waitFor(() => {
+      const el = document.getElementById('c_item_id') as HTMLSelectElement
+      expect(el.querySelector('option[value="item-low"]')).toBeInTheDocument()
+      return el
+    })
+
+    expect(itemSelect.querySelector('option[value="item-low"]')).not.toBeDisabled()
+    expect(itemSelect.querySelector('option[value="item-none"]')).toBeDisabled()
+  })
+})

@@ -39,10 +39,16 @@ import {
   type SystemSettings,
 } from '@/lib/api'
 import { useUIStore } from '@/store/ui'
+import { useAuthStore } from '@/store/auth'
+
+type Currency = 'ILS' | 'USD' | 'EUR' | 'TRY'
 
 export function InventoryPage() {
   const { t } = useTranslation()
   const { currency: displayCurrency } = useUIStore()
+  const { user } = useAuthStore()
+  // Customers never get cost prices from the API, so hide those columns
+  const showCost = user?.role !== 'customer'
   const [rows, setRows] = useState<InventoryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -124,6 +130,12 @@ export function InventoryPage() {
   }
 
   const totalPages = Math.ceil(total / pageSize)
+  const columnCount = showCost ? 12 : 10
+
+  const formatCost = (amount: number, currency: string) =>
+    fxRates
+      ? formatCurrency(convertAmount(amount, currency as Currency, displayCurrency, fxRates), displayCurrency)
+      : formatCurrency(amount, currency as Currency)
 
   return (
     <div className="space-y-6">
@@ -141,7 +153,7 @@ export function InventoryPage() {
       <div className="flex justify-center">
         <Card className="w-full max-w-2xl">
           <CardContent className="p-4">
-            <div className="grid grid-cols-3 divide-x rtl:divide-x-reverse divide-border">
+            <div className={`grid ${showCost ? 'grid-cols-3' : 'grid-cols-2'} divide-x rtl:divide-x-reverse divide-border`}>
               <div className="flex flex-col items-center gap-1 px-2">
                 <Package className="w-5 h-5 text-primary" />
                 <p className="text-2xl font-bold">{formatNumber(summary.product_count)}</p>
@@ -152,26 +164,28 @@ export function InventoryPage() {
                 <p className="text-2xl font-bold">{formatNumber(summary.total_quantity, 1)}</p>
                 <p className="text-sm text-muted-foreground">{t('inventory.summaryQuantity')}</p>
               </div>
-              <div className="flex flex-col items-center gap-1 px-2">
-                <Wallet className="w-5 h-5 text-primary" />
-                <p className="text-2xl font-bold font-mono">
-                  {fxRates
-                    ? formatCurrency(
-                        convertToDisplayCurrency(
-                          summary.totals as Partial<Record<'ILS' | 'USD' | 'EUR' | 'TRY', number>>,
+              {showCost && (
+                <div className="flex flex-col items-center gap-1 px-2">
+                  <Wallet className="w-5 h-5 text-primary" />
+                  <p className="text-2xl font-bold font-mono">
+                    {fxRates
+                      ? formatCurrency(
+                          convertToDisplayCurrency(
+                            summary.totals as Partial<Record<Currency, number>>,
+                            displayCurrency,
+                            fxRates,
+                          ),
                           displayCurrency,
-                          fxRates,
-                        ),
-                        displayCurrency,
-                      )
-                    : Object.entries(summary.totals)
-                        .map(([currency, value]) =>
-                          formatCurrency(value, currency as 'ILS' | 'USD' | 'EUR' | 'TRY'),
                         )
-                        .join(' + ') || formatCurrency(0, displayCurrency)}
-                </p>
-                <p className="text-sm text-muted-foreground">{t('inventory.summaryValue')}</p>
-              </div>
+                      : Object.entries(summary.totals)
+                          .map(([currency, value]) =>
+                            formatCurrency(value, currency as Currency),
+                          )
+                          .join(' + ') || formatCurrency(0, displayCurrency)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">{t('inventory.summaryValue')}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -202,10 +216,14 @@ export function InventoryPage() {
                   <SortableTableHead sortKey="receipt_date" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>
                     {t('batches.receiptDate')}
                   </SortableTableHead>
-                  <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">
-                    {t('items.costPrice')}
-                  </SortableTableHead>
-                  <TableHead className="text-left">{t('inventory.totalCost')}</TableHead>
+                  {showCost && (
+                    <>
+                      <SortableTableHead sortKey="cost_price" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort} className="text-start">
+                        {t('items.costPrice')}
+                      </SortableTableHead>
+                      <TableHead className="text-left">{t('inventory.totalCost')}</TableHead>
+                    </>
+                  )}
                   <SortableTableHead sortKey="status" currentSort={sortBy} currentOrder={sortOrder} onSort={handleSort}>
                     {t('batches.status')}
                   </SortableTableHead>
@@ -218,13 +236,13 @@ export function InventoryPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="text-center py-8">
+                    <TableCell colSpan={columnCount} className="text-center py-8">
                       {t('common.loading')}
                     </TableCell>
                   </TableRow>
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={columnCount} className="text-center py-8 text-muted-foreground">
                       {t('common.noData')}
                     </TableCell>
                   </TableRow>
@@ -256,35 +274,18 @@ export function InventoryPage() {
                         <TableCell>
                           <ReceiptDateCell dates={row.receipt_dates} />
                         </TableCell>
-                        <TableCell className="text-start font-mono">
-                          {fxRates
-                            ? formatCurrency(
-                                convertAmount(
-                                  row.cost_price,
-                                  row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY',
-                                  displayCurrency,
-                                  fxRates,
-                                ),
-                                displayCurrency,
-                              )
-                            : formatCurrency(row.cost_price, row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY')}
-                        </TableCell>
-                        <TableCell className="text-left font-mono font-medium">
-                          {fxRates
-                            ? formatCurrency(
-                                convertAmount(
-                                  row.quantity_available * row.cost_price,
-                                  row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY',
-                                  displayCurrency,
-                                  fxRates,
-                                ),
-                                displayCurrency,
-                              )
-                            : formatCurrency(
-                                row.quantity_available * row.cost_price,
-                                row.currency as 'ILS' | 'USD' | 'EUR' | 'TRY',
-                              )}
-                        </TableCell>
+                        {showCost && (
+                          <>
+                            <TableCell className="text-start font-mono">
+                              {row.cost_price === null ? '—' : formatCost(row.cost_price, row.currency)}
+                            </TableCell>
+                            <TableCell className="text-left font-mono font-medium">
+                              {row.cost_price === null
+                                ? '—'
+                                : formatCost(row.quantity_available * row.cost_price, row.currency)}
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell>
                           <StatusBadge status={row.status} />
                         </TableCell>

@@ -209,7 +209,7 @@ export function ItemsPage() {
                       <Badge variant="secondary">{item.unit_of_measure}</Badge>
                     </TableCell>
                     <TableCell className="text-start font-mono">
-                      {formatCurrency(item.cost_price, item.currency)}
+                      {item.cost_price === null ? '—' : formatCurrency(item.cost_price, item.currency)}
                     </TableCell>
                     <TableCell className="text-start">
                       {formatNumber(item.reorder_point)}

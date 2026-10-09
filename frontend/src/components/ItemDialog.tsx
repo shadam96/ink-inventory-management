@@ -76,6 +76,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
       ? {
           ...item,
           barcode: item.barcode || '',
+          cost_price: item.cost_price ?? 0,
           currency: item.currency || defaultCurrency,
           color: item.color || 'other',
         }
@@ -100,6 +101,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
       reset({
         ...item,
         barcode: item.barcode || '',
+        cost_price: item.cost_price ?? 0,
         currency: item.currency || defaultCurrency,
         color: item.color || 'other',
       })

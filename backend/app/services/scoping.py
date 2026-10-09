@@ -4,6 +4,7 @@ other services need to apply the same filters without request-scoped
 dependencies.
 """
 from typing import Optional
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import InstrumentedAttribute
@@ -11,7 +12,7 @@ from sqlalchemy.orm import InstrumentedAttribute
 from app.api.deps import AccessScope
 from app.models.batch import Batch
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 def batch_location_filter(scope: AccessScope):
@@ -31,10 +32,24 @@ def location_id_filter(scope: AccessScope, location_id_column: InstrumentedAttri
     return location_id_column.in_(scope.location_ids)
 
 
+def customer_batch_filter(customer_id: Optional[UUID]):
+    """WHERE-clause element restricting to batches that appear on one of
+    this customer's delivery notes. A None customer_id (a CUSTOMER-role
+    user with no customer linked) matches nothing - fails closed."""
+    delivered = (
+        select(DeliveryNoteItem.batch_id)
+        .join(DeliveryNote, DeliveryNoteItem.delivery_note_id == DeliveryNote.id)
+        .where(DeliveryNote.customer_id == customer_id)
+    )
+    return Batch.id.in_(delivered)
+
+
 def batch_access_filter(user: User, scope: AccessScope):
     """WHERE-clause element for the batches this user may see or act on, or
-    None if unrestricted: staff get their assigned locations (see
-    get_access_scope)."""
+    None if unrestricted: customers get the stock delivered to them, staff
+    get their assigned locations (see get_access_scope)."""
+    if user.role == UserRole.CUSTOMER:
+        return customer_batch_filter(user.customer_id)
     return batch_location_filter(scope)
 
 

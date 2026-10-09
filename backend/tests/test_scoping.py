@@ -567,3 +567,133 @@ async def test_scoped_worker_cannot_put_out_of_scope_batch_on_delivery_note(
     )
     assert list_response.json()["total"] == 0
 
+
+# ---------------------------------------------------------------------------
+# Customers only see stock delivered to them, and never cost prices
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_customer_suggestions_only_include_batches_delivered_to_them(
+    client: AsyncClient, scoping_world
+):
+    payload = {"item_id": str(scoping_world["item"].id), "quantity_needed": 0}
+    headers = scoping_world["customer_headers"]
+
+    before = await client.post("/api/v1/picking/suggest-batches", json=payload, headers=headers)
+    assert before.status_code == 200
+    assert before.json()["suggestions"] == []
+    assert before.json()["total_available"] == 0
+
+    await _create_delivery_note(client, scoping_world, scoping_world["batch_a"])
+
+    after = await client.post("/api/v1/picking/suggest-batches", json=payload, headers=headers)
+    assert {s["batch_number"] for s in after.json()["suggestions"]} == {"SCOPE-BT-A"}
+
+
+@pytest.mark.asyncio
+async def test_customer_items_hide_cost_and_count_only_delivered_stock(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    await _create_delivery_note(client, scoping_world, scoping_world["batch_a"])
+    item_id = scoping_world["item"].id  # read before expire_all() below
+    db_session.expire_all()
+    headers = scoping_world["customer_headers"]
+
+    list_response = await client.get("/api/v1/items", headers=headers)
+    assert list_response.status_code == 200
+    row = next(i for i in list_response.json()["items"] if i["sku"] == "SCOPE-ITEM-001")
+    assert row["cost_price"] is None
+    assert row["total_inventory_value"] is None
+    assert float(row["total_quantity_available"]) == 50
+
+    db_session.expire_all()
+    get_response = await client.get(f"/api/v1/items/{item_id}", headers=headers)
+    assert get_response.status_code == 200
+    assert get_response.json()["cost_price"] is None
+    assert get_response.json()["total_inventory_value"] is None
+
+    db_session.expire_all()
+    staff_response = await client.get(
+        f"/api/v1/items/{item_id}", headers=scoping_world["admin_headers"]
+    )
+    assert float(staff_response.json()["cost_price"]) == 10.0
+
+
+@pytest.mark.asyncio
+async def test_customer_cannot_export_item_catalog(client: AsyncClient, scoping_world):
+    for path in ("/api/v1/items/export/excel", "/api/v1/items/export/csv"):
+        response = await client.get(path, headers=scoping_world["customer_headers"])
+        assert response.status_code == 403, path
+
+
+@pytest.mark.asyncio
+async def test_customer_can_scan_barcode_without_seeing_cost(
+    client: AsyncClient, scoping_world
+):
+    response = await client.post(
+        "/api/v1/receiving/validate-barcode",
+        json={"barcode": "SCOPE-ITEM-001"},
+        headers=scoping_world["customer_headers"],
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is True
+    assert "cost_price" not in response.json()["item"]
+
+    staff_response = await client.post(
+        "/api/v1/receiving/validate-barcode",
+        json={"barcode": "SCOPE-ITEM-001"},
+        headers=scoping_world["admin_headers"],
+    )
+    assert staff_response.json()["item"]["cost_price"] == 10.0
+
+
+@pytest.mark.asyncio
+async def test_customer_inventory_hides_cost(client: AsyncClient, scoping_world):
+    await _create_delivery_note(client, scoping_world, scoping_world["batch_a"])
+    headers = scoping_world["customer_headers"]
+
+    response = await client.get("/api/v1/inventory", headers=headers)
+    assert response.status_code == 200
+    rows = response.json()["items"]
+    assert [r["batch_number"] for r in rows] == ["SCOPE-BT-A"]
+    assert rows[0]["cost_price"] is None
+
+    total_response = await client.get("/api/v1/inventory/total-cost", headers=headers)
+    assert total_response.status_code == 200
+    assert total_response.json()["totals"] == {}
+    assert total_response.json()["product_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_customer_without_linked_customer_sees_no_stock(
+    client: AsyncClient, db_session: AsyncSession, scoping_world
+):
+    """A CUSTOMER-role user with no customer record linked must fail closed,
+    not fall through to the staff (full warehouse) path."""
+    unlinked = User(
+        username="scope_unlinked_customer",
+        email="scope_unlinked_customer@test.com",
+        hashed_password=get_password_hash("testpass123"),
+        full_name="Unlinked Customer",
+        role=UserRole.CUSTOMER,
+        is_active=True,
+    )
+    db_session.add(unlinked)
+    await db_session.commit()
+    await db_session.refresh(unlinked)
+    headers = _headers(unlinked)
+
+    inventory = await client.get("/api/v1/inventory", headers=headers)
+    assert inventory.status_code == 200
+    assert inventory.json()["items"] == []
+
+    total = await client.get("/api/v1/inventory/total-cost", headers=headers)
+    assert float(total.json()["total_quantity"]) == 0
+
+    suggestions = await client.post(
+        "/api/v1/picking/suggest-batches",
+        json={"item_id": str(scoping_world["item"].id), "quantity_needed": 0},
+        headers=headers,
+    )
+    assert suggestions.json()["suggestions"] == []
