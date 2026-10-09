@@ -101,6 +101,33 @@ async def test_receive_rejects_fractional_quantity(
 
 
 @pytest.mark.asyncio
+async def test_same_day_receipts_get_distinct_grn_numbers(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+):
+    """GRN numbers live on movements, not batches - sequencing them against
+    batch numbers gave every same-day receipt GRN-YYMMDD-001."""
+    expiration_date = date.today() + timedelta(days=365)
+
+    grns = []
+    for _ in range(2):
+        response = await client.post(
+            "/api/v1/receiving/receive",
+            headers=auth_headers,
+            json={
+                "item_id": str(test_item.id),
+                "quantity": 10,
+                "expiration_date": expiration_date.isoformat(),
+            },
+        )
+        assert response.status_code == 200
+        grns.append(response.json()["grn_number"])
+
+    assert grns[0] != grns[1]
+
+
+@pytest.mark.asyncio
 async def test_receive_with_custom_batch_number(
     client: AsyncClient,
     auth_headers: dict,

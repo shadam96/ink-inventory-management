@@ -270,7 +270,7 @@ async def create_dispatch(
     elif not ref_number:
         from app.services.receiving_service import ReceivingService
         receiving = ReceivingService(db)
-        ref_number = await receiving.generate_batch_number(prefix="DSP")
+        ref_number = await receiving.generate_reference_number(prefix="DSP")
 
     # Execute all picks
     movements = []
@@ -471,7 +471,7 @@ async def consume_item(
 
     from app.services.receiving_service import ReceivingService
     receiving = ReceivingService(db)
-    ref_number = await receiving.generate_batch_number(prefix="CON")
+    ref_number = await receiving.generate_reference_number(prefix="CON")
 
     movement = await inventory.record_movement(
         batch_id=request.batch_id,
