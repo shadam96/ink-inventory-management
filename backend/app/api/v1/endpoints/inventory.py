@@ -85,10 +85,15 @@ async def list_items(
     if supplier:
         query = query.where(Item.supplier.ilike(f"%{supplier}%"))
 
-    # Apply sorting
+    # Apply sorting. Without a total order, Postgres may return OFFSET/LIMIT
+    # pages in any order, so paging through could skip or repeat items -
+    # default to name and always break ties by id.
     if sort_by:
         col = getattr(Item, sort_by)
         query = query.order_by(col.desc() if sort_order == "desc" else col.asc())
+    else:
+        query = query.order_by(Item.name)
+    query = query.order_by(Item.id)
 
     # Count total
     count_query = select(func.count()).select_from(query.subquery())
