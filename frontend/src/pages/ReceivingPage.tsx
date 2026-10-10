@@ -106,8 +106,8 @@ export function ReceivingPage() {
 
   const selectedItemId = watch('item_id')
 
-  // `items` is only the first page of the catalog and is empty until it
-  // loads (or for good, offline). Every staged row already carries its
+  // `items` is empty until the catalog loads (or for good, offline) and
+  // misses items added since. Every staged row already carries its
   // item's name/SKU, so include those - editing a row must never depend on
   // the catalog fetch.
   const itemOptions = useMemo(() => {
@@ -206,7 +206,7 @@ export function ReceivingPage() {
       setEditingId(null)
       reset(EMPTY_FORM)
     }
-    // The barcode can match an item beyond the first page `items` holds.
+    // The barcode can match an item added since `items` was fetched.
     const scannedItem = result.item
     setItems((prev) => (prev.some((i) => i.id === scannedItem.id) ? prev : [...prev, scannedItem]))
 
