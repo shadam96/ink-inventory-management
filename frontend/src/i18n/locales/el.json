@@ -140,7 +140,16 @@
     "summaryActive": "Ενεργές παρτίδες",
     "summaryCritical": "Κρίσιμες (λιγότερο από 30 ημέρες)",
     "summaryWarning": "Προειδοποίηση (30-60 ημέρες)",
-    "summaryTotal": "Συνολική διαθέσιμη ποσότητα"
+    "summaryTotal": "Συνολική διαθέσιμη ποσότητα",
+    "sortBy": "Ταξινόμηση κατά",
+    "sortEarliest": "Νωρίτερα",
+    "sortLatest": "Αργότερα",
+    "sortLowest": "Μικρότερη",
+    "sortHighest": "Μεγαλύτερη",
+    "sortActiveFirst": "Ενεργές πρώτα",
+    "sortActiveLast": "Ενεργές στο τέλος",
+    "sortAZ": "A–Z",
+    "sortZA": "Z–A"
   },
   "receiving": {
     "title": "Παραλαβή Εμπορευμάτων",
@@ -179,7 +188,12 @@
     "someItemsHeldBack_one": "{{count}} είδος παρέμεινε σε αναμονή (λήγει πολύ σύντομα)",
     "someItemsHeldBack_other": "{{count}} είδη παρέμειναν σε αναμονή (λήγουν πολύ σύντομα)",
     "offlineBarcodeUnavailable": "Είστε εκτός σύνδεσης - η αναζήτηση barcode απαιτεί σύνδεση. Επιλέξτε το είδος χειροκίνητα παρακάτω.",
-    "editItem": "Επεξεργασία"
+    "editItem": "Επεξεργασία",
+    "updateItem": "Ενημέρωση είδους",
+    "itemUpdated": "Το είδος ενημερώθηκε",
+    "batchNumberConflict": "Αυτός ο αριθμός παρτίδας υπάρχει ήδη στη λίστα με άλλο είδος ή ημερομηνία",
+    "addedToBatch": "Προστέθηκε στην παρτίδα {{batch}} - σύνολο {{quantity}} {{unit}}",
+    "finishEditFirst": "Αποθηκεύστε ή ακυρώστε πρώτα το είδος που επεξεργάζεστε"
   },
   "picking": {
     "title": "Εκτέλεση Παραγγελίας",

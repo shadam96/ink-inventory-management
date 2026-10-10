@@ -5,10 +5,13 @@ from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.location import Location
+from app.models.movement import Movement
 from app.models.user import User
 from app.services.receiving_service import ReceivingService
 
@@ -267,6 +270,253 @@ async def test_receive_multiple_rejects_non_positive_quantity(
             ],
             user_id=test_user.id,
         )
+
+
+def _receipt(item: Item, **overrides) -> dict:
+    """One receipt line, shaped like what the receiving page sends."""
+    return {
+        "item_id": str(item.id),
+        "quantity": 10,
+        "expiration_date": (date.today() + timedelta(days=365)).isoformat(),
+        **overrides,
+    }
+
+
+async def _batch_count(db_session: AsyncSession) -> int:
+    return (await db_session.execute(select(func.count()).select_from(Batch))).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_receive_multiple_keeps_manufacturing_date(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+    db_session: AsyncSession,
+):
+    """Regression: /receive-multiple never forwarded manufacturing_date, so
+    it was silently dropped whenever 2+ lines were received together (the
+    single-line /receive kept it)."""
+    manufactured = date.today() - timedelta(days=30)
+
+    response = await client.post(
+        "/api/v1/receiving/receive-multiple",
+        headers=auth_headers,
+        json={"items": [
+            _receipt(test_item, batch_number="LOT-A", manufacturing_date=manufactured.isoformat()),
+            _receipt(test_item, batch_number="LOT-B"),
+        ]},
+    )
+
+    assert response.status_code == 200
+    batches = {b.batch_number: b for b in (await db_session.execute(select(Batch))).scalars()}
+    assert batches["LOT-A"].manufacturing_date == manufactured
+    assert batches["LOT-B"].manufacturing_date is None
+
+
+@pytest.mark.asyncio
+async def test_receive_multiple_generates_a_number_for_each_blank_batch_number(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+):
+    """The form sends "" for a left-empty batch field - blank lines must each
+    get their own generated number, never count as duplicates of each other."""
+    response = await client.post(
+        "/api/v1/receiving/receive-multiple",
+        headers=auth_headers,
+        json={"items": [
+            _receipt(test_item, batch_number="LOT-A"),
+            _receipt(test_item, batch_number=""),
+            _receipt(test_item, batch_number=""),
+        ]},
+    )
+
+    assert response.status_code == 200
+    numbers = [line["batch_number"] for line in response.json()["items"]]
+    assert numbers[0] == "LOT-A"
+    assert numbers[1].startswith("GR-") and numbers[2].startswith("GR-")
+    assert numbers[1] != numbers[2]
+
+
+@pytest.fixture
+async def other_item(db_session: AsyncSession) -> Item:
+    item = Item(
+        id=uuid4(),
+        sku="INK-TEST-002",
+        name="Test Cyan Ink",
+        supplier="Test Supplier",
+        unit_of_measure="KG",
+    )
+    db_session.add(item)
+    await db_session.commit()
+    return item
+
+
+def _batch(item: Item, batch_number: str, receipt_date: date, **overrides) -> Batch:
+    """A batch as an earlier receipt left it - same expiry as _receipt()."""
+    fields = dict(
+        item_id=item.id,
+        batch_number=batch_number,
+        quantity_received=Decimal("10"),
+        quantity_available=Decimal("10"),
+        receipt_date=receipt_date,
+        expiration_date=date.today() + timedelta(days=365),
+        status=BatchStatus.ACTIVE,
+    )
+    return Batch(**{**fields, **overrides})
+
+
+async def _batches(db_session: AsyncSession, batch_number: str) -> list[Batch]:
+    result = await db_session.execute(
+        select(Batch).where(Batch.batch_number == batch_number).order_by(Batch.receipt_date)
+    )
+    return list(result.scalars())
+
+
+@pytest.mark.asyncio
+async def test_receive_multiple_combines_lines_of_one_batch(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+    db_session: AsyncSession,
+):
+    """Two lines with one batch number (two boxes of the same supplier lot)
+    are one batch - they used to hit the unique constraint mid-insert and
+    fail the whole receipt with an unexplained 500."""
+    response = await client.post(
+        "/api/v1/receiving/receive-multiple",
+        headers=auth_headers,
+        json={"items": [
+            _receipt(test_item, batch_number="LOT-A", quantity=10),
+            _receipt(test_item, batch_number="LOT-B", quantity=10),
+            _receipt(test_item, batch_number="LOT-A", quantity=5),
+        ]},
+    )
+
+    assert response.status_code == 200
+    assert float(response.json()["total_quantity"]) == 25
+    assert await _batch_count(db_session) == 2
+    [lot_a] = await _batches(db_session, "LOT-A")
+    assert (lot_a.quantity_received, lot_a.quantity_available) == (15, 15)
+    movements = (await db_session.execute(
+        select(Movement).where(Movement.batch_id == lot_a.id).order_by(Movement.quantity_after)
+    )).scalars().all()
+    assert [(m.quantity_before, m.quantity_after) for m in movements] == [(0, 10), (10, 15)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint", ["receive", "receive-multiple"])
+async def test_receiving_a_batch_again_the_same_day_tops_it_up(
+    endpoint: str,
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+    db_session: AsyncSession,
+):
+    """One batch per lot per day: more boxes of a lot already received today
+    add their liters to that batch - it used to be rejected outright."""
+    first = await client.post(
+        "/api/v1/receiving/receive",
+        headers=auth_headers,
+        json=_receipt(test_item, batch_number="LOT-A", quantity=10),
+    )
+    assert first.status_code == 200
+
+    repeat = _receipt(test_item, batch_number="LOT-A", quantity=5)
+    body = repeat if endpoint == "receive" else {
+        "items": [_receipt(test_item, batch_number="LOT-B"), repeat]
+    }
+    response = await client.post(
+        f"/api/v1/receiving/{endpoint}", headers=auth_headers, json=body
+    )
+
+    assert response.status_code == 200
+    [lot_a] = await _batches(db_session, "LOT-A")
+    assert (lot_a.quantity_received, lot_a.quantity_available) == (15, 15)
+    # The response reports this receipt's liters, not the batch's new total.
+    lines = [response.json()] if endpoint == "receive" else response.json()["items"]
+    assert float(lines[-1]["quantity"]) == 5
+
+
+@pytest.mark.asyncio
+async def test_receiving_a_batch_on_a_later_day_creates_a_separate_batch(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+    db_session: AsyncSession,
+):
+    """A later delivery of the same lot is its own batch, with its own
+    receipt date and quantities - not merged into the earlier one."""
+    yesterday = date.today() - timedelta(days=1)
+    db_session.add(_batch(test_item, "LOT-A", yesterday, quantity_received=Decimal("7"), quantity_available=Decimal("7")))
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/receiving/receive",
+        headers=auth_headers,
+        json=_receipt(test_item, batch_number="LOT-A", quantity=10),
+    )
+
+    assert response.status_code == 200
+    earlier, today = await _batches(db_session, "LOT-A")
+    assert (earlier.receipt_date, earlier.quantity_available) == (yesterday, 7)
+    assert (today.receipt_date, today.quantity_available) == (date.today(), 10)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["item", "expiration_date"])
+async def test_same_day_batch_with_a_different_item_or_expiry_is_rejected(
+    mismatch: str,
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+    other_item: Item,
+    db_session: AsyncSession,
+):
+    """A batch is one item with one expiry - a same-day line that disagrees
+    is a data-entry mistake, never silently added to that batch."""
+    first = await client.post(
+        "/api/v1/receiving/receive",
+        headers=auth_headers,
+        json=_receipt(test_item, batch_number="LOT-A"),
+    )
+    assert first.status_code == 200
+
+    conflicting = (
+        _receipt(other_item, batch_number="LOT-A") if mismatch == "item"
+        else _receipt(test_item, batch_number="LOT-A",
+                      expiration_date=(date.today() + timedelta(days=400)).isoformat())
+    )
+    response = await client.post(
+        "/api/v1/receiving/receive", headers=auth_headers, json=conflicting
+    )
+
+    assert response.status_code == 400
+    assert "LOT-A" in response.json()["detail"]
+    [lot_a] = await _batches(db_session, "LOT-A")
+    assert lot_a.quantity_received == 10
+
+
+@pytest.mark.asyncio
+async def test_topping_up_a_batch_depleted_earlier_today_makes_it_pickable_again(
+    client: AsyncClient,
+    auth_headers: dict,
+    test_item: Item,
+    db_session: AsyncSession,
+):
+    batch = _batch(test_item, "LOT-A", date.today(), quantity_available=Decimal("0"), status=BatchStatus.DEPLETED)
+    db_session.add(batch)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/receiving/receive",
+        headers=auth_headers,
+        json=_receipt(test_item, batch_number="LOT-A", quantity=5),
+    )
+
+    assert response.status_code == 200
+    assert batch.status == BatchStatus.ACTIVE
+    assert (batch.quantity_received, batch.quantity_available) == (15, 5)
 
 
 @pytest.mark.asyncio

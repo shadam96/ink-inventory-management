@@ -140,7 +140,16 @@
     "summaryActive": "Active batches",
     "summaryCritical": "Critical (less than 30 days)",
     "summaryWarning": "Warning (30-60 days)",
-    "summaryTotal": "Total available quantity"
+    "summaryTotal": "Total available quantity",
+    "sortBy": "Sort by",
+    "sortEarliest": "Earliest",
+    "sortLatest": "Latest",
+    "sortLowest": "Lowest",
+    "sortHighest": "Highest",
+    "sortActiveFirst": "Active first",
+    "sortActiveLast": "Active last",
+    "sortAZ": "A–Z",
+    "sortZA": "Z–A"
   },
   "receiving": {
     "title": "Goods Receiving",
@@ -179,7 +188,12 @@
     "someItemsHeldBack_one": "{{count}} item held back — still under the required shelf-life window",
     "someItemsHeldBack_other": "{{count}} items held back — still under the required shelf-life window",
     "offlineBarcodeUnavailable": "You're offline — barcode lookup needs a connection. Select the item manually below instead.",
-    "editItem": "Edit"
+    "editItem": "Edit",
+    "updateItem": "Update item",
+    "itemUpdated": "Item updated",
+    "batchNumberConflict": "This batch number is already in the list with a different item or date",
+    "addedToBatch": "Added to batch {{batch}} — now {{quantity}} {{unit}}",
+    "finishEditFirst": "Save or cancel the item you're editing first"
   },
   "picking": {
     "title": "Picking",

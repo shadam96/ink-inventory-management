@@ -105,7 +105,7 @@ async def receive_single_item(
         batch_number=batch.batch_number,
         batch_id=batch.id,
         item_id=batch.item_id,
-        quantity=batch.quantity_received,
+        quantity=movement.quantity,
         expiration_date=batch.expiration_date,
         manufacturing_date=batch.manufacturing_date,
         location_id=batch.location_id,
@@ -130,6 +130,7 @@ async def receive_multiple_items(
             "item_id": item.item_id,
             "quantity": item.quantity,
             "expiration_date": item.expiration_date,
+            "manufacturing_date": item.manufacturing_date,
             "batch_number": item.batch_number,
             "supplier_batch_number": item.supplier_batch_number,
             "location_id": item.location_id,
@@ -149,7 +150,7 @@ async def receive_multiple_items(
     warnings = []
     items_response = []
 
-    for i, batch in enumerate(batches):
+    for batch, movement in zip(batches, movements):
         warning = service.validate_expiration_warning(batch.expiration_date)
         if warning:
             warning["batch_number"] = batch.batch_number
@@ -159,15 +160,16 @@ async def receive_multiple_items(
             "batch_id": str(batch.id),
             "batch_number": batch.batch_number,
             "item_id": str(batch.item_id),
-            "quantity": float(batch.quantity_received),
+            "quantity": float(movement.quantity),
             "expiration_date": batch.expiration_date.isoformat(),
         })
 
-    total_quantity = sum(b.quantity_received for b in batches)
+    total_quantity = sum(m.quantity for m in movements)
 
     return GoodsReceiptResponse(
         grn_number=grn_number,
-        batches_created=len(batches),
+        # Lines of one batch share it, so count distinct batches
+        batches_created=len({b.id for b in batches}),
         total_quantity=total_quantity,
         items=items_response,
         warnings=warnings,
