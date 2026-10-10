@@ -140,7 +140,16 @@
     "summaryActive": "Ενεργές παρτίδες",
     "summaryCritical": "Κρίσιμες (λιγότερο από 30 ημέρες)",
     "summaryWarning": "Προειδοποίηση (30-60 ημέρες)",
-    "summaryTotal": "Συνολική διαθέσιμη ποσότητα"
+    "summaryTotal": "Συνολική διαθέσιμη ποσότητα",
+    "sortBy": "Ταξινόμηση κατά",
+    "sortEarliest": "Νωρίτερα",
+    "sortLatest": "Αργότερα",
+    "sortLowest": "Μικρότερη",
+    "sortHighest": "Μεγαλύτερη",
+    "sortActiveFirst": "Ενεργές πρώτα",
+    "sortActiveLast": "Ενεργές στο τέλος",
+    "sortAZ": "A–Z",
+    "sortZA": "Z–A"
   },
   "receiving": {
     "title": "Παραλαβή Εμπορευμάτων",
