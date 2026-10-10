@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pypdf
 import pytest
+import resend
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -661,6 +662,151 @@ async def test_generate_delivery_note_email_without_customer_email_fails(
     data = response.json()
     assert data["success"] is False
 
+
+@pytest.fixture
+def email_configured(monkeypatch):
+    """Pretend RESEND_API_KEY is set, without touching the real service."""
+    from app.services.email_service import email_service
+    monkeypatch.setattr(email_service, "_configured", True)
+
+
+async def _dispatch_and_email(
+    client: AsyncClient,
+    auth_headers: dict,
+    batches: list[Batch],
+    document_type: str = "pick_note",
+    customer_id: str | None = None,
+):
+    payload = {"items": [{"batch_id": str(batches[0].id), "quantity": "20"}]}
+    if customer_id:
+        payload["customer_id"] = customer_id
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch", headers=auth_headers, json=payload
+    )
+    ref_number = dispatch.json()["reference_number"]
+    return await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": document_type, "action": "email"},
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_sent_to_each_notification_address(
+    mock_send,
+    email_configured,
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """notification_email holds a comma-separated list (see the settings
+    endpoint). Handing that string to Resend as one address makes the whole
+    send fail, so each address has to go through as its own recipient."""
+    mock_send.return_value = {"id": "test-id"}
+    test_user.notification_email = "ops@example.com, boss@example.com"
+    await db_session.commit()
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    mock_send.assert_called_once()
+    sent_params = mock_send.call_args[0][0]
+    assert sent_params["to"] == ["ops@example.com", "boss@example.com"]
+    assert len(sent_params["attachments"]) == 1
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_falls_back_to_login_email(
+    mock_send,
+    email_configured,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    mock_send.return_value = {"id": "test-id"}
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.json()["success"] is True
+    assert mock_send.call_args[0][0]["to"] == ["test@example.com"]
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_reports_failure_when_email_not_configured(
+    mock_send,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    monkeypatch,
+):
+    """With no RESEND_API_KEY the service skips the send - the endpoint
+    must not then tell the operator the pick note was sent."""
+    from app.services.email_service import email_service
+    monkeypatch.setattr(email_service, "_configured", False)
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    mock_send.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_delivery_note_email_reports_failure_when_email_not_configured(
+    mock_send,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    customer: Customer,
+    monkeypatch,
+):
+    from app.services.email_service import email_service
+    monkeypatch.setattr(email_service, "_configured", False)
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(
+        client, auth_headers, batches,
+        document_type="delivery_note", customer_id=str(customer.id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    mock_send.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_reports_failure_when_resend_rejects(
+    mock_send,
+    email_configured,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """Resend refusing the send (e.g. the onboarding@resend.dev sandbox
+    sender only delivers to the account owner) is a failed email, not a
+    failure to produce the document - report it as such instead of a 500."""
+    mock_send.side_effect = resend.exceptions.ValidationError(
+        message="You can only send testing emails to your own email address",
+        error_type="validation_error",
+        code=403,
+    )
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
 
 
 def _pdf_text(pdf_base64: str) -> str:
