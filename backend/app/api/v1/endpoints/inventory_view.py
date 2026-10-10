@@ -77,9 +77,9 @@ async def list_inventory(
     * **Customer**: only batches dispatched to them via delivery notes,
       without cost prices.
 
-    Rows are grouped by (item, batch_number).  Multiple receipts of the
-    same SKU + batch merge into one row; individual receipt dates are
-    returned in the ``receipt_dates`` array.
+    One row per batch.  The same lot received on different days is a
+    separate batch, so it shows as a separate row with its own receipt
+    date in ``receipt_dates``.
     """
 
     is_customer = current_user.role == UserRole.CUSTOMER
