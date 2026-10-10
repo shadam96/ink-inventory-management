@@ -9,6 +9,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Droplets, Package, Boxes, Warehouse, Mail, Plus, X, Send, Languages } from 'lucide-react'
 import { toast } from 'sonner'
 import api from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { SUPPORTED_LANGUAGES, resolveLanguage } from '@/i18n/config'
 
 const iconMap = {
@@ -67,7 +68,7 @@ export function SettingsPage() {
       })
     } catch (error: any) {
       setNotificationEmails(previous)
-      toast.error(error.response?.data?.detail || t('settings.notificationEmailsSaveFailed'))
+      toast.error(getApiErrorMessage(error, t('settings.notificationEmailsSaveFailed')))
     }
   }
 
@@ -106,7 +107,7 @@ export function SettingsPage() {
       await api.post('/settings/email/test', { email: recipient })
       toast.success(t('settings.testEmailSent', { recipient }))
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || t('settings.testEmailFailed'))
+      toast.error(getApiErrorMessage(error, t('settings.testEmailFailed')))
     } finally {
       setSendingTest(false)
     }

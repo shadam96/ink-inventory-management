@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { pickingApi } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { openPdfInNewTab } from '@/lib/utils'
 
 type DocumentType = 'pick_note' | 'delivery_note'
@@ -50,7 +51,7 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
         toast.info(response.message)
       }
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || t('picking.documentError'))
+      toast.error(getApiErrorMessage(error, t('picking.documentError')))
     } finally {
       setBusy(null)
     }
