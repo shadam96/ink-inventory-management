@@ -77,7 +77,41 @@ class ReceivingService:
         raise ValueError(
             "לא ניתן ליצור מספר אצווה ייחודי, נסה שוב"  # Could not generate a unique batch number, please retry
         ) from last_error
-    
+
+    async def _stock_into_batch(self, batch_number: str, **batch_kwargs) -> tuple[Batch, Decimal]:
+        """One batch per lot per receipt day: more of a lot already received
+        that day tops up its batch, a later day's delivery gets a new one.
+        Returns the batch and its available quantity before this receipt."""
+        result = await self.db.execute(
+            select(Batch).where(
+                Batch.batch_number == batch_number,
+                Batch.receipt_date == batch_kwargs["receipt_date"],
+            )
+        )
+        batch = result.scalar_one_or_none()
+        if batch is None:
+            batch = Batch(batch_number=batch_number, **batch_kwargs)
+            self.db.add(batch)
+            await self.db.flush()
+            return batch, Decimal("0")
+
+        if (
+            batch.item_id != batch_kwargs["item_id"]
+            or batch.expiration_date != batch_kwargs["expiration_date"]
+        ):
+            raise ValueError(
+                f"אצווה {batch_number} כבר נקלטה היום עם פריט או תאריך תפוגה אחר"
+            )  # Batch already received today with a different item or expiration date
+
+        quantity_before = batch.quantity_available
+        batch.quantity_received += batch_kwargs["quantity_received"]
+        batch.quantity_available += batch_kwargs["quantity_received"]
+        if batch.status == BatchStatus.DEPLETED:
+            batch.status = BatchStatus.ACTIVE
+        batch.version += 1
+        await self.db.flush()
+        return batch, quantity_before
+
     async def validate_item(self, item_id: UUID) -> Item:
         """Validate item exists"""
         result = await self.db.execute(
@@ -166,18 +200,9 @@ class ReceivingService:
             batch = await self._create_batch_with_generated_number(
                 prefix="GR", **batch_kwargs
             )
+            quantity_before = Decimal("0")
         else:
-            # Explicitly-supplied numbers are checked up front - a
-            # collision here is a real "already exists" error, not an
-            # internal generation race to retry.
-            result = await self.db.execute(
-                select(Batch).where(Batch.batch_number == batch_number)
-            )
-            if result.scalar_one_or_none():
-                raise ValueError(f"מספר אצווה {batch_number} כבר קיים")  # Batch number already exists
-            batch = Batch(batch_number=batch_number, **batch_kwargs)
-            self.db.add(batch)
-            await self.db.flush()
+            batch, quantity_before = await self._stock_into_batch(batch_number, **batch_kwargs)
 
         # Create receipt movement
         movement = Movement(
@@ -185,8 +210,8 @@ class ReceivingService:
             user_id=user_id,
             movement_type=MovementType.RECEIPT,
             quantity=quantity,
-            quantity_before=Decimal("0"),
-            quantity_after=quantity,
+            quantity_before=quantity_before,
+            quantity_after=quantity_before + quantity,
             reference_number=grn_number,
             notes=f"קבלת סחורה: {item.sku} - {item.name}",
             timestamp=datetime.now(timezone.utc),
@@ -213,6 +238,7 @@ class ReceivingService:
             - supplier_batch_number (optional)
             - location_id (optional)
             - notes (optional)
+            - manufacturing_date (optional)
         """
         grn_number = await self.generate_grn_number()
         min_shelf_life_days = await self._min_shelf_life_days()
@@ -250,6 +276,7 @@ class ReceivingService:
                 quantity_available=quantity,
                 receipt_date=date.today(),
                 expiration_date=expiration_date,
+                manufacturing_date=receipt.get("manufacturing_date"),
                 location_id=receipt.get("location_id"),
                 status=BatchStatus.ACTIVE,
                 notes=receipt.get("notes"),
@@ -262,18 +289,17 @@ class ReceivingService:
                 batch = await self._create_batch_with_generated_number(
                     prefix="GR", **batch_kwargs
                 )
+                quantity_before = Decimal("0")
             else:
-                batch = Batch(batch_number=batch_number, **batch_kwargs)
-                self.db.add(batch)
-                await self.db.flush()
+                batch, quantity_before = await self._stock_into_batch(batch_number, **batch_kwargs)
 
             movement = Movement(
                 batch_id=batch.id,
                 user_id=user_id,
                 movement_type=MovementType.RECEIPT,
                 quantity=quantity,
-                quantity_before=Decimal("0"),
-                quantity_after=quantity,
+                quantity_before=quantity_before,
+                quantity_after=quantity_before + quantity,
                 reference_number=grn_number,
                 notes=f"קבלת סחורה: {item.sku}",
                 timestamp=datetime.now(timezone.utc),

@@ -188,7 +188,12 @@
     "someItemsHeldBack_one": "{{count}} ürün beklemede tutuldu (son kullanma tarihi çok yakın)",
     "someItemsHeldBack_other": "{{count}} ürün beklemede tutuldu (son kullanma tarihi çok yakın)",
     "offlineBarcodeUnavailable": "Çevrimdışısınız - barkod arama bağlantı gerektirir. Aşağıdan ürünü elle seçin.",
-    "editItem": "Düzenle"
+    "editItem": "Düzenle",
+    "updateItem": "Ürünü güncelle",
+    "itemUpdated": "Ürün güncellendi",
+    "batchNumberConflict": "Bu parti numarası listede farklı bir ürün veya tarihle zaten var",
+    "addedToBatch": "{{batch}} partisine eklendi - toplam {{quantity}} {{unit}}",
+    "finishEditFirst": "Önce düzenlediğiniz ürünü kaydedin veya iptal edin"
   },
   "picking": {
     "title": "Toplama",
