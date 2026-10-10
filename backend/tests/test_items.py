@@ -233,6 +233,52 @@ async def test_list_items_default_order_is_name_then_id(
 
 
 @pytest.mark.asyncio
+async def test_list_items_below_reorder_filters_before_paginating(
+    client: AsyncClient, auth_headers: dict, db_session: AsyncSession
+):
+    """Regression test: below_reorder was applied in Python to the page
+    already cut by OFFSET/LIMIT, so pages came back short or empty and
+    total/pages still counted every item. Stock is pickable stock only -
+    an expired batch doesn't keep an item off the reorder list."""
+    stock = {
+        "A Stocked": (Decimal("50"), 30),      # 50 >= 10
+        "B Low": (Decimal("5"), 0),            # 5 < 10
+        "C Expired Only": (Decimal("50"), -1),  # expired stock doesn't count
+        "D Empty": (None, None),               # no batches at all
+    }
+    for name, (qty, expires_in) in stock.items():
+        item = Item(
+            sku=f"INK-RO-{name[0]}", name=name, supplier="Supplier A",
+            unit_of_measure="KG", reorder_point=10,
+        )
+        db_session.add(item)
+        await db_session.flush()
+        if qty is not None:
+            db_session.add(Batch(
+                batch_number=f"BT-RO-{name[0]}", item_id=item.id,
+                expiration_date=date.today() + timedelta(days=expires_in),
+                receipt_date=date.today() - timedelta(days=60),
+                quantity_received=qty, quantity_available=qty,
+                status=BatchStatus.ACTIVE,
+            ))
+    await db_session.commit()
+
+    response = await client.get(
+        "/api/v1/items", headers=auth_headers,
+        params={"below_reorder": True, "page_size": 1},
+    )
+    data = response.json()
+    assert data["total"] == 3
+    assert data["pages"] == 3
+    assert [i["name"] for i in data["items"]] == ["B Low"]
+
+    below = await _fetch_all_pages(client, auth_headers, below_reorder=True)
+    assert [i["name"] for i in below] == ["B Low", "C Expired Only", "D Empty"]
+    above = await _fetch_all_pages(client, auth_headers, below_reorder=False)
+    assert [i["name"] for i in above] == ["A Stocked"]
+
+
+@pytest.mark.asyncio
 async def test_list_items_sort_by_breaks_ties_by_id(
     client: AsyncClient, auth_headers: dict, db_session: AsyncSession
 ):
