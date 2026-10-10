@@ -140,7 +140,16 @@
     "summaryActive": "אצוות פעילות",
     "summaryCritical": "קריטי (פחות מ-30 ימים)",
     "summaryWarning": "אזהרה (30-60 ימים)",
-    "summaryTotal": "סה\"כ כמות זמינה"
+    "summaryTotal": "סה\"כ כמות זמינה",
+    "sortBy": "מיון לפי",
+    "sortEarliest": "מהמוקדם",
+    "sortLatest": "מהמאוחר",
+    "sortLowest": "מהנמוך",
+    "sortHighest": "מהגבוה",
+    "sortActiveFirst": "פעילים קודם",
+    "sortActiveLast": "פעילים בסוף",
+    "sortAZ": "A–Z",
+    "sortZA": "Z–A"
   },
   "receiving": {
     "title": "קבלת סחורה",

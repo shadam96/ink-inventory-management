@@ -140,7 +140,16 @@
     "summaryActive": "Aktif partiler",
     "summaryCritical": "Kritik (30 günden az)",
     "summaryWarning": "Uyarı (30-60 gün)",
-    "summaryTotal": "Toplam mevcut miktar"
+    "summaryTotal": "Toplam mevcut miktar",
+    "sortBy": "Sıralama ölçütü",
+    "sortEarliest": "En erken",
+    "sortLatest": "En geç",
+    "sortLowest": "En az",
+    "sortHighest": "En çok",
+    "sortActiveFirst": "Önce aktifler",
+    "sortActiveLast": "Aktifler sonda",
+    "sortAZ": "A–Z",
+    "sortZA": "Z–A"
   },
   "receiving": {
     "title": "Mal Kabul",

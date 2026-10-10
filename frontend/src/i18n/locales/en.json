@@ -140,7 +140,16 @@
     "summaryActive": "Active batches",
     "summaryCritical": "Critical (less than 30 days)",
     "summaryWarning": "Warning (30-60 days)",
-    "summaryTotal": "Total available quantity"
+    "summaryTotal": "Total available quantity",
+    "sortBy": "Sort by",
+    "sortEarliest": "Earliest",
+    "sortLatest": "Latest",
+    "sortLowest": "Lowest",
+    "sortHighest": "Highest",
+    "sortActiveFirst": "Active first",
+    "sortActiveLast": "Active last",
+    "sortAZ": "A–Z",
+    "sortZA": "Z–A"
   },
   "receiving": {
     "title": "Goods Receiving",
