@@ -140,7 +140,16 @@
     "summaryActive": "אצוות פעילות",
     "summaryCritical": "קריטי (פחות מ-30 ימים)",
     "summaryWarning": "אזהרה (30-60 ימים)",
-    "summaryTotal": "סה\"כ כמות זמינה"
+    "summaryTotal": "סה\"כ כמות זמינה",
+    "sortBy": "מיון לפי",
+    "sortEarliest": "מהמוקדם",
+    "sortLatest": "מהמאוחר",
+    "sortLowest": "מהנמוך",
+    "sortHighest": "מהגבוה",
+    "sortActiveFirst": "פעילים קודם",
+    "sortActiveLast": "פעילים בסוף",
+    "sortAZ": "A–Z",
+    "sortZA": "Z–A"
   },
   "receiving": {
     "title": "קבלת סחורה",
@@ -181,7 +190,12 @@
     "someItemsHeldBack_two": "{{count}} פריטים הושארו בהמתנה - נותרו פחות מדי חודשים עד לתפוגה",
     "someItemsHeldBack_other": "{{count}} פריטים הושארו בהמתנה - נותרו פחות מדי חודשים עד לתפוגה",
     "offlineBarcodeUnavailable": "אתה במצב אופליין - סריקת ברקוד דורשת חיבור לרשת. בחר את הפריט ידנית מהרשימה למטה.",
-    "editItem": "ערוך"
+    "editItem": "ערוך",
+    "updateItem": "עדכן פריט",
+    "itemUpdated": "הפריט עודכן",
+    "batchNumberConflict": "מספר אצווה זה כבר ברשימה עם פריט או תאריך אחר",
+    "addedToBatch": "נוסף לאצווה {{batch}} - סה״כ {{quantity}} {{unit}}",
+    "finishEditFirst": "יש לשמור או לבטל את הפריט שבעריכה תחילה"
   },
   "picking": {
     "title": "ליקוט",

@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { PackagePlus, Barcode, Plus, X, XCircle, Loader2, Camera, ScanLine, Pencil } from 'lucide-react'
+import { PackagePlus, Barcode, Plus, Check, X, XCircle, Loader2, Camera, ScanLine, Pencil } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -16,7 +16,8 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
-import { itemsApi, receivingApi, systemSettingsApi, type Item } from '@/lib/api'
+import { receivingApi, systemSettingsApi, type Item } from '@/lib/api'
+import { fetchAllItems } from '@/lib/fetchAllItems'
 import { getApiErrorMessage } from '@/lib/apiError'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { cn, daysUntilExpiration } from '@/lib/utils'
@@ -38,6 +39,15 @@ const receiveSchema = z.object({
 })
 
 type ReceiveFormData = z.infer<typeof receiveSchema>
+
+const EMPTY_FORM: ReceiveFormData = {
+  item_id: '',
+  quantity: 1,
+  expiration_date: '',
+  manufacturing_date: '',
+  batch_number: '',
+  notes: '',
+}
 
 interface ReceiveItem extends ReceiveFormData {
   id: string
@@ -74,33 +84,49 @@ export function ReceivingPage() {
   const [showScanner, setShowScanner] = useState(false)
   const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set())
   const [minShelfLifeDays, setMinShelfLifeDays] = useState(DEFAULT_MIN_SHELF_LIFE_DAYS)
+  // The staged row currently loaded into the form. It stays in the list
+  // (and in localStorage) until the edit is saved, so abandoning an edit -
+  // editing another row, scanning, navigating away - never loses it.
+  const [editingId, setEditingId] = useState<string | null>(null)
   const autoFillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const formCardRef = useRef<HTMLDivElement>(null)
 
   const {
     register,
     handleSubmit,
     reset,
     setValue,
+    setError,
     watch,
     control,
     formState: { errors },
   } = useForm<ReceiveFormData>({
     resolver: zodResolver(receiveSchema),
-    defaultValues: {
-      quantity: 1,
-      expiration_date: '',
-      manufacturing_date: '',
-      batch_number: '',
-      notes: '',
-    },
+    defaultValues: EMPTY_FORM,
   })
 
   const selectedItemId = watch('item_id')
 
+  // `items` is empty until the catalog loads (or for good, offline) and
+  // misses items added since. Every staged row already carries its
+  // item's name/SKU, so include those - editing a row must never depend on
+  // the catalog fetch.
+  const itemOptions = useMemo(() => {
+    const options = new Map(items.map((i) => [i.id, { id: i.id, name: i.name, sku: i.sku }]))
+    for (const row of receiveList) {
+      if (!options.has(row.item_id)) {
+        options.set(row.item_id, { id: row.item_id, name: row.item_name ?? '', sku: row.item_sku ?? '' })
+      }
+    }
+    return [...options.values()]
+  }, [items, receiveList])
+
+  const isReceivable = (row: ReceiveItem) =>
+    daysUntilExpiration(row.expiration_date) >= minShelfLifeDays
+
   async function fetchItems() {
     try {
-      const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items)
+      setItems(await fetchAllItems())
     } catch (error) {
       console.error('Failed to fetch items:', error)
     }
@@ -175,6 +201,16 @@ export function ReceivingPage() {
   const applyScanResult = (result: Awaited<ReturnType<typeof receivingApi.validateBarcode>>): boolean => {
     if (!result.valid || !result.item) return false
 
+    // A scan starts a new entry. Leaving an edit this way is safe - the
+    // edited row is still in the list as it was last saved.
+    if (editingId) {
+      setEditingId(null)
+      reset(EMPTY_FORM)
+    }
+    // The barcode can match an item added since `items` was fetched.
+    const scannedItem = result.item
+    setItems((prev) => (prev.some((i) => i.id === scannedItem.id) ? prev : [...prev, scannedItem]))
+
     setValue('item_id', result.item.id, { shouldValidate: true })
     setBarcode('')
 
@@ -228,55 +264,107 @@ export function ReceivingPage() {
     await handleManualBarcodeScanned(barcode)
   }
 
-  const handleAddToList = (data: ReceiveFormData) => {
-    const item = items.find(i => i.id === data.item_id)
-    if (!item) return
+  const exitEditing = () => {
+    setEditingId(null)
+    setAutoFilledFields(new Set())
+    reset(EMPTY_FORM)
+  }
 
-    const newItem: ReceiveItem = {
+  // Adds a new row, or - while editing - replaces the edited row in place.
+  // Either way, a batch number already listed combines into that row: the
+  // list holds one row per batch, and each further box only adds liters.
+  const handleSaveToList = (data: ReceiveFormData) => {
+    const item = itemOptions.find((i) => i.id === data.item_id)
+    if (!item) {
+      setError('item_id', { message: 'receiving.itemRequired' })
+      return
+    }
+
+    const batchNumber = data.batch_number?.trim()
+    const batchRow = batchNumber
+      ? receiveList.find((row) => row.id !== editingId && row.batch_number?.trim() === batchNumber)
+      : undefined
+    if (batchRow) {
+      // A batch is one item with one expiry - a box that disagrees isn't
+      // another box of it but a data-entry mistake. A blank manufacturing
+      // date is just unknown, so it doesn't conflict.
+      const sameBatch =
+        batchRow.item_id === data.item_id &&
+        batchRow.expiration_date === data.expiration_date &&
+        (!batchRow.manufacturing_date || !data.manufacturing_date || batchRow.manufacturing_date === data.manufacturing_date)
+      if (!sameBatch) {
+        setError('batch_number', { message: 'receiving.batchNumberConflict' })
+        return
+      }
+
+      const quantity = batchRow.quantity + data.quantity
+      const notes = batchRow.notes && data.notes && batchRow.notes !== data.notes
+        ? `${batchRow.notes}; ${data.notes}`
+        : batchRow.notes || data.notes
+      setReceiveList((prev) =>
+        prev
+          .filter((r) => r.id !== editingId)
+          .map((r) =>
+            r.id === batchRow.id
+              ? { ...r, quantity, manufacturing_date: r.manufacturing_date || data.manufacturing_date, notes }
+              : r
+          )
+      )
+      toast.success(t('receiving.addedToBatch', { batch: batchRow.batch_number, quantity, unit: t('common.liter') }))
+      exitEditing()
+      return
+    }
+
+    const row: ReceiveItem = {
       ...data,
-      id: Math.random().toString(36).substring(7),
+      id: editingId ?? Math.random().toString(36).substring(7),
       item_name: item.name,
       item_sku: item.sku,
     }
 
-    setReceiveList([...receiveList, newItem])
-    setAutoFilledFields(new Set())
-    toast.success(t('receiving.addedToList'))
-    reset({
-      item_id: '',
-      quantity: 1,
-      expiration_date: '',
-      manufacturing_date: '',
-      batch_number: '',
-      notes: '',
-    })
+    if (editingId) {
+      setReceiveList((prev) => prev.map((r) => (r.id === editingId ? row : r)))
+      toast.success(t('receiving.itemUpdated'))
+    } else {
+      setReceiveList((prev) => [...prev, row])
+      toast.success(t('receiving.addedToList'))
+    }
+    exitEditing()
   }
 
   const handleRemoveFromList = (id: string) => {
-    setReceiveList(receiveList.filter(item => item.id !== id))
+    setReceiveList((prev) => prev.filter((row) => row.id !== id))
+    if (id === editingId) exitEditing()
   }
 
-  // Pull a staged line back into the form for editing instead of forcing a
-  // full remove-and-re-add - re-typing a multi-field entry (with
-  // barcode-parsed batch/expiration data) just to fix one typo was the
-  // only option before, and that data entry was lost in the process.
+  // Load a staged row into the form for editing instead of forcing a full
+  // remove-and-re-add. The row stays listed until the edit is saved.
   const handleEditItem = (id: string) => {
-    const item = receiveList.find(i => i.id === id)
-    if (!item) return
+    const row = receiveList.find((r) => r.id === id)
+    if (!row) return
 
-    setValue('item_id', item.item_id, { shouldValidate: true })
-    setValue('quantity', item.quantity, { shouldValidate: true })
-    setValue('expiration_date', item.expiration_date, { shouldValidate: true })
-    setValue('manufacturing_date', item.manufacturing_date || '')
-    setValue('batch_number', item.batch_number || '')
-    setValue('notes', item.notes || '')
-
-    setReceiveList(receiveList.filter(i => i.id !== id))
+    reset({
+      item_id: row.item_id,
+      quantity: row.quantity,
+      expiration_date: row.expiration_date,
+      manufacturing_date: row.manufacturing_date || '',
+      batch_number: row.batch_number || '',
+      notes: row.notes || '',
+    })
+    setEditingId(id)
     setAutoFilledFields(new Set())
+    // On mobile the form is scrolled out of view above the list.
+    formCardRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
   }
 
   const handleReceiveAll = async () => {
     if (receiveList.length === 0) return
+    // The list still holds the edited row's old values - receiving now
+    // would silently skip whatever was changed in the form.
+    if (editingId) {
+      toast.error(t('receiving.finishEditFirst'))
+      return
+    }
 
     // This is a best-effort local grouping, not the authority on whether an
     // item can actually be received - the device's clock could be wrong.
@@ -285,12 +373,18 @@ export function ReceivingPage() {
     // a wrong device clock can delay a valid item but never wrongly force
     // one through (the backend still rejects it) or get one stuck (it just
     // stays in the list untouched, exactly like before submission).
-    const eligible = receiveList.filter(
-      (item) => daysUntilExpiration(item.expiration_date) >= minShelfLifeDays
-    )
-    const flagged = receiveList.filter(
-      (item) => daysUntilExpiration(item.expiration_date) < minShelfLifeDays
-    )
+    const eligible = receiveList.filter(isReceivable)
+    const heldBackCount = receiveList.length - eligible.length
+    // Remove exactly the rows that were sent, from the list as it is when
+    // the request finishes - not a snapshot from before it, which would
+    // wipe any row added while it was in flight.
+    const sentIds = new Set(eligible.map((row) => row.id))
+    const removeSentRows = () => {
+      setReceiveList((prev) => prev.filter((row) => !sentIds.has(row.id)))
+      if (heldBackCount > 0) {
+        toast.warning(t('receiving.someItemsHeldBack', { count: heldBackCount }))
+      }
+    }
 
     if (eligible.length === 0) {
       toast.error(t('receiving.expirationTooSoonError'))
@@ -331,10 +425,7 @@ export function ReceivingPage() {
           payload
         )
         toast.info(t('receiving.offlineQueued'))
-        setReceiveList(flagged)
-        if (flagged.length > 0) {
-          toast.warning(t('receiving.someItemsHeldBack', { count: flagged.length }))
-        }
+        removeSentRows()
         return
       }
 
@@ -345,10 +436,7 @@ export function ReceivingPage() {
       }
 
       toast.success(t('receiving.success'))
-      setReceiveList(flagged)
-      if (flagged.length > 0) {
-        toast.warning(t('receiving.someItemsHeldBack', { count: flagged.length }))
-      }
+      removeSentRows()
     } catch (error: any) {
       console.error('Failed to receive items:', error)
       toast.error(getApiErrorMessage(error, t('receiving.error')))
@@ -360,6 +448,7 @@ export function ReceivingPage() {
   }
 
   const selectedItem = items.find(i => i.id === selectedItemId)
+  const selectedOption = itemOptions.find(i => i.id === selectedItemId)
 
   const fieldClass = (name: string) =>
     autoFilledFields.has(name) ? 'ring-2 ring-primary/40 transition-all' : ''
@@ -421,7 +510,7 @@ export function ReceivingPage() {
       </Card>
 
       {/* Receive Form */}
-      <Card>
+      <Card ref={formCardRef} className="scroll-mt-4">
         <CardHeader>
           <CardTitle className="text-lg flex items-center gap-2">
             <PackagePlus className="w-5 h-5" />
@@ -429,7 +518,7 @@ export function ReceivingPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(handleAddToList)} className="space-y-4">
+          <form onSubmit={handleSubmit(handleSaveToList)} className="space-y-4">
             {/* Item Selection + SKU */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="sm:col-span-2 space-y-2">
@@ -440,7 +529,7 @@ export function ReceivingPage() {
                   className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <option value="">{t('picking.selectItemPlaceholder')}</option>
-                  {items.map((item) => (
+                  {itemOptions.map((item) => (
                     <option key={item.id} value={item.id}>
                       {item.name}
                     </option>
@@ -454,7 +543,7 @@ export function ReceivingPage() {
               <div className="space-y-2">
                 <Label>{t('items.sku')}</Label>
                 <Input
-                  value={selectedItem?.sku || ''}
+                  value={selectedOption?.sku || ''}
                   readOnly
                   className="font-mono bg-muted"
                   placeholder="—"
@@ -536,6 +625,9 @@ export function ReceivingPage() {
                 placeholder={t('receiving.batchNumberPlaceholder')}
                 className={fieldClass('batch_number')}
               />
+              {errors.batch_number && (
+                <p className="text-sm text-destructive">{t(errors.batch_number.message ?? '')}</p>
+              )}
             </div>
 
             {/* Notes */}
@@ -549,10 +641,24 @@ export function ReceivingPage() {
               />
             </div>
 
-            <Button type="submit" className="w-full">
-              <Plus className="w-4 h-4 me-2" />
-              {t('receiving.addToList')}
-            </Button>
+            {editingId ? (
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={exitEditing}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={submitting} className="flex-1">
+                  <Check className="w-4 h-4 me-2" />
+                  {t('receiving.updateItem')}
+                </Button>
+              </div>
+            ) : (
+              // Locked while a receive is in flight: a box combined into a
+              // row being sent would leave with that row, never received.
+              <Button type="submit" disabled={submitting} className="w-full">
+                <Plus className="w-4 h-4 me-2" />
+                {t('receiving.addToList')}
+              </Button>
+            )}
           </form>
         </CardContent>
       </Card>
@@ -562,7 +668,7 @@ export function ReceivingPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between flex-wrap gap-4">
-              <CardTitle className="text-lg">{t('receiving.listTitle', { count: receiveList.length })}</CardTitle>
+              <CardTitle id="receive-list-title" className="text-lg">{t('receiving.listTitle', { count: receiveList.length })}</CardTitle>
               {/* Desktop only here - the mobile equivalent is the sticky
                   bar below, reachable without scrolling past the list. */}
               <Button
@@ -585,15 +691,18 @@ export function ReceivingPage() {
             </div>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
+            <ul aria-labelledby="receive-list-title" className="space-y-3">
               {receiveList.map((item) => {
-                const expirationTooSoon = daysUntilExpiration(item.expiration_date) < minShelfLifeDays
+                const expirationTooSoon = !isReceivable(item)
+                const isEditing = item.id === editingId
                 return (
-                <div
+                <li
                   key={item.id}
+                  aria-current={isEditing || undefined}
                   className={cn(
                     'flex items-center justify-between p-4 rounded-lg border bg-card',
-                    expirationTooSoon && 'border-destructive'
+                    expirationTooSoon && 'border-destructive',
+                    isEditing && 'ring-2 ring-primary'
                   )}
                 >
                   <div className="flex-1 min-w-0">
@@ -627,6 +736,9 @@ export function ReceivingPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleEditItem(item.id)}
+                      // Locked while a receive is in flight - the request
+                      // already carries the rows' current values.
+                      disabled={submitting}
                       title={t('receiving.editItem')}
                       className="touch-manipulation"
                     >
@@ -636,15 +748,17 @@ export function ReceivingPage() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleRemoveFromList(item.id)}
+                      disabled={submitting}
+                      title={t('common.delete')}
                       className="text-destructive touch-manipulation"
                     >
                       <X className="w-4 h-4" />
                     </Button>
                   </div>
-                </div>
+                </li>
                 )
               })}
-            </div>
+            </ul>
           </CardContent>
         </Card>
       )}

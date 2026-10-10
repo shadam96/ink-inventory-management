@@ -1,6 +1,7 @@
 """Tests for inventory/item endpoints"""
 from datetime import date, timedelta
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
@@ -175,6 +176,79 @@ async def test_list_items_with_search(
     data = response.json()
     assert data["total"] == 1
     assert data["items"][0]["sku"] == "BLACK-001"
+
+
+def _uuid(n: int) -> UUID:
+    """Deterministic, sortable id. The letters matter: SQLite gives the
+    UUID column NUMERIC affinity, so an all-digit hex id is read back as an
+    int."""
+    return UUID(f"aaaaaaaa-0000-0000-0000-{n:012d}")
+
+
+async def _fetch_all_pages(client: AsyncClient, headers: dict, **params) -> list:
+    rows, page = [], 1
+    while True:
+        response = await client.get(
+            "/api/v1/items", headers=headers, params={**params, "page": page, "page_size": 2}
+        )
+        assert response.status_code == 200
+        data = response.json()
+        rows.extend(data["items"])
+        if page >= data["pages"]:
+            return rows
+        page += 1
+
+
+@pytest.mark.asyncio
+async def test_list_items_default_order_is_name_then_id(
+    client: AsyncClient, auth_headers: dict, db_session: AsyncSession
+):
+    """Regression test: with no sort_by the query had no ORDER BY, so
+    Postgres could return OFFSET/LIMIT pages in any order - the item
+    dropdowns, which page through the catalog, could show a different
+    subset (or skip/repeat items) on every fetch. Inserted out of order,
+    with a name tie, to prove the ordering comes from the query."""
+    rows = [
+        (_uuid(5), "Magenta Ink"),
+        (_uuid(4), "Cyan Ink"),
+        (_uuid(3), "Yellow Ink"),
+        (_uuid(2), "Black Ink"),
+        (_uuid(1), "Black Ink"),
+    ]
+    for item_id, name in rows:
+        db_session.add(Item(
+            id=item_id, sku=f"INK-ORD-{item_id.int}", name=name,
+            supplier="Supplier A", unit_of_measure="KG",
+        ))
+        # One INSERT per row: SQLAlchemy's batched insert trips over
+        # explicit UUID primary keys on SQLite.
+        await db_session.flush()
+    await db_session.commit()
+
+    listed = await _fetch_all_pages(client, auth_headers)
+
+    assert [(r["id"], r["name"]) for r in listed] == [
+        (str(item_id), name) for item_id, name in sorted(rows, key=lambda r: (r[1], r[0]))
+    ]
+
+
+@pytest.mark.asyncio
+async def test_list_items_sort_by_breaks_ties_by_id(
+    client: AsyncClient, auth_headers: dict, db_session: AsyncSession
+):
+    """An explicit sort_by on a non-unique column needs the same id
+    tiebreaker, or equal values can swap places between pages."""
+    for i in (4, 3, 2, 1):
+        db_session.add(Item(
+            id=_uuid(i), sku=f"INK-TIE-{i}", name=f"Ink {i}",
+            supplier="Same Supplier", unit_of_measure="KG",
+        ))
+        await db_session.flush()
+    await db_session.commit()
+
+    listed = await _fetch_all_pages(client, auth_headers, sort_by="supplier")
+
+    assert [r["id"] for r in listed] == [str(_uuid(i)) for i in (1, 2, 3, 4)]
 
 
 @pytest.mark.asyncio

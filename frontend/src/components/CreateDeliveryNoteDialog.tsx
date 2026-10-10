@@ -15,7 +15,8 @@ import { QuantityInput } from '@/components/ui/quantity-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
-import { customersApi, itemsApi, pickingApi, deliveryNotesApi, type Customer, type Item } from '@/lib/api'
+import { customersApi, pickingApi, deliveryNotesApi, type Customer, type Item } from '@/lib/api'
+import { fetchAllItems } from '@/lib/fetchAllItems'
 import { getApiErrorMessage } from '@/lib/apiError'
 
 interface BatchOption {
@@ -61,9 +62,7 @@ export function CreateDeliveryNoteDialog({ open, onOpenChange, onCreated }: Crea
     }).catch((error) => {
       console.error('Failed to fetch customers:', error)
     })
-    itemsApi.list({ page_size: 100 }).then((res) => {
-      setItems(res.items || [])
-    }).catch((error) => {
+    fetchAllItems().then(setItems).catch((error) => {
       console.error('Failed to fetch items:', error)
     })
   }, [open])
