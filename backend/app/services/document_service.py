@@ -234,7 +234,10 @@ class DocumentService:
 
         items_table = Table(
             items_data,
-            colWidths=[15*mm, 20*mm, 25*mm, 30*mm, 50*mm, 25*mm, 10*mm]
+            # Sums to the 170 mm content width so the table lines up with the
+            # letterhead; the header row repeats when the table spans pages.
+            colWidths=[13*mm, 20*mm, 22*mm, 30*mm, 50*mm, 25*mm, 10*mm],
+            repeatRows=1,
         )
         items_table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),
@@ -379,7 +382,9 @@ class DocumentService:
 
         items_table = Table(
             items_data,
-            colWidths=[15 * mm, 20 * mm, 30 * mm, 55 * mm, 25 * mm, 10 * mm],
+            # Sums to the 170 mm content width (see generate_delivery_note_pdf).
+            colWidths=[15 * mm, 20 * mm, 30 * mm, 65 * mm, 30 * mm, 10 * mm],
+            repeatRows=1,
         )
         items_table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (-1, -1), FONT_NAME),
