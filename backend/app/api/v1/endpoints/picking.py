@@ -86,6 +86,34 @@ class DispatchDocumentResponse(BaseModel):
     pdf_base64: Optional[str] = None
 
 
+async def _send_document_email(
+    to: List[str],
+    subject: str,
+    html_body: str,
+    reference_number: str,
+    pdf_bytes: bytes,
+) -> Optional[str]:
+    """Email a dispatch document as a PDF attachment.
+
+    Returns None once sent, otherwise a message saying why it wasn't. With
+    no RESEND_API_KEY the email service silently skips the send, so that
+    has to be caught here rather than reported back as sent.
+    """
+    if not email_service.is_configured:
+        return "שליחת אימייל אינה מוגדרת בשרת (RESEND_API_KEY)"
+    try:
+        await email_service.send_email(
+            to=to,
+            subject=subject,
+            html_body=html_body,
+            attachments=[{"filename": f"{reference_number}.pdf", "content": pdf_bytes}],
+        )
+    except Exception:
+        # email_service has already logged the provider's error.
+        return "שליחת האימייל נכשלה - בדקו את הגדרות האימייל בשרת"
+    return None
+
+
 @router.post("/suggest-batches")
 async def suggest_batches_for_picking(
     request: PickingSuggestionRequest,
@@ -385,19 +413,28 @@ async def generate_dispatch_document(
                 pdf_base64=base64.b64encode(pdf_bytes).decode("ascii"),
             )
 
-        recipient = current_user.notification_email or current_user.email
-        await email_service.send_email(
-            to=recipient,
+        recipients = current_user.notification_recipients
+        error = await _send_document_email(
+            to=recipients,
             subject=f"תעודת ליקוט {reference_number}",
             html_body=f"מצורפת תעודת הליקוט עבור אסמכתא {reference_number}.",
-            attachments=[{"filename": f"{reference_number}.pdf", "content": pdf_bytes}],
+            reference_number=reference_number,
+            pdf_bytes=pdf_bytes,
         )
+        if error:
+            return DispatchDocumentResponse(
+                success=False,
+                document_type=request.document_type,
+                action=request.action,
+                reference_number=reference_number,
+                message=error,
+            )
         return DispatchDocumentResponse(
             success=True,
             document_type=request.document_type,
             action=request.action,
             reference_number=reference_number,
-            message=f"תעודת הליקוט נשלחה ל-{recipient}",
+            message=f"תעודת הליקוט נשלחה ל-{', '.join(recipients)}",
         )
 
     # document_type == "delivery_note"
@@ -437,12 +474,21 @@ async def generate_dispatch_document(
             message="ללקוח זה אין כתובת אימייל רשומה במערכת",
         )
 
-    await email_service.send_email(
-        to=customer_email,
+    error = await _send_document_email(
+        to=[customer_email],
         subject=f"תעודת משלוח {reference_number}",
         html_body=f"מצורפת תעודת המשלוח {reference_number}.",
-        attachments=[{"filename": f"{reference_number}.pdf", "content": pdf_bytes}],
+        reference_number=reference_number,
+        pdf_bytes=pdf_bytes,
     )
+    if error:
+        return DispatchDocumentResponse(
+            success=False,
+            document_type=request.document_type,
+            action=request.action,
+            reference_number=reference_number,
+            message=error,
+        )
     return DispatchDocumentResponse(
         success=True,
         document_type=request.document_type,

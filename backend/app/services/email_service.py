@@ -2,7 +2,7 @@
 import base64
 import logging
 from pathlib import Path
-from typing import List, Optional, TypedDict
+from typing import List, Optional, TypedDict, Union
 
 import resend
 from jinja2 import Environment, FileSystemLoader
@@ -42,14 +42,18 @@ class EmailService:
 
     async def send_email(
         self,
-        to: str,
+        to: Union[str, List[str]],
         subject: str,
         html_body: str,
         text_body: Optional[str] = None,
         priority: bool = False,  # kept for API compat, ignored
         attachments: Optional[List[EmailAttachment]] = None,
     ):
-        """Send an email via Resend. Fires immediately — no queue."""
+        """Send an email via Resend. Fires immediately — no queue.
+
+        ``to`` is one address or a list of them; each address in a list is
+        a separate recipient of the same email.
+        """
         if not self._configured:
             logger.warning("Email skipped (not configured): %s -> %s", subject, to)
             return
@@ -57,7 +61,7 @@ class EmailService:
         try:
             params: resend.Emails.SendParams = {
                 "from": self.email_from,
-                "to": [to],
+                "to": [to] if isinstance(to, str) else list(to),
                 "subject": subject,
                 "html": html_body,
             }

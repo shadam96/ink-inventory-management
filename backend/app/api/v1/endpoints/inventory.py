@@ -85,6 +85,27 @@ async def list_items(
     if supplier:
         query = query.where(Item.supplier.ilike(f"%{supplier}%"))
 
+    # Filtered in SQL so total/pages and OFFSET/LIMIT agree with it. Stock is
+    # what _item_response counts: active, unexpired, visible to this user.
+    if below_reorder is not None:
+        stock_where = [
+            Batch.item_id == Item.id,
+            Batch.status == BatchStatus.ACTIVE,
+            Batch.expiration_date >= date.today(),
+        ]
+        access_clause = batch_access_filter(current_user, scope)
+        if access_clause is not None:
+            stock_where.append(access_clause)
+        stock = (
+            select(func.coalesce(func.sum(Batch.quantity_available), 0))
+            .where(*stock_where)
+            .correlate(Item)
+            .scalar_subquery()
+        )
+        query = query.where(
+            stock < Item.reorder_point if below_reorder else stock >= Item.reorder_point
+        )
+
     # Apply sorting. Without a total order, Postgres may return OFFSET/LIMIT
     # pages in any order, so paging through could skip or repeat items -
     # default to name and always break ties by id.
@@ -105,17 +126,8 @@ async def list_items(
     items = result.scalars().all()
     
     # Convert to response with computed fields
-    item_responses = []
-    for item in items:
-        response = _item_response(item, current_user)
+    item_responses = [_item_response(item, current_user) for item in items]
 
-        # Filter by below_reorder if specified
-        if below_reorder is not None:
-            if below_reorder == response.is_below_reorder_point:
-                item_responses.append(response)
-        else:
-            item_responses.append(response)
-    
     pages = (total + page_size - 1) // page_size if total > 0 else 1
     
     return PaginatedResponse(

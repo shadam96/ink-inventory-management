@@ -133,6 +133,17 @@ class User(BaseModel):
         return self.role == UserRole.CUSTOMER
 
     @property
+    def notification_recipients(self) -> List[str]:
+        """Addresses to email this user at: the comma-separated
+        notification_email list, or the login email when none is set."""
+        addresses = [
+            address.strip()
+            for address in (self.notification_email or "").split(",")
+            if address.strip()
+        ]
+        return addresses or [self.email]
+
+    @property
     def can_modify_inventory(self) -> bool:
         return self.role in (
             UserRole.ADMIN,

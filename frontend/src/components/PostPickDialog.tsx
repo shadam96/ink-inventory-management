@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { pickingApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/apiError'
-import { openPdfInNewTab } from '@/lib/utils'
+import { printPdf } from '@/lib/utils'
 
 type DocumentType = 'pick_note' | 'delivery_note'
 type DocumentAction = 'print' | 'email'
@@ -45,7 +45,7 @@ export function PostPickDialog({ open, onOpenChange, referenceNumber }: PostPick
       if (response.success) {
         toast.success(response.message)
         if (action === 'print' && response.pdf_base64) {
-          openPdfInNewTab(response.pdf_base64)
+          printPdf(response.pdf_base64)
         }
       } else {
         toast.info(response.message)

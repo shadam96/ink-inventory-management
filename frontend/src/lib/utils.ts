@@ -147,21 +147,69 @@ export function generateId(): string {
 }
 
 /**
- * Decode a base64-encoded PDF and open it in a new tab as a Blob URL -
- * avoids a bare `window.open` on an authenticated API response, and
- * doesn't require a second round-trip to a download endpoint.
+ * Decode a base64-encoded PDF into a Blob URL - avoids a bare `window.open`
+ * on an authenticated API response, and doesn't require a second
+ * round-trip to a download endpoint.
  */
-export function openPdfInNewTab(base64: string): void {
+function pdfBlobUrl(base64: string): string {
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) {
     bytes[i] = binary.charCodeAt(i)
   }
-  const blob = new Blob([bytes], { type: 'application/pdf' })
-  const url = URL.createObjectURL(blob)
+  return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
+/**
+ * Decode a base64-encoded PDF and open it in a new tab.
+ */
+export function openPdfInNewTab(base64: string): void {
+  const url = pdfBlobUrl(base64)
   window.open(url, '_blank')
   // Revoke after a delay rather than immediately - the new tab needs time
   // to actually load the blob URL before it's invalidated.
   setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
+
+let printFrame: { element: HTMLIFrameElement; url: string } | null = null
+
+/**
+ * Decode a base64-encoded PDF and open the browser's print dialog for it.
+ *
+ * Desktop Chromium (Chrome, Edge) prints a PDF loaded into a hidden iframe.
+ * Phones and Safari print a blank page or the host page that way, so they
+ * get the PDF in a tab of its own instead, where the system print/share
+ * sheet takes over.
+ */
+export function printPdf(base64: string): void {
+  const userAgent = navigator.userAgent
+  if (!/Chrome\//.test(userAgent) || /Android|Mobile/.test(userAgent)) {
+    openPdfInNewTab(base64)
+    return
+  }
+
+  // The previous frame is only dropped now, not after printing: removing
+  // it while its print dialog is still open cancels the print.
+  if (printFrame) {
+    printFrame.element.remove()
+    URL.revokeObjectURL(printFrame.url)
+  }
+
+  const url = pdfBlobUrl(base64)
+  const frame = document.createElement('iframe')
+  // Hidden but not display:none - Chrome doesn't load the PDF into an
+  // undisplayed frame, leaving nothing to print.
+  frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden'
+  frame.onload = () => {
+    try {
+      frame.contentWindow?.focus()
+      frame.contentWindow?.print()
+    } catch {
+      window.open(url, '_blank')
+    }
+  }
+  frame.src = url
+  document.body.appendChild(frame)
+  printFrame = { element: frame, url }
 }
 
