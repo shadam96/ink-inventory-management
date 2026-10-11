@@ -1,4 +1,7 @@
 """Tests for delivery notes functionality"""
+import io
+
+import pypdf
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
@@ -234,6 +237,26 @@ class TestDocumentService:
         assert len(pdf_bytes) > 0
         # PDF files start with %PDF
         assert pdf_bytes[:4] == b'%PDF'
+        # The Lino Print letterhead header is drawn on the page
+        assert len(pypdf.PdfReader(io.BytesIO(pdf_bytes)).pages[0].images) == 1
+
+    async def test_delivery_note_pdf_repeats_column_headers_on_every_page(
+        self, db_session, sample_customer, sample_batch, sample_user
+    ):
+        """A long items table continues onto later pages with its header row."""
+        service = DocumentService(db_session)
+        dn = await service.create_delivery_note(
+            customer_id=sample_customer.id,
+            items=[{"batch_id": sample_batch.id, "quantity": Decimal("1")} for _ in range(35)],
+            user_id=sample_user.id,
+        )
+        await db_session.flush()
+
+        reader = pypdf.PdfReader(io.BytesIO(await service.generate_delivery_note_pdf(dn.id)))
+
+        assert len(reader.pages) == 2
+        for page in reader.pages:
+            assert "תפוגה" in page.extract_text()
 
 
 class TestDeliveryNotesAPI:
