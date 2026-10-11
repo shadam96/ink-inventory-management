@@ -29,6 +29,7 @@ from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.user import User
 from app.services.sequence_service import generate_sequential_number
+from app.services.pdf_letterhead import LETTERHEAD_TOP_MARGIN, draw_letterhead
 from app.services.pdf_text import (
     FONT_NAME,
     FONT_NAME_BOLD,
@@ -152,7 +153,7 @@ class DocumentService:
             pagesize=A4,
             rightMargin=20*mm,
             leftMargin=20*mm,
-            topMargin=20*mm,
+            topMargin=LETTERHEAD_TOP_MARGIN,
             bottomMargin=20*mm,
         )
 
@@ -283,7 +284,7 @@ class DocumentService:
         ))
 
         # Build PDF
-        doc.build(elements)
+        doc.build(elements, onFirstPage=draw_letterhead, onLaterPages=draw_letterhead)
 
         # Get PDF bytes
         pdf_bytes = buffer.getvalue()
@@ -325,7 +326,7 @@ class DocumentService:
             pagesize=A4,
             rightMargin=20 * mm,
             leftMargin=20 * mm,
-            topMargin=20 * mm,
+            topMargin=LETTERHEAD_TOP_MARGIN,
             bottomMargin=20 * mm,
         )
 
@@ -396,7 +397,7 @@ class DocumentService:
         ]))
         elements.append(items_table)
 
-        doc.build(elements)
+        doc.build(elements, onFirstPage=draw_letterhead, onLaterPages=draw_letterhead)
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return pdf_bytes

@@ -510,6 +510,8 @@ async def test_generate_pick_note_print_returns_pdf(
     data = response.json()
     assert data["success"] is True
     assert data["pdf_base64"]  # non-empty, a real PDF was produced
+    reader = pypdf.PdfReader(io.BytesIO(base64.b64decode(data["pdf_base64"])))
+    assert len(reader.pages[0].images) == 1  # Lino Print letterhead header
 
 
 @pytest.mark.asyncio

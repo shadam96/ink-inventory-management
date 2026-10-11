@@ -1,4 +1,7 @@
 """Tests for delivery notes functionality"""
+import io
+
+import pypdf
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
@@ -234,6 +237,8 @@ class TestDocumentService:
         assert len(pdf_bytes) > 0
         # PDF files start with %PDF
         assert pdf_bytes[:4] == b'%PDF'
+        # The Lino Print letterhead header is drawn on the page
+        assert len(pypdf.PdfReader(io.BytesIO(pdf_bytes)).pages[0].images) == 1
 
 
 class TestDeliveryNotesAPI:
