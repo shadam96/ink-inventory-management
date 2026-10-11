@@ -11,6 +11,7 @@ import { Header } from '@/components/layout/Header'
 import { SearchInput } from '@/components/SearchInput'
 import { UserDialog, type UserFormSubmitData } from '@/components/UserDialog'
 import { usersApi, authApi, type ManagedUser, type CreateUserData } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/apiError'
 
 export function UsersPage() {
   const { t } = useTranslation()
@@ -74,7 +75,7 @@ export function UsersPage() {
       }
       fetchUsers()
     } catch (error: any) {
-      const message = error.response?.data?.detail || t('users.saveError')
+      const message = getApiErrorMessage(error, t('users.saveError'))
       toast.error(message)
       throw error
     }

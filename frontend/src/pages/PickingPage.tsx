@@ -27,6 +27,7 @@ import { PostPickDialog } from '@/components/PostPickDialog'
 import { formatDate, daysUntilExpiration, getExpirationStatus, cn } from '@/lib/utils'
 import { customersApi, pickingApi, receivingApi, type Item } from '@/lib/api'
 import { fetchAllItems } from '@/lib/fetchAllItems'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { useAuthStore } from '@/store/auth'
 
@@ -270,7 +271,7 @@ function AdminPickingView() {
       setSelectedBatchId(null)
       setPostPickRef(response.reference_number)
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || t('picking.dispatchError'))
+      toast.error(getApiErrorMessage(error, t('picking.dispatchError')))
     } finally {
       setSubmitting(false)
     }
@@ -623,7 +624,7 @@ function CustomerPickingView() {
       setRecommendationIndex(0)
       setShowAllBatches(false)
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || t('picking.consumptionError'))
+      toast.error(getApiErrorMessage(error, t('picking.consumptionError')))
     } finally {
       setSubmitting(false)
     }

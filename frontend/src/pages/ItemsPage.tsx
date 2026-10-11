@@ -20,6 +20,7 @@ import { SortableTableHead } from '@/components/SortableTableHead'
 import { ItemDialog } from '@/components/ItemDialog'
 import { formatCurrency, formatNumber } from '@/lib/utils'
 import { itemsApi, type Item, type CreateItemData } from '@/lib/api'
+import { getApiErrorMessage } from '@/lib/apiError'
 
 export function ItemsPage() {
   const { t } = useTranslation()
@@ -105,7 +106,7 @@ export function ItemsPage() {
       }
       fetchItems()
     } catch (error: any) {
-      const message = error.response?.data?.detail || t('items.saveError')
+      const message = getApiErrorMessage(error, t('items.saveError'))
       alert(message)
       throw error
     }
