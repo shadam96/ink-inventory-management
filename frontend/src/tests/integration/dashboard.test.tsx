@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { BrowserRouter } from 'react-router-dom'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { toast } from 'sonner'
 import * as api from '@/lib/api'
 import type {
   AttentionItems,
@@ -34,6 +35,8 @@ vi.mock('@/lib/api', () => ({
   },
 }))
 
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
+
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -45,13 +48,9 @@ const baseKpis: DashboardKPIs = {
   inventory_value_by_currency: { ILS: 20000 },
   inventory_value_30d_ago_by_currency: { ILS: 18000 },
   items_in_stock: 12,
-  at_risk_value_by_currency: { ILS: 1000 },
-  at_risk_percentage: 5,
   low_stock_items: 2,
   critical_low_stock: 1,
   unread_alerts: 3,
-  recent_receipts: 40,
-  recent_dispatches: 15,
   write_off_90d_value_by_currency: { ILS: 300 },
   write_off_90d_rate: 1.5,
   turnover_annualized: 4.2,
@@ -167,6 +166,21 @@ describe('DashboardPage', () => {
       expect(screen.getByText('dashboard.activityTrend')).toBeInTheDocument()
     })
     expect(api.dashboardApi.getMovementTrend).toHaveBeenCalledWith(90)
+  })
+
+  it('keeps the other cards when one endpoint fails, and says so', async () => {
+    vi.mocked(api.dashboardApi.getAttention).mockRejectedValue(new Error('500'))
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    renderDashboard()
+
+    await waitFor(() => {
+      expect(screen.getByText('dashboard.inventoryValue')).toBeInTheDocument()
+    })
+    expect(screen.getByText('UV Cyan')).toBeInTheDocument()
+    expect(screen.queryByText('dashboard.nothingNeedsAttention')).not.toBeInTheDocument()
+    expect(toast.error).toHaveBeenCalledTimes(1)
+    consoleError.mockRestore()
   })
 
   it('shows the all-clear state when nothing needs attention', async () => {

@@ -31,14 +31,23 @@ interface Period {
   outbound: number
 }
 
-function toPeriods(trend: MovementTrend | null, convert: (amounts: CurrencyTotals) => number): Period[] {
-  const locale = getDateFnsLocale()
-  const short = (iso: string) => format(parseISO(iso), 'd MMM', { locale })
-  const days = (trend?.series ?? []).map((point) => ({
+interface Day {
+  date: string
+  receipts: number
+  outbound: number
+}
+
+function toDays(trend: MovementTrend | null, convert: (amounts: CurrencyTotals) => number): Day[] {
+  return (trend?.series ?? []).map((point) => ({
     date: point.date,
     receipts: convert(point.receipts_value_by_currency ?? {}),
     outbound: convert(point.outbound_value_by_currency ?? {}),
   }))
+}
+
+function toPeriods(days: Day[]): Period[] {
+  const locale = getDateFnsLocale()
+  const short = (iso: string) => format(parseISO(iso), 'd MMM', { locale })
 
   if (days.length <= MAX_DAILY_POINTS) {
     return days.map((day) => ({
@@ -52,7 +61,8 @@ function toPeriods(trend: MovementTrend | null, convert: (amounts: CurrencyTotal
   }
 
   // Whole weeks counted back from today; a leading partial week is
-  // dropped rather than drawn as a misleadingly short bar.
+  // dropped from the chart rather than drawn as a misleadingly short bar
+  // (the totals above it still cover every day).
   const periods: Period[] = []
   for (let end = days.length; end - 7 >= 0; end -= 7) {
     const week = days.slice(end - 7, end)
@@ -102,10 +112,11 @@ export function ActivityTrendCard({ trend, fxRates, currency, trendDays, onTrend
   const [mode, setMode] = useState<'chart' | 'table'>('chart')
 
   const convert = (amounts: CurrencyTotals) => (fxRates ? convertToDisplayCurrency(amounts, currency, fxRates) : 0)
-  const periods = toPeriods(trend, convert)
+  const days = toDays(trend, convert)
+  const periods = toPeriods(days)
   const totals = {
-    receipts: periods.reduce((sum, p) => sum + p.receipts, 0),
-    outbound: periods.reduce((sum, p) => sum + p.outbound, 0),
+    receipts: days.reduce((sum, day) => sum + day.receipts, 0),
+    outbound: days.reduce((sum, day) => sum + day.outbound, 0),
   }
   const hasActivity = totals.receipts > 0 || totals.outbound > 0
 

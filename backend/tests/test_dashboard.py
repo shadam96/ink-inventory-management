@@ -171,46 +171,6 @@ class TestDashboardService:
         assert kpis["low_stock_items"] == 2
         assert kpis["critical_low_stock"] == 1
 
-    async def test_get_recent_activity(self, db_session, sample_items_with_batches):
-        """Test getting recent activity"""
-        service = DashboardService(db_session)
-        
-        batches = sample_items_with_batches["batches"]
-        
-        # Create a user for movements
-        from app.models.user import UserRole
-        
-        user = User(
-            username="activity_test_user",
-            email="activity_test@test.com",
-            hashed_password="hashed",
-            full_name="Activity Test",
-            role=UserRole.WAREHOUSE_WORKER,
-        )
-        db_session.add(user)
-        await db_session.flush()
-        
-        # Create some movements
-        for i, batch in enumerate(batches):
-            movement = Movement(
-                batch_id=batch.id,
-                user_id=user.id,
-                movement_type=MovementType.RECEIPT if i == 0 else MovementType.DISPATCH,
-                quantity=Decimal("10.00"),
-                quantity_before=Decimal("0.00") if i == 0 else batch.quantity_available,
-                quantity_after=Decimal("10.00") if i == 0 else batch.quantity_available - Decimal("10.00"),
-                reference_number=f"REF-{i:03d}",
-            )
-            db_session.add(movement)
-        await db_session.flush()
-        
-        activity = await service.get_recent_activity(days=7)
-        
-        assert activity["period_days"] == 7
-        assert activity["movements_count"] >= 3
-        assert "receipts_quantity" in activity
-        assert "dispatches_quantity" in activity
-
     async def test_get_movement_trend(self, db_session, sample_items_with_batches):
         """Trend series must be zero-filled for every day in range and
         bucket movements onto the correct day, not just summed overall."""
@@ -256,9 +216,9 @@ class TestDashboardService:
 
         trend = await service.get_movement_trend(days=3)
 
-        # start_date..today inclusive over a 3-day window is 4 days
+        # A 3-day window is the 3 days up to and including today
         assert trend["period_days"] == 3
-        assert len(trend["series"]) == 4
+        assert len(trend["series"]) == 3
 
         by_date = {point["date"]: point for point in trend["series"]}
         assert by_date[today.date().isoformat()]["receipts"] == 10.0
@@ -280,12 +240,8 @@ class TestDashboardService:
         # Verify all KPIs present
         assert "inventory_value_by_currency" in kpis
         assert "items_in_stock" in kpis
-        assert "at_risk_value_by_currency" in kpis
-        assert "at_risk_percentage" in kpis
         assert "low_stock_items" in kpis
         assert "unread_alerts" in kpis
-        assert "recent_receipts" in kpis
-        assert "recent_dispatches" in kpis
 
         # Verify values are reasonable
         assert sum(kpis["inventory_value_by_currency"].values()) > 0
@@ -338,7 +294,7 @@ class TestDashboardAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["period_days"] == 14
-        assert len(data["series"]) == 15
+        assert len(data["series"]) == 14
         assert all(
             {"date", "receipts", "dispatches", "scraps"} <= point.keys()
             for point in data["series"]

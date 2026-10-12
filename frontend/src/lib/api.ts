@@ -475,13 +475,9 @@ export type CurrencyTotals = Partial<Record<'ILS' | 'USD' | 'EUR' | 'TRY', numbe
 export interface DashboardKPIs {
   inventory_value_by_currency: CurrencyTotals
   items_in_stock: number
-  at_risk_value_by_currency: CurrencyTotals
-  at_risk_percentage: number
   low_stock_items: number
   critical_low_stock: number
   unread_alerts: number
-  recent_receipts: number
-  recent_dispatches: number
   inventory_value_30d_ago_by_currency: CurrencyTotals
   /** Value of stock scrapped in the trailing 90 days. */
   write_off_90d_value_by_currency: CurrencyTotals
@@ -530,7 +526,7 @@ export interface StockCoverageItem {
   reorder_point: number
   min_stock: number
   avg_daily_usage: number
-  /** null when the item had no usage in the window. */
+  /** 0 when out of stock; null when in stock with no usage in the window. */
   days_of_supply: number | null
   status: CoverageStatus
 }

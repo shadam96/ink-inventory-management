@@ -57,6 +57,7 @@
     "noOutbound": "אין יציאות ב-90 הימים האחרונים",
     "attention": "דורש טיפול",
     "nothingNeedsAttention": "אין כרגע פריטים שדורשים טיפול",
+    "loadError": "חלק מנתוני לוח הבקרה לא נטענו",
     "attentionExpired": "פג תוקף ועדיין במלאי",
     "attentionExpiring": "פג תוקף תוך 30 יום",
     "attentionBelowMin": "מתחת למלאי מינימום",
