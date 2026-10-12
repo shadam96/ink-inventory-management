@@ -353,25 +353,24 @@ Minimum threshold alerts. Email/notification for 30-day expiry. Dead stock repor
 | Feature | Status | Notes |
 |---------|--------|-------|
 | Dashboard is home page | ✅ | Default route after login |
-| KPIs: inventory value | ✅ | Sum of (cost_price × qty) across active batches |
-| KPIs: items in stock count | ✅ | |
-| KPIs: items below minimum | ✅ | Compared against `reorder_point` |
-| Expiration risk map (color gauge) | ✅ | Green/Yellow/Red/Black distribution |
-| Inventory distribution (pie chart) | ✅ | By item, Recharts |
-| Movement trend (bar chart) | ✅ | Receipts vs dispatches over time |
-| Top expiring batches list | ✅ | Top 10 nearest expiry |
+| KPIs: inventory value | ✅ | Sum of (cost_price × qty) across active batches, with change vs. 30 days ago (rebuilt from movements) |
+| KPIs: items below minimum | ✅ | Count below `reorder_point`, and how many are below `min_stock` |
+| KPIs: value expiring within 30 days | ✅ | Plus value already expired but still active |
+| Expiration risk map | ✅ | Expiry timeline: value per bucket (expired, 0–30, 31–60, 61–90, 91–180, 180+ days) in the risk colors, with 90-day write-off value and rate |
+| Needs-attention list | ✅ | Expired lots still active, lots expiring ≤30 days, items below minimum, dead stock |
+| Stock coverage (days of supply) | ✅ | Usable stock ÷ average daily dispatch + consumption over 90 days |
+| Movement trend (bar chart) | ✅ | Value received vs. outbound (dispatch + consumption), daily or weekly |
 | Reorder point alerts | ✅ | Alert when stock < reorder_point |
 | Alert → create draft PO | ❌ | No PO module |
 | Email alerts for 30-day expiry | ✅ | email_service + scheduler |
 | Daily/weekly scheduled email reports | 🔧 | Scheduler exists, weekly report template exists, but scheduling is basic |
 | Dead stock report | 🔧 | Alert generated, but no dedicated report page with cost + location |
-| Inventory utilization rate (turnover) | ❌ | KPI mentioned in PDF but not calculated |
+| Inventory utilization rate (turnover) | ✅ | Annualized 90-day outbound cost ÷ average inventory value, plus days on hand |
 | Notification bell (real-time) | ✅ | WebSocket-driven, unread count badge, dropdown |
 
 **What's missing:**
-1. **Inventory turnover rate KPI** — (dispatched qty / average stock qty) over a period
-2. **Dead stock dedicated report page** — show batches with no outbound movement for 180+ days, with cost and location, filterable
-3. **PO creation from alert** — requires PO module (future)
+1. **Dead stock dedicated report page** — show batches with no outbound movement for 180+ days, with cost and location, filterable (the dashboard lists dead-stock items, but there is no report page)
+2. **PO creation from alert** — requires PO module (future)
 
 ---
 
@@ -437,7 +436,7 @@ alerts, dashboard, email, WebSocket, scheduler, barcode scanning, PWA, offline s
 | 7.6 | Batch traceability (full lifecycle: receipt → dispatch → customer) | Medium |
 | 7.7 | FEFO compliance metrics (% picked in FEFO order) | Low |
 | 7.8 | Customer analytics (sales by customer, delivery frequency) | Low |
-| 7.9 | Inventory turnover KPI on dashboard | Medium |
+| 7.9 | ~~Inventory turnover KPI on dashboard~~ (done) | Medium |
 
 ### Phase 8: Production Hardening
 
@@ -547,9 +546,10 @@ All routes prefixed with `/api/v1`.
 | PUT | `/alerts/{id}/read` | Alerts | Yes |
 | PUT | `/alerts/{id}/dismiss` | Alerts | Yes |
 | GET | `/dashboard/kpis` | Dashboard | Yes |
-| GET | `/dashboard/distribution` | Dashboard | Yes |
-| GET | `/dashboard/movements` | Dashboard | Yes |
-| GET | `/dashboard/top-expiring` | Dashboard | Yes |
+| GET | `/dashboard/expiry-timeline` | Dashboard | Yes |
+| GET | `/dashboard/stock-coverage` | Dashboard | Yes |
+| GET | `/dashboard/attention` | Dashboard | Yes |
+| GET | `/dashboard/movement-trend` | Dashboard | Yes |
 | GET/PUT | `/settings/user-preferences` | Settings | Yes |
 | POST | `/settings/test-email` | Settings | Yes |
 | WS | `/ws` | WebSocket | JWT in query param |
@@ -561,7 +561,7 @@ All routes prefixed with `/api/v1`.
 | Route | Page | Description |
 |-------|------|-------------|
 | `/login` | LoginPage | JWT auth, redirects to `/` on success |
-| `/` | DashboardPage | Home. KPIs, charts, risk map, top expiring |
+| `/` | DashboardPage | Home. KPIs, needs-attention list, expiry timeline, stock coverage, activity trend |
 | `/items` | ItemsPage | Item CRUD, search, filter, pagination |
 | `/batches` | BatchesPage | Batch list, filter by item/status/expiry, FEFO sort |
 | `/receiving` | ReceivingPage | Goods receipt workflow, barcode scan, batch creation |

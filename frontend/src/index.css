@@ -35,6 +35,12 @@
     --ring: 199 89% 48%;
 
     --radius: 0.5rem;
+
+    /* Dashboard chart series - validated colorblind-safe pair (plain hex,
+       stepped separately for the dark surface below). */
+    --chart-receipts: #2a78d6;
+    --chart-outbound: #eb6834;
+    --chart-neutral: #94a3b8;
   }
 
   .dark {
@@ -65,6 +71,10 @@
     --border: 217 28% 22%;
     --input: 217 28% 22%;
     --ring: 199 89% 48%;
+
+    --chart-receipts: #3987e5;
+    --chart-outbound: #d95926;
+    --chart-neutral: #64748b;
   }
 }
 

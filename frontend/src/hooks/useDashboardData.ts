@@ -2,22 +2,22 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   dashboardApi,
   systemSettingsApi,
+  type AttentionItems,
   type DashboardKPIs,
-  type SystemSettings,
-  type InventoryValue,
-  type LowStockResponse,
+  type ExpiryTimeline,
   type MovementTrend,
+  type StockCoverage,
+  type SystemSettings,
 } from '@/lib/api'
 
 export type TrendRangeDays = 7 | 30 | 90
 
 interface DashboardData {
   kpis: DashboardKPIs | null
-  riskData: any
-  distribution: any[]
   fxRates: SystemSettings | null
-  inventoryValue: InventoryValue | null
-  lowStock: LowStockResponse | null
+  expiryTimeline: ExpiryTimeline | null
+  stockCoverage: StockCoverage | null
+  attention: AttentionItems | null
   movementTrend: MovementTrend | null
   trendDays: TrendRangeDays
   setTrendDays: (days: TrendRangeDays) => void
@@ -27,34 +27,31 @@ interface DashboardData {
 
 export function useDashboardData(): DashboardData {
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
-  const [riskData, setRiskData] = useState<any>(null)
-  const [distribution, setDistribution] = useState<any[]>([])
   const [fxRates, setFxRates] = useState<SystemSettings | null>(null)
-  const [inventoryValue, setInventoryValue] = useState<InventoryValue | null>(null)
-  const [lowStock, setLowStock] = useState<LowStockResponse | null>(null)
+  const [expiryTimeline, setExpiryTimeline] = useState<ExpiryTimeline | null>(null)
+  const [stockCoverage, setStockCoverage] = useState<StockCoverage | null>(null)
+  const [attention, setAttention] = useState<AttentionItems | null>(null)
   const [movementTrend, setMovementTrend] = useState<MovementTrend | null>(null)
-  const [trendDays, setTrendDays] = useState<TrendRangeDays>(7)
+  const [trendDays, setTrendDays] = useState<TrendRangeDays>(90)
   const [loading, setLoading] = useState(true)
   const [trendLoading, setTrendLoading] = useState(false)
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [kpisRes, riskRes, distRes, fxRes, inventoryValueRes, lowStockRes, trendRes] = await Promise.all([
+        const [kpisRes, fxRes, timelineRes, coverageRes, attentionRes, trendRes] = await Promise.all([
           dashboardApi.getKpis(),
-          dashboardApi.getExpirationRisk(),
-          dashboardApi.getInventoryDistribution(),
           systemSettingsApi.get(),
-          dashboardApi.getInventoryValue(),
-          dashboardApi.getLowStock(),
-          dashboardApi.getMovementTrend(7),
+          dashboardApi.getExpiryTimeline(),
+          dashboardApi.getStockCoverage(),
+          dashboardApi.getAttention(),
+          dashboardApi.getMovementTrend(90),
         ])
         setKpis(kpisRes)
-        setRiskData(riskRes)
-        setDistribution(distRes.items || [])
         setFxRates(fxRes)
-        setInventoryValue(inventoryValueRes)
-        setLowStock(lowStockRes)
+        setExpiryTimeline(timelineRes)
+        setStockCoverage(coverageRes)
+        setAttention(attentionRes)
         setMovementTrend(trendRes)
       } catch (error) {
         console.error('Failed to fetch dashboard data:', error)
@@ -91,11 +88,10 @@ export function useDashboardData(): DashboardData {
 
   return {
     kpis,
-    riskData,
-    distribution,
     fxRates,
-    inventoryValue,
-    lowStock,
+    expiryTimeline,
+    stockCoverage,
+    attention,
     movementTrend,
     trendDays,
     setTrendDays: handleSetTrendDays,

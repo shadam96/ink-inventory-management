@@ -42,6 +42,25 @@ export function formatCurrency(
   }).format(value)
 }
 
+/**
+ * Currency amount without cents, for headline figures and chart labels.
+ * `compact` abbreviates large amounts (₪78.5K) where space is tight.
+ */
+export function formatCurrencyShort(
+  value: number,
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY' = 'ILS',
+  { compact = false }: { compact?: boolean } = {},
+): string {
+  return new Intl.NumberFormat(currentIntlLocale(), {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    notation: compact ? 'compact' : 'standard',
+    maximumFractionDigits: compact && Math.abs(value) >= 1000 ? 1 : 0,
+    minimumFractionDigits: 0,
+  }).format(value)
+}
+
 export interface FxRates {
   /** Price of 1 USD in ILS. */
   usd_to_ils: number

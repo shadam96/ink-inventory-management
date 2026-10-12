@@ -232,34 +232,24 @@ export const dashboardApi = {
     return response.data as DashboardKPIs
   },
   
-  getInventoryValue: async () => {
-    const response = await api.get('/dashboard/inventory-value')
-    return response.data as InventoryValue
-  },
-  
-  getInventoryDistribution: async () => {
-    const response = await api.get('/dashboard/inventory-distribution')
-    return response.data
-  },
-  
-  getExpirationRisk: async () => {
-    const response = await api.get('/dashboard/expiration-risk')
-    return response.data
-  },
-  
-  getLowStock: async () => {
-    const response = await api.get('/dashboard/low-stock')
-    return response.data as LowStockResponse
-  },
-  
-  getRecentActivity: async (days = 7) => {
-    const response = await api.get('/dashboard/recent-activity', { params: { days } })
-    return response.data
-  },
-
   getMovementTrend: async (days = 7) => {
     const response = await api.get('/dashboard/movement-trend', { params: { days } })
     return response.data as MovementTrend
+  },
+
+  getExpiryTimeline: async () => {
+    const response = await api.get('/dashboard/expiry-timeline')
+    return response.data as ExpiryTimeline
+  },
+
+  getStockCoverage: async () => {
+    const response = await api.get('/dashboard/stock-coverage')
+    return response.data as StockCoverage
+  },
+
+  getAttention: async () => {
+    const response = await api.get('/dashboard/attention')
+    return response.data as AttentionItems
   },
 }
 
@@ -492,13 +482,107 @@ export interface DashboardKPIs {
   unread_alerts: number
   recent_receipts: number
   recent_dispatches: number
+  inventory_value_30d_ago_by_currency: CurrencyTotals
+  /** Value of stock scrapped in the trailing 90 days. */
+  write_off_90d_value_by_currency: CurrencyTotals
+  /** Write-off as a % of average inventory value over the same 90 days. */
+  write_off_90d_rate: number
+  /** Annualized: trailing-90-day outbound cost / average inventory value. */
+  turnover_annualized: number
+  /** Average inventory / daily outbound cost; null when nothing went out. */
+  days_on_hand: number | null
 }
 
 export interface MovementTrendPoint {
   date: string
   receipts: number
   dispatches: number
+  consumptions: number
   scraps: number
+  receipts_value_by_currency: CurrencyTotals
+  /** Dispatch + consumption, at cost. */
+  outbound_value_by_currency: CurrencyTotals
+}
+
+export type ExpiryBucketKey = 'expired' | 'd0_30' | 'd31_60' | 'd61_90' | 'd91_180' | 'd181_plus'
+
+export interface ExpiryBucket {
+  key: ExpiryBucketKey
+  value_by_currency: CurrencyTotals
+  /** Keyed by unit of measure - liters and kilograms are never summed. */
+  quantity_by_unit: Record<string, number>
+  batches: number
+}
+
+export interface ExpiryTimeline {
+  buckets: ExpiryBucket[]
+}
+
+export type CoverageStatus = 'out' | 'below_min' | 'below_reorder' | 'ok'
+
+export interface StockCoverageItem {
+  item_id: string
+  sku: string
+  name: string
+  color: string
+  unit: string
+  quantity: number
+  reorder_point: number
+  min_stock: number
+  avg_daily_usage: number
+  /** null when the item had no usage in the window. */
+  days_of_supply: number | null
+  status: CoverageStatus
+}
+
+export interface StockCoverage {
+  window_days: number
+  /** Most urgent first; items with no usage last. */
+  items: StockCoverageItem[]
+}
+
+export interface AttentionLot {
+  batch_id: string
+  batch_number: string
+  item_id: string
+  sku: string
+  name: string
+  unit: string
+  quantity: number
+  value: number
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
+  expiration_date: string
+  days_until_expiration: number
+  location_code: string | null
+}
+
+export interface AttentionBelowMin {
+  item_id: string
+  sku: string
+  name: string
+  unit: string
+  quantity: number
+  min_stock: number
+  reorder_point: number
+}
+
+export interface AttentionDeadStock {
+  item_id: string
+  sku: string
+  name: string
+  unit: string
+  quantity: number
+  value: number
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
+  last_movement_date: string
+  days_inactive: number
+}
+
+export interface AttentionItems {
+  expired_on_shelf: AttentionLot[]
+  expiring_soon: AttentionLot[]
+  below_min: AttentionBelowMin[]
+  dead_stock: AttentionDeadStock[]
 }
 
 export interface MovementTrend {
@@ -506,29 +590,6 @@ export interface MovementTrend {
   start_date: string
   end_date: string
   series: MovementTrendPoint[]
-}
-
-export interface InventoryValue {
-  totals_by_currency: CurrencyTotals
-  total_quantity: number
-  items_with_stock: number
-}
-
-export interface LowStockItem {
-  item_id: string
-  sku: string
-  name: string
-  current_quantity: number
-  reorder_point: number
-  min_stock: number
-  shortage: number
-  is_critical: boolean
-}
-
-export interface LowStockResponse {
-  items: LowStockItem[]
-  count: number
-  critical_count: number
 }
 
 export interface SystemSettings {

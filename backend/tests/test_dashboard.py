@@ -89,23 +89,19 @@ class TestDashboardService:
             "batches": [batch1, batch2, batch3],
         }
     
-    async def test_get_inventory_value(self, db_session, sample_items_with_batches):
-        """Test calculating inventory value, bucketed by per-item currency."""
-        service = DashboardService(db_session)
-
-        result = await service.get_inventory_value()
+    async def test_kpi_inventory_value(self, db_session, sample_items_with_batches):
+        """Inventory value is bucketed by per-item currency."""
+        kpis = await DashboardService(db_session).get_kpi_summary()
 
         # Both fixture items default to ILS — totals collapse into one bucket.
         # Item1: 50 * 200 = 10,000; Item2: (40 + 60) * 100 = 10,000 → ILS 20,000.
-        assert result["totals_by_currency"] == {"ILS": 20000.0}
-        assert result["total_quantity"] == 150.0  # 50 + 40 + 60
-        assert result["items_with_stock"] == 2
+        assert kpis["inventory_value_by_currency"] == {"ILS": 20000.0}
+        assert kpis["items_in_stock"] == 2
 
-    async def test_get_inventory_value_buckets_distinct_currencies(
+    async def test_kpi_inventory_value_buckets_distinct_currencies(
         self, db_session, sample_items_with_batches
     ):
         """A USD-priced item must not be summed with ILS items."""
-        # Add a USD item with active stock.
         usd_item = Item(
             sku="DASH-INK-USD",
             name="Imported Ink",
@@ -131,155 +127,49 @@ class TestDashboardService:
         )
         await db_session.flush()
 
-        result = await DashboardService(db_session).get_inventory_value()
+        kpis = await DashboardService(db_session).get_kpi_summary()
 
-        assert result["totals_by_currency"] == {"ILS": 20000.0, "USD": 500.0}
-    
-    async def test_get_inventory_distribution(self, db_session, sample_items_with_batches):
-        """Test inventory distribution"""
-        service = DashboardService(db_session)
-        
-        distribution = await service.get_inventory_distribution()
-        
-        assert len(distribution) == 2
-        
-        # Should be sorted by value descending
-        assert distribution[0]["value"] >= distribution[1]["value"]
-        
-        # Verify SKUs exist
-        skus = [d["sku"] for d in distribution]
-        assert "DASH-INK-001" in skus
-        assert "DASH-INK-002" in skus
-    
-    async def test_get_expiration_risk_map(self, db_session, sample_items_with_batches):
-        """Test expiration risk map"""
-        service = DashboardService(db_session)
-        
-        result = await service.get_expiration_risk_map()
-        
-        risk_levels = result["risk_levels"]
-        
-        # Should have all risk levels
-        assert "expired" in risk_levels
-        assert "critical" in risk_levels
-        assert "warning" in risk_levels
-        assert "caution" in risk_levels
-        assert "safe" in risk_levels
-        
-        # Should have color codes
-        assert "color_codes" in result
-        
-        # Critical should have value (batch2 with 15 days)
-        assert risk_levels["critical"]["batches"] >= 1
-        
-        # Safe should have value (batch1 with 180 days)
-        assert risk_levels["safe"]["batches"] >= 1
+        assert kpis["inventory_value_by_currency"] == {"ILS": 20000.0, "USD": 500.0}
 
-    async def test_expiration_risk_map_buckets_value_by_currency(self, db_session):
-        """Regression test: a level's value must be bucketed per item
-        currency (like inventory_value_by_currency), not summed together
-        into one meaningless mixed-currency number."""
-        item_ils = Item(
-            sku="DASH-CCY-ILS",
-            name="ILS Ink",
-            supplier="Supplier",
-            unit_of_measure="L",
-            cost_price=Decimal("100.00"),
-            currency="ILS",
-        )
-        item_usd = Item(
-            sku="DASH-CCY-USD",
-            name="USD Ink",
-            supplier="Supplier",
-            unit_of_measure="L",
-            cost_price=Decimal("50.00"),
-            currency="USD",
-        )
-        db_session.add_all([item_ils, item_usd])
-        await db_session.flush()
-
-        expiring_soon = date.today() + timedelta(days=10)
-        db_session.add_all([
-            Batch(
-                batch_number="DASH-CCY-BT-ILS",
-                item_id=item_ils.id,
-                expiration_date=expiring_soon,
-                receipt_date=date.today(),
-                quantity_received=Decimal("10"),
-                quantity_available=Decimal("10"),
-                status=BatchStatus.ACTIVE,
-            ),
-            Batch(
-                batch_number="DASH-CCY-BT-USD",
-                item_id=item_usd.id,
-                expiration_date=expiring_soon,
-                receipt_date=date.today(),
-                quantity_received=Decimal("10"),
-                quantity_available=Decimal("10"),
-                status=BatchStatus.ACTIVE,
-            ),
-        ])
-        await db_session.commit()
-
-        service = DashboardService(db_session)
-        result = await service.get_expiration_risk_map()
-
-        critical = result["risk_levels"]["critical"]
-        assert critical["value_by_currency"]["ILS"] == 1000.0  # 10 * 100
-        assert critical["value_by_currency"]["USD"] == 500.0   # 10 * 50
-        assert "value" not in critical
-
-    async def test_get_low_stock_items(self, db_session):
-        """Test getting low stock items"""
-        service = DashboardService(db_session)
-        
-        # Create item with high reorder point
-        item = Item(
+    async def test_kpi_low_stock_counts(self, db_session):
+        """Below reorder point counts as low stock; below min_stock also
+        counts as critical."""
+        critical = Item(
             sku="LOW-DASH-001",
-            name="Low Stock Dashboard Test",
+            name="Below Minimum",
             supplier="Test Supplier",
             unit_of_measure="kg",
             cost_price=Decimal("50.00"),
             min_stock=20,
             reorder_point=50,
         )
-        db_session.add(item)
-        await db_session.flush()
-        
-        # Create batch with small quantity
-        batch = Batch(
-            batch_number="LOW-DASH-BT-001",
-            item_id=item.id,
-            expiration_date=date.today() + timedelta(days=180),
-            receipt_date=date.today(),
-            quantity_received=Decimal("15.00"),
-            quantity_available=Decimal("15.00"),
-            status=BatchStatus.ACTIVE,
+        low = Item(
+            sku="LOW-DASH-002",
+            name="Below Reorder Point",
+            supplier="Test Supplier",
+            unit_of_measure="kg",
+            cost_price=Decimal("50.00"),
+            min_stock=10,
+            reorder_point=50,
         )
-        db_session.add(batch)
+        db_session.add_all([critical, low])
         await db_session.flush()
-        
-        low_stock = await service.get_low_stock_items()
-        
-        # Should find our low stock item
-        our_item = next(
-            (i for i in low_stock if i["sku"] == "LOW-DASH-001"), None
-        )
-        assert our_item is not None
-        assert our_item["current_quantity"] == 15.0
-        assert our_item["reorder_point"] == 50
-        assert our_item["shortage"] == 35.0
-        assert our_item["is_critical"] is True  # Below min_stock of 20
+        for item, qty in ((critical, "15"), (low, "30")):
+            db_session.add(Batch(
+                batch_number=f"{item.sku}-BT",
+                item_id=item.id,
+                expiration_date=date.today() + timedelta(days=180),
+                receipt_date=date.today(),
+                quantity_received=Decimal(qty),
+                quantity_available=Decimal(qty),
+                status=BatchStatus.ACTIVE,
+            ))
+        await db_session.flush()
 
-        # Regression test: get_kpi_summary was refactored to compute
-        # inventory value / at-risk value / low-stock counts from a single
-        # shared Item+Batch fetch instead of calling get_inventory_value,
-        # get_low_stock_items, and the old at-risk helper independently
-        # (each re-querying and re-scanning the same rows). Its counts
-        # must still agree with the standalone get_low_stock_items() call.
-        kpis = await service.get_kpi_summary()
-        assert kpis["low_stock_items"] == len(low_stock)
-        assert kpis["critical_low_stock"] == sum(1 for i in low_stock if i["is_critical"])
+        kpis = await DashboardService(db_session).get_kpi_summary()
+
+        assert kpis["low_stock_items"] == 2
+        assert kpis["critical_low_stock"] == 1
 
     async def test_get_recent_activity(self, db_session, sample_items_with_batches):
         """Test getting recent activity"""
@@ -437,65 +327,6 @@ class TestDashboardAPI:
         assert response.status_code == 200
         data = response.json()
         assert "inventory_value_by_currency" in data
-
-    async def test_get_inventory_value_api(self, client, auth_token):
-        """Test getting inventory value via API"""
-        response = await client.get(
-            "/api/v1/dashboard/inventory-value",
-            headers={"Authorization": f"Bearer {auth_token}"}
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert "totals_by_currency" in data
-        assert "items_with_stock" in data
-    
-    async def test_get_inventory_distribution_api(self, client, auth_token):
-        """Test getting inventory distribution via API"""
-        response = await client.get(
-            "/api/v1/dashboard/inventory-distribution",
-            headers={"Authorization": f"Bearer {auth_token}"}
-        )
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-    
-    async def test_get_expiration_risk_api(self, client, auth_token):
-        """Test getting expiration risk via API"""
-        response = await client.get(
-            "/api/v1/dashboard/expiration-risk",
-            headers={"Authorization": f"Bearer {auth_token}"}
-        )
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert "risk_levels" in data
-        assert "color_codes" in data
-    
-    async def test_get_low_stock_api(self, client, auth_token):
-        """Test getting low stock items via API"""
-        response = await client.get(
-            "/api/v1/dashboard/low-stock",
-            headers={"Authorization": f"Bearer {auth_token}"}
-        )
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert "items" in data
-        assert "count" in data
-    
-    async def test_get_recent_activity_api(self, client, auth_token):
-        """Test getting recent activity via API"""
-        response = await client.get(
-            "/api/v1/dashboard/recent-activity?days=14",
-            headers={"Authorization": f"Bearer {auth_token}"}
-        )
-        
-        assert response.status_code == 200
-        data = response.json()
-        assert data["period_days"] == 14
-        assert "movements_count" in data
 
     async def test_get_movement_trend_api(self, client, auth_token):
         """Test getting movement trend via API"""
