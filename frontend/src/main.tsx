@@ -10,6 +10,10 @@ import { Toaster } from 'sonner'
 // a flash of the wrong direction on first paint.
 applyDocumentDirection()
 
+// Install prompt is disabled for now; also suppress Chrome's native
+// "Add to Home screen" mini-infobar, which appears if this isn't prevented.
+window.addEventListener('beforeinstallprompt', (e) => e.preventDefault())
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />

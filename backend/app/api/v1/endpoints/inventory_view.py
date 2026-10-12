@@ -1,4 +1,4 @@
-"""Inventory view endpoint — aggregated current stock"""
+"""Inventory view endpoint — aggregated stock on hand"""
 from datetime import date
 from decimal import Decimal
 from typing import List, Literal, Optional
@@ -9,11 +9,13 @@ from pydantic import BaseModel
 from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import CurrentUser, DbSession, Scope
 from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.delivery_note import DeliveryNote, DeliveryNoteItem
+from app.models.user import UserRole
 from app.schemas.common import BaseSchema, PaginatedResponse
+from app.services.scoping import batch_location_filter
 
 router = APIRouter()
 
@@ -28,7 +30,7 @@ class InventoryRowResponse(BaseSchema):
     batch_number: str
     quantity_available: Decimal
     unit_of_measure: str
-    cost_price: Decimal
+    cost_price: Optional[Decimal]  # None for customers
     currency: str
     supplier: str
     expiration_date: date
@@ -37,15 +39,19 @@ class InventoryRowResponse(BaseSchema):
 
 
 class InventoryTotalCostResponse(BaseSchema):
-    """Total cost of inventory broken down by currency."""
+    """Summary of active inventory: cost by currency, distinct product
+    count, and total quantity on hand."""
 
     totals: dict[str, Decimal]
+    product_count: int
+    total_quantity: Decimal
 
 
 @router.get("", response_model=PaginatedResponse[InventoryRowResponse])
 async def list_inventory(
     db: DbSession,
     current_user: CurrentUser,
+    scope: Scope,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     search: Optional[str] = None,
@@ -68,19 +74,22 @@ async def list_inventory(
     Aggregated inventory view.
 
     * **Staff / admin**: full warehouse stock.
-    * **Customer**: only batches dispatched to them via delivery notes.
+    * **Customer**: only batches dispatched to them via delivery notes,
+      without cost prices.
 
-    Rows are grouped by (item, batch_number).  Multiple receipts of the
-    same SKU + batch merge into one row; individual receipt dates are
-    returned in the ``receipt_dates`` array.
+    One row per batch.  The same lot received on different days is a
+    separate batch, so it shows as a separate row with its own receipt
+    date in ``receipt_dates``.
     """
 
-    is_customer = current_user.role == "customer"
+    is_customer = current_user.role == UserRole.CUSTOMER
 
     # ------------------------------------------------------------------
-    # Customer path — derive from delivery‑note items
+    # Customer path — derive from delivery‑note items (a customer user
+    # with no customer linked matches nothing, rather than falling
+    # through to the staff path below)
     # ------------------------------------------------------------------
-    if is_customer and current_user.customer_id:
+    if is_customer:
         return await _customer_inventory(
             db,
             customer_id=current_user.customer_id,
@@ -101,6 +110,10 @@ async def list_inventory(
         .where(Batch.status == BatchStatus.ACTIVE)
         .where(Batch.quantity_available > 0)
     )
+
+    location_clause = batch_location_filter(scope)
+    if location_clause is not None:
+        base = base.where(location_clause)
 
     if search:
         like = f"%{search}%"
@@ -170,25 +183,28 @@ async def list_inventory(
 async def get_inventory_total_cost(
     db: DbSession,
     current_user: CurrentUser,
+    scope: Scope,
     search: Optional[str] = None,
 ) -> InventoryTotalCostResponse:
     """
     Total cost of active inventory (quantity_available * cost_price),
     grouped by currency.  Respects the same search filter as the list view.
-    """
-    is_customer = current_user.role == "customer"
 
-    if is_customer and current_user.customer_id:
+    Customers get an empty ``totals`` (they never see cost), but still get
+    the product count and quantity of the stock delivered to them.
+    """
+    is_customer = current_user.role == UserRole.CUSTOMER
+
+    if is_customer:
         # Dedupe by batch_id first — the same Batch may be referenced by
         # multiple DeliveryNoteItem rows for the same customer (e.g. a split
         # delivery or a correction). Without DISTINCT ON, the sum counts
         # `quantity_available` once per DeliveryNoteItem, inflating the total.
+        # A customer user with no customer linked matches nothing.
         dedup = (
             select(
                 Batch.id.label("batch_id"),
                 Batch.quantity_available,
-                Item.cost_price,
-                Item.currency,
                 Item.sku,
                 Item.name,
                 Item.supplier,
@@ -212,17 +228,13 @@ async def get_inventory_total_cost(
             )
         dedup_sub = dedup.distinct(Batch.id).subquery()
 
-        stmt = (
-            select(
-                dedup_sub.c.currency,
-                func.coalesce(
-                    func.sum(dedup_sub.c.quantity_available * dedup_sub.c.cost_price),
-                    0,
-                ),
-            )
-            .group_by(dedup_sub.c.currency)
+        agg_stmt = select(
+            func.count(func.distinct(dedup_sub.c.sku)),
+            func.coalesce(func.sum(dedup_sub.c.quantity_available), 0),
         )
     else:
+        location_clause = batch_location_filter(scope)
+
         stmt = (
             select(
                 Item.currency,
@@ -237,6 +249,8 @@ async def get_inventory_total_cost(
             .where(Batch.quantity_available > 0)
             .group_by(Item.currency)
         )
+        if location_clause is not None:
+            stmt = stmt.where(location_clause)
 
         if search:
             like = f"%{search}%"
@@ -247,9 +261,37 @@ async def get_inventory_total_cost(
                 | (Item.supplier.ilike(like))
             )
 
-    rows = (await db.execute(stmt)).all()
-    totals = {currency: Decimal(value) for currency, value in rows}
-    return InventoryTotalCostResponse(totals=totals)
+        agg_stmt = (
+            select(
+                func.count(func.distinct(Item.id)),
+                func.coalesce(func.sum(Batch.quantity_available), 0),
+            )
+            .select_from(Batch)
+            .join(Item, Batch.item_id == Item.id)
+            .where(Batch.status == BatchStatus.ACTIVE)
+            .where(Batch.quantity_available > 0)
+        )
+        if location_clause is not None:
+            agg_stmt = agg_stmt.where(location_clause)
+        if search:
+            agg_stmt = agg_stmt.where(
+                (Item.sku.ilike(like))
+                | (Item.name.ilike(like))
+                | (Batch.batch_number.ilike(like))
+                | (Item.supplier.ilike(like))
+            )
+
+    totals = {}
+    if not is_customer:
+        rows = (await db.execute(stmt)).all()
+        totals = {currency: Decimal(value) for currency, value in rows}
+
+    product_count, total_quantity = (await db.execute(agg_stmt)).one()
+    return InventoryTotalCostResponse(
+        totals=totals,
+        product_count=product_count,
+        total_quantity=Decimal(total_quantity),
+    )
 
 
 # ------------------------------------------------------------------
@@ -258,7 +300,7 @@ async def get_inventory_total_cost(
 
 async def _customer_inventory(
     db,
-    customer_id: UUID,
+    customer_id: Optional[UUID],
     page: int,
     page_size: int,
     search: Optional[str],
@@ -266,6 +308,10 @@ async def _customer_inventory(
     sort_order: str,
 ) -> PaginatedResponse[InventoryRowResponse]:
     """Build inventory rows from delivery-note items for a customer."""
+
+    # Ordering by cost would still reveal it
+    if sort_by == "cost_price":
+        sort_by = None
 
     base = (
         select(DeliveryNoteItem)
@@ -320,7 +366,7 @@ async def _customer_inventory(
                 batch_number=batch.batch_number,
                 quantity_available=batch.quantity_available,
                 unit_of_measure=item.unit_of_measure,
-                cost_price=item.cost_price,
+                cost_price=None,
                 currency=item.currency,
                 supplier=item.supplier,
                 expiration_date=batch.expiration_date,

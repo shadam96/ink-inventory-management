@@ -16,6 +16,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/layout/Header'
 import { SortableTableHead } from '@/components/SortableTableHead'
+import { SortSheet, type SortOption } from '@/components/SortSheet'
 import { formatDate, formatNumber, daysUntilExpiration, getExpirationStatus } from '@/lib/utils'
 import { batchesApi } from '@/lib/api'
 
@@ -53,6 +54,18 @@ export function BatchesPage() {
       setSortOrder('asc')
     }
   }
+
+  // With no sort_by the API orders by expiration, soonest first (FEFO)
+  const effectiveSortBy = sortBy ?? 'expiration_date'
+  const effectiveSortOrder = sortBy ? sortOrder : 'asc'
+
+  const sortOptions: SortOption[] = [
+    { key: 'expiration_date', label: t('batches.expirationDate'), ascLabel: t('batches.sortEarliest'), descLabel: t('batches.sortLatest') },
+    { key: 'quantity_available', label: t('batches.quantity'), ascLabel: t('batches.sortLowest'), descLabel: t('batches.sortHighest') },
+    { key: 'receipt_date', label: t('batches.receiptDate'), ascLabel: t('batches.sortEarliest'), descLabel: t('batches.sortLatest') },
+    { key: 'status', label: t('batches.status'), ascLabel: t('batches.sortActiveFirst'), descLabel: t('batches.sortActiveLast') },
+    { key: 'batch_number', label: t('batches.batchNumber'), ascLabel: t('batches.sortAZ'), descLabel: t('batches.sortZA') },
+  ]
 
   async function fetchBatches() {
     try {
@@ -113,47 +126,50 @@ export function BatchesPage() {
     <div className="space-y-6">
       <Header title={t('batches.title')} />
 
-      <div className="flex items-center justify-between gap-4 relative z-10 -mt-2">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder={t('batches.searchPlaceholder')}
-          className="flex-1 max-w-md"
-        />
-        
+      {/* Mobile stacks search + sort above full-width status filters; the
+          table headers do the sorting on desktop */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4 relative z-10 -mt-2">
+        <div className="flex gap-2 md:flex-1 md:max-w-md">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={t('batches.searchPlaceholder')}
+            className="flex-1"
+          />
+          <SortSheet
+            title={t('batches.sortBy')}
+            options={sortOptions}
+            sortBy={effectiveSortBy}
+            sortOrder={effectiveSortOrder}
+            isDefaultSort={effectiveSortBy === 'expiration_date' && effectiveSortOrder === 'asc'}
+            onSort={(key, order) => {
+              setSortBy(key)
+              setSortOrder(order)
+            }}
+            className="md:hidden"
+          />
+        </div>
+
+        {/* On mobile the filters share the row equally, but min-w-fit keeps
+            a long label (e.g. Greek) from being squeezed - index.css's 44px
+            mobile button min-width would otherwise allow it */}
         <div className="flex gap-2">
-          <Button
-            variant={statusFilter === 'active' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setStatusFilter('active')}
-          >
-            {t('batches.active')}
-          </Button>
-          <Button
-            variant={statusFilter === 'depleted' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setStatusFilter('depleted')}
-          >
-            {t('batches.depleted')}
-          </Button>
-          <Button
-            variant={statusFilter === 'scrap' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setStatusFilter('scrap')}
-          >
-            {t('batches.scrap')}
-          </Button>
-          <Button
-            variant={statusFilter === 'all' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setStatusFilter('all')}
-          >
-            {t('common.all')}
-          </Button>
+          {(['active', 'depleted', 'scrap', 'all'] as const).map((status) => (
+            <Button
+              key={status}
+              variant={statusFilter === status ? 'default' : 'outline'}
+              size="sm"
+              className="flex-1 min-w-fit px-2 md:flex-none md:px-3"
+              onClick={() => setStatusFilter(status)}
+            >
+              {status === 'all' ? t('common.all') : t(`batches.${status}`)}
+            </Button>
+          ))}
         </div>
       </div>
 
-      <Card>
+      {/* Desktop: table */}
+      <Card className="hidden md:block">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -221,8 +237,58 @@ export function BatchesPage() {
         </CardContent>
       </Card>
 
+      {/* Mobile: card list (the table above forces horizontal scroll on
+          narrow screens) */}
+      <div className="md:hidden space-y-3">
+        {loading ? (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">
+              {t('common.loading')}
+            </CardContent>
+          </Card>
+        ) : batches.length === 0 ? (
+          <Card>
+            <CardContent className="p-8 text-center text-muted-foreground">
+              <Package className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p>{t('common.noData')}</p>
+            </CardContent>
+          </Card>
+        ) : (
+          batches.map((batch) => (
+            <Card key={batch.id}>
+              <CardContent className="p-4 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-mono font-medium truncate">{batch.batch_number}</p>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {batch.item_sku ? `${batch.item_sku} — ` : ''}{batch.item_name || '-'}
+                    </p>
+                  </div>
+                  {getStatusBadge(batch.status)}
+                </div>
+
+                <div className="flex items-center justify-between text-sm">
+                  <div>
+                    <span className="font-medium">{formatNumber(batch.quantity_available)}</span>
+                    <span className="text-muted-foreground">
+                      {' '}{t('batches.outOf', { total: formatNumber(batch.quantity_received) })}
+                    </span>
+                  </div>
+                  {batch.status.toLowerCase() === 'active' && getExpirationBadge(batch.expiration_date)}
+                </div>
+
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{t('batches.receiptDate')}: {formatDate(batch.receipt_date)}</span>
+                  <span>{t('batches.expirationDate')}: {formatDate(batch.expiration_date)}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
+
       {/* Summary */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold text-primary">

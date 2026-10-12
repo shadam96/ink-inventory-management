@@ -15,6 +15,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Header } from '@/components/layout/Header'
 import { SortableTableHead } from '@/components/SortableTableHead'
+import { CreateDeliveryNoteDialog } from '@/components/CreateDeliveryNoteDialog'
 import { formatDate } from '@/lib/utils'
 import { deliveryNotesApi } from '@/lib/api'
 
@@ -37,6 +38,7 @@ export function DeliveryNotesPage() {
   const [total, setTotal] = useState(0)
   const [sortBy, setSortBy] = useState<string | null>(null)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
+  const [createOpen, setCreateOpen] = useState(false)
   const pageSize = 20
 
   useEffect(() => {
@@ -113,11 +115,17 @@ export function DeliveryNotesPage() {
             {t('deliveryNotes.countLabel', { count: total })}
           </span>
         </div>
-        <Button>
+        <Button onClick={() => setCreateOpen(true)}>
           <Plus className="w-4 h-4 me-2" />
           {t('deliveryNotes.create')}
         </Button>
       </div>
+
+      <CreateDeliveryNoteDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={fetchNotes}
+      />
 
       <Card>
         <CardContent className="p-0">

@@ -1,8 +1,9 @@
 """Item (Ink) model for inventory management"""
+import enum
 from decimal import Decimal
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Integer, Numeric, String, Text
+from sqlalchemy import Enum, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
@@ -10,6 +11,18 @@ from app.models.base import BaseModel
 if TYPE_CHECKING:
     from app.models.batch import Batch
     from app.models.delivery_note import DeliveryNoteItem
+
+
+class ItemColor(str, enum.Enum):
+    """Process ink color, used to color-code the item in charts (e.g. the
+    dashboard's Inventory Distribution bars) - purely presentational,
+    doesn't affect any inventory logic."""
+    CYAN = "cyan"
+    MAGENTA = "magenta"
+    YELLOW = "yellow"
+    BLACK = "black"
+    WHITE = "white"
+    OTHER = "other"
 
 
 class Item(BaseModel):
@@ -46,6 +59,11 @@ class Item(BaseModel):
         nullable=False,
         default="KG"  # Common: KG, L, Units
     )
+    color: Mapped[ItemColor] = mapped_column(
+        Enum(ItemColor),
+        nullable=False,
+        default=ItemColor.OTHER,
+    )
     cost_price: Mapped[Decimal] = mapped_column(
         Numeric(12, 2),
         nullable=False,
@@ -73,11 +91,15 @@ class Item(BaseModel):
     )
     
     # Relationships
+    # No delete/delete-orphan cascade here: batches.item_id has
+    # ondelete="RESTRICT" precisely so an Item with historical batches
+    # (and their Movement audit trail) can't be deleted. An ORM-level
+    # delete cascade would silently destroy that history by deleting the
+    # batches before the DB ever gets to enforce RESTRICT.
     batches: Mapped[List["Batch"]] = relationship(
         "Batch",
         back_populates="item",
         lazy="selectin",
-        cascade="all, delete-orphan"
     )
     delivery_note_items: Mapped[List["DeliveryNoteItem"]] = relationship(
         "DeliveryNoteItem",

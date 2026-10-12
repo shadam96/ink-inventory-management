@@ -1,15 +1,24 @@
 """Tests for picking and dispatch functionality"""
+import base64
+import io
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 from uuid import uuid4
 
+import pypdf
 import pytest
+import resend
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.security import create_access_token
 from app.models.batch import Batch, BatchStatus
+from app.models.customer import Customer
+from app.models.delivery_note import DeliveryNote, DeliveryNoteItem, DeliveryNoteStatus
 from app.models.item import Item
-from app.models.user import User
+from app.models.user import User, UserRole
 
 
 @pytest.fixture
@@ -228,6 +237,30 @@ async def test_create_dispatch(
 
 
 @pytest.mark.asyncio
+async def test_same_day_dispatches_get_distinct_reference_numbers(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """DSP numbers live on movements, not batches - sequencing them against
+    batch numbers gave every same-day dispatch DSP-YYMMDD-001, merging
+    their pick notes into one document."""
+    item, batches = item_with_stock
+
+    refs = []
+    for _ in range(2):
+        response = await client.post(
+            "/api/v1/picking/dispatch",
+            headers=auth_headers,
+            json={"items": [{"batch_id": str(batches[0].id), "quantity": "1"}]},
+        )
+        assert response.status_code == 200
+        refs.append(response.json()["reference_number"])
+
+    assert refs[0] != refs[1]
+
+
+@pytest.mark.asyncio
 async def test_dispatch_atomic_rollback(
     client: AsyncClient,
     auth_headers: dict,
@@ -257,6 +290,105 @@ async def test_dispatch_atomic_rollback(
     assert response.status_code == 400
 
 
+@pytest.fixture
+async def customer_with_allocated_batch(
+    db_session: AsyncSession,
+    item_with_stock: tuple[Item, list[Batch]],
+) -> tuple[User, str, Batch, Batch]:
+    """A CUSTOMER-role user with one batch dispatched to them (allocated)
+    and a second batch (from the same item_with_stock fixture) that was
+    never dispatched to them - i.e. not theirs."""
+    item, batches = item_with_stock
+    allocated_batch, other_batch = batches[0], batches[1]
+
+    customer = Customer(name="Consume Test Customer", address="1 Test St")
+    db_session.add(customer)
+    await db_session.flush()
+
+    warehouse_user = User(
+        username="consume_test_warehouse",
+        email="consume_warehouse@test.com",
+        hashed_password="x",
+        full_name="Warehouse",
+        role=UserRole.WAREHOUSE_WORKER,
+        is_active=True,
+    )
+    db_session.add(warehouse_user)
+    await db_session.flush()
+
+    dn = DeliveryNote(
+        customer_id=customer.id,
+        created_by=warehouse_user.id,
+        delivery_note_number="DN-TEST-CONSUME-001",
+        status=DeliveryNoteStatus.ISSUED,
+        is_consignment=True,
+    )
+    db_session.add(dn)
+    await db_session.flush()
+
+    db_session.add(
+        DeliveryNoteItem(
+            delivery_note_id=dn.id,
+            item_id=item.id,
+            batch_id=allocated_batch.id,
+            quantity=Decimal("10"),
+        )
+    )
+
+    customer_user = User(
+        username="consume_test_customer",
+        email="consume_customer@test.com",
+        hashed_password="x",
+        full_name="Customer",
+        role=UserRole.CUSTOMER,
+        customer_id=customer.id,
+        is_active=True,
+    )
+    db_session.add(customer_user)
+    await db_session.commit()
+    await db_session.refresh(customer_user)
+
+    token = create_access_token(subject=customer_user.id, role=customer_user.role.value)
+    return customer_user, f"Bearer {token}", allocated_batch, other_batch
+
+
+@pytest.mark.asyncio
+async def test_consume_own_allocated_batch_succeeds(
+    client: AsyncClient,
+    customer_with_allocated_batch: tuple[User, str, Batch, Batch],
+):
+    """A customer can consume from a batch that was dispatched to them."""
+    _, token, allocated_batch, _ = customer_with_allocated_batch
+
+    response = await client.post(
+        "/api/v1/picking/consume",
+        headers={"Authorization": token},
+        json={"batch_id": str(allocated_batch.id), "quantity": "5"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+
+
+@pytest.mark.asyncio
+async def test_consume_other_customers_batch_forbidden(
+    client: AsyncClient,
+    customer_with_allocated_batch: tuple[User, str, Batch, Batch],
+):
+    """A customer cannot consume from a batch never dispatched to them -
+    this is the IDOR fix: previously any picking-authorized user could
+    consume from any batch_id."""
+    _, token, _, other_batch = customer_with_allocated_batch
+
+    response = await client.post(
+        "/api/v1/picking/consume",
+        headers={"Authorization": token},
+        json={"batch_id": str(other_batch.id), "quantity": "5"},
+    )
+
+    assert response.status_code == 403
+
+
 @pytest.mark.asyncio
 async def test_expiration_summary(
     client: AsyncClient,
@@ -265,15 +397,530 @@ async def test_expiration_summary(
 ):
     """Test expiration summary endpoint"""
     item, batches = item_with_stock
-    
+
     response = await client.get(
         f"/api/v1/picking/expiration-summary/{item.id}",
         headers=auth_headers,
     )
-    
+
     assert response.status_code == 200
     data = response.json()
     assert float(data["total_quantity"]) == 250  # 100 + 150
     assert data["total_batches"] == 2
     assert "breakdown" in data
 
+
+@pytest.fixture
+async def customer(db_session: AsyncSession) -> Customer:
+    """A customer with an email on file, for dispatch + document tests."""
+    customer = Customer(name="Doc Test Customer", email="customer@example.com")
+    db_session.add(customer)
+    await db_session.commit()
+    await db_session.refresh(customer)
+    return customer
+
+
+@pytest.mark.asyncio
+async def test_dispatch_with_customer_creates_real_delivery_note(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    customer: Customer,
+):
+    """Regression test for the fix: customer_id was accepted by the
+    dispatch request but silently discarded - no DeliveryNote was ever
+    created, so there was nothing to print/email later. Dispatching with a
+    customer must now produce a real, persisted DeliveryNote whose number
+    is the dispatch's own reference_number."""
+    item, batches = item_with_stock
+
+    response = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={
+            "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+            "customer_id": str(customer.id),
+        },
+    )
+
+    assert response.status_code == 200
+    ref_number = response.json()["reference_number"]
+    assert ref_number.startswith("DN-")
+
+    result = await db_session.execute(
+        select(DeliveryNote).where(DeliveryNote.delivery_note_number == ref_number)
+    )
+    dn = result.scalar_one_or_none()
+    assert dn is not None
+    assert dn.customer_id == customer.id
+    assert dn.status == DeliveryNoteStatus.ISSUED
+
+
+@pytest.mark.asyncio
+async def test_dispatch_without_customer_has_no_delivery_note(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """A dispatch with no customer keeps the old DSP- reference and does
+    not fabricate a DeliveryNote out of nothing."""
+    item, batches = item_with_stock
+
+    response = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={"items": [{"batch_id": str(batches[0].id), "quantity": "20"}]},
+    )
+
+    assert response.status_code == 200
+    ref_number = response.json()["reference_number"]
+    assert ref_number.startswith("DSP-")
+
+    result = await db_session.execute(
+        select(DeliveryNote).where(DeliveryNote.delivery_note_number == ref_number)
+    )
+    assert result.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_generate_pick_note_print_returns_pdf(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """A pick note can always be produced from the dispatch's own
+    movements - no customer required."""
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={"items": [{"batch_id": str(batches[0].id), "quantity": "20"}]},
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "pick_note", "action": "print"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["pdf_base64"]  # non-empty, a real PDF was produced
+    reader = pypdf.PdfReader(io.BytesIO(base64.b64decode(data["pdf_base64"])))
+    assert len(reader.pages[0].images) == 1  # Lino Print letterhead header
+
+
+@pytest.mark.asyncio
+async def test_generate_pick_note_unknown_reference_404(
+    client: AsyncClient,
+    auth_headers: dict,
+):
+    response = await client.post(
+        "/api/v1/picking/dispatches/NO-SUCH-REF/document",
+        headers=auth_headers,
+        json={"document_type": "pick_note", "action": "print"},
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_generate_delivery_note_without_customer_fails_gracefully(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """No customer was selected for this dispatch, so there is no delivery
+    note to produce - the endpoint must say so clearly rather than 404 or
+    500, since the dispatch itself is perfectly real."""
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={"items": [{"batch_id": str(batches[0].id), "quantity": "20"}]},
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "delivery_note", "action": "print"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is False
+    assert data["pdf_base64"] is None
+
+
+@pytest.mark.asyncio
+async def test_generate_delivery_note_with_customer_print_returns_pdf(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    customer: Customer,
+):
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={
+            "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+            "customer_id": str(customer.id),
+        },
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "delivery_note", "action": "print"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is True
+    assert data["pdf_base64"]
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_generate_delivery_note_email_sent_to_customer(
+    mock_send,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    customer: Customer,
+):
+    mock_send.return_value = {"id": "test-id"}
+    from app.services.email_service import email_service
+    orig = email_service._configured
+    email_service._configured = True
+
+    try:
+        item, batches = item_with_stock
+        dispatch = await client.post(
+            "/api/v1/picking/dispatch",
+            headers=auth_headers,
+            json={
+                "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+                "customer_id": str(customer.id),
+            },
+        )
+        ref_number = dispatch.json()["reference_number"]
+
+        response = await client.post(
+            f"/api/v1/picking/dispatches/{ref_number}/document",
+            headers=auth_headers,
+            json={"document_type": "delivery_note", "action": "email"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        mock_send.assert_called_once()
+        sent_params = mock_send.call_args[0][0]
+        assert sent_params["to"] == [customer.email]
+        assert len(sent_params["attachments"]) == 1
+    finally:
+        email_service._configured = orig
+
+
+@pytest.mark.asyncio
+async def test_generate_delivery_note_email_without_customer_email_fails(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """The customer exists but has no email on file - a clear failure, not
+    a crash or a silently-dropped send."""
+    no_email_customer = Customer(name="No Email Customer")
+    db_session.add(no_email_customer)
+    await db_session.commit()
+    await db_session.refresh(no_email_customer)
+
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={
+            "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+            "customer_id": str(no_email_customer.id),
+        },
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "delivery_note", "action": "email"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["success"] is False
+
+
+@pytest.fixture
+def email_configured(monkeypatch):
+    """Pretend RESEND_API_KEY is set, without touching the real service."""
+    from app.services.email_service import email_service
+    monkeypatch.setattr(email_service, "_configured", True)
+
+
+async def _dispatch_and_email(
+    client: AsyncClient,
+    auth_headers: dict,
+    batches: list[Batch],
+    document_type: str = "pick_note",
+    customer_id: str | None = None,
+):
+    payload = {"items": [{"batch_id": str(batches[0].id), "quantity": "20"}]}
+    if customer_id:
+        payload["customer_id"] = customer_id
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch", headers=auth_headers, json=payload
+    )
+    ref_number = dispatch.json()["reference_number"]
+    return await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": document_type, "action": "email"},
+    )
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_sent_to_each_notification_address(
+    mock_send,
+    email_configured,
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    test_user: User,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """notification_email holds a comma-separated list (see the settings
+    endpoint). Handing that string to Resend as one address makes the whole
+    send fail, so each address has to go through as its own recipient."""
+    mock_send.return_value = {"id": "test-id"}
+    test_user.notification_email = "ops@example.com, boss@example.com"
+    await db_session.commit()
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    mock_send.assert_called_once()
+    sent_params = mock_send.call_args[0][0]
+    assert sent_params["to"] == ["ops@example.com", "boss@example.com"]
+    assert len(sent_params["attachments"]) == 1
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_falls_back_to_login_email(
+    mock_send,
+    email_configured,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    mock_send.return_value = {"id": "test-id"}
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.json()["success"] is True
+    assert mock_send.call_args[0][0]["to"] == ["test@example.com"]
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_reports_failure_when_email_not_configured(
+    mock_send,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    monkeypatch,
+):
+    """With no RESEND_API_KEY the service skips the send - the endpoint
+    must not then tell the operator the pick note was sent."""
+    from app.services.email_service import email_service
+    monkeypatch.setattr(email_service, "_configured", False)
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    mock_send.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_delivery_note_email_reports_failure_when_email_not_configured(
+    mock_send,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    customer: Customer,
+    monkeypatch,
+):
+    from app.services.email_service import email_service
+    monkeypatch.setattr(email_service, "_configured", False)
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(
+        client, auth_headers, batches,
+        document_type="delivery_note", customer_id=str(customer.id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    mock_send.assert_not_called()
+
+
+@pytest.mark.asyncio
+@patch("app.services.email_service.resend.Emails.send")
+async def test_pick_note_email_reports_failure_when_resend_rejects(
+    mock_send,
+    email_configured,
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """Resend refusing the send (e.g. the onboarding@resend.dev sandbox
+    sender only delivers to the account owner) is a failed email, not a
+    failure to produce the document - report it as such instead of a 500."""
+    mock_send.side_effect = resend.exceptions.ValidationError(
+        message="You can only send testing emails to your own email address",
+        error_type="validation_error",
+        code=403,
+    )
+
+    _, batches = item_with_stock
+    response = await _dispatch_and_email(client, auth_headers, batches)
+
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+
+
+def _pdf_text(pdf_base64: str) -> str:
+    """Extract the visible text of a generated PDF.
+
+    pypdf resolves glyphs through the embedded font's ToUnicode map and
+    normalizes RTL runs back to logical order, so a correctly rendered
+    document reads back as the Hebrew we wrote.
+    """
+    reader = pypdf.PdfReader(io.BytesIO(base64.b64decode(pdf_base64)))
+    return "\n".join(page.extract_text() for page in reader.pages)
+
+
+@pytest.mark.asyncio
+async def test_pick_note_pdf_renders_readable_hebrew(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """Guards two regressions that shipped together: with no Hebrew font
+    registered every Hebrew glyph rendered as a fallback box, and with no
+    bidi pass the letters that did render came out in logical rather than
+    visual order - i.e. backwards on the page."""
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={"items": [{"batch_id": str(batches[0].id), "quantity": "20"}]},
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "pick_note", "action": "print"},
+    )
+    text = _pdf_text(response.json()["pdf_base64"])
+
+    assert "\u25a0" not in text, "Hebrew fell back to boxes - font not registered"
+    assert "תעודת ליקוט" in text
+    assert "מספר אסמכתא" in text
+    assert "סה" in text
+    assert ref_number in text
+    assert item.sku in text
+    assert item.name in text
+
+
+@pytest.mark.asyncio
+async def test_delivery_note_pdf_renders_readable_hebrew(
+    client: AsyncClient,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+    customer: Customer,
+):
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={
+            "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+            "customer_id": str(customer.id),
+        },
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "delivery_note", "action": "print"},
+    )
+    text = _pdf_text(response.json()["pdf_base64"])
+
+    assert "\u25a0" not in text, "Hebrew fell back to boxes - font not registered"
+    assert "תעודת משלוח" in text
+    assert "מספר תעודה" in text
+    assert "חתימת מקבל" in text
+    assert customer.name in text
+    assert item.sku in text
+
+
+@pytest.mark.asyncio
+async def test_delivery_note_pdf_renders_non_hebrew_customer_names(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    auth_headers: dict,
+    item_with_stock: tuple[Item, list[Batch]],
+):
+    """The app ships Greek and Turkish locales, so customer data is not
+    guaranteed to be Hebrew or ASCII - the embedded font has to cover those
+    scripts too rather than boxing them."""
+    greek_turkish = Customer(name="Ελληνικά Şirketi", email="intl@example.com")
+    db_session.add(greek_turkish)
+    await db_session.commit()
+    await db_session.refresh(greek_turkish)
+
+    item, batches = item_with_stock
+    dispatch = await client.post(
+        "/api/v1/picking/dispatch",
+        headers=auth_headers,
+        json={
+            "items": [{"batch_id": str(batches[0].id), "quantity": "20"}],
+            "customer_id": str(greek_turkish.id),
+        },
+    )
+    ref_number = dispatch.json()["reference_number"]
+
+    response = await client.post(
+        f"/api/v1/picking/dispatches/{ref_number}/document",
+        headers=auth_headers,
+        json={"document_type": "delivery_note", "action": "print"},
+    )
+    text = _pdf_text(response.json()["pdf_base64"])
+
+    assert "\u25a0" not in text
+    assert "Ελληνικά Şirketi" in text

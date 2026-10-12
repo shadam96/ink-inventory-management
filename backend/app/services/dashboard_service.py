@@ -1,232 +1,127 @@
 """Dashboard service for KPIs and analytics"""
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from uuid import UUID
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.alert import Alert
 from app.models.delivery_note import DeliveryNote, DeliveryNoteStatus
+from app.models.system_settings import SystemSettings
+from app.services.expiration_classifier import (
+    CAUTION_THRESHOLD_DAYS,
+    CRITICAL_THRESHOLD_DAYS,
+    WARNING_THRESHOLD_DAYS,
+)
+from app.services.stock_helpers import available_quantity, is_active_and_unexpired
+
+
+# Movement types that represent stock actually used by customers - the
+# demand side of days-of-supply and the cost-of-goods side of turnover.
+# Scrap is a loss, not demand, and is reported separately as write-off.
+OUTBOUND_USAGE_TYPES = (MovementType.DISPATCH, MovementType.CONSUMPTION)
+
+# Trailing window for usage, write-off and turnover.
+HISTORY_WINDOW_DAYS = 90
+
+# Days-ago points whose inventory values are averaged into the "average
+# inventory" denominator of turnover and write-off rate (roughly the
+# month-end balances over the trailing window).
+AVERAGE_INVENTORY_OFFSETS = (0, 30, 60, 90)
+
+LONG_HORIZON_DAYS = 180
+
+# Fixed display order of the expiry timeline.
+EXPIRY_BUCKET_KEYS = ("expired", "d0_30", "d31_60", "d61_90", "d91_180", "d181_plus")
+
+
+def _expiry_bucket(days_until_expiration: int) -> str:
+    """Timeline bucket for a batch. Unlike classify_expiration, a batch
+    expiring today is still sellable here - matching available_quantity(),
+    so the timeline's non-expired buckets add up to the inventory value."""
+    if days_until_expiration < 0:
+        return "expired"
+    if days_until_expiration <= CRITICAL_THRESHOLD_DAYS:
+        return "d0_30"
+    if days_until_expiration <= WARNING_THRESHOLD_DAYS:
+        return "d31_60"
+    if days_until_expiration <= CAUTION_THRESHOLD_DAYS:
+        return "d61_90"
+    if days_until_expiration <= LONG_HORIZON_DAYS:
+        return "d91_180"
+    return "d181_plus"
+
+
+def _add(totals: Dict[str, Decimal], key: str, amount: Decimal) -> None:
+    totals[key] = totals.get(key, Decimal("0")) + amount
+
+
+def _floats(totals: Dict[str, Decimal]) -> Dict[str, float]:
+    return {key: float(amount) for key, amount in totals.items()}
+
+
+def _as_date(day: Any) -> date:
+    """func.date() comes back as a str on SQLite (tests) but as a date
+    object on Postgres (asyncpg, used in prod) - normalize both."""
+    return date.fromisoformat(day) if isinstance(day, str) else day
+
+
+def _scrapped_on(batch: Batch) -> Optional[date]:
+    """Scrapping (manually or by the expiry job) only flips the status and
+    keeps quantity_available, with no Movement - updated_at is the only
+    record of when it happened."""
+    if batch.status != BatchStatus.SCRAP:
+        return None
+    return batch.updated_at.date()
+
+
+def _items_batches_loader(location_ids: Optional[List[UUID]]):
+    """selectinload(Item.batches), optionally filtered to only load batches
+    at the given locations - so available_quantity()/is_active_and_unexpired()
+    downstream operate on an already-scoped collection with no other
+    changes needed."""
+    if location_ids is None:
+        return selectinload(Item.batches)
+    return selectinload(Item.batches.and_(Batch.location_id.in_(location_ids)))
 
 
 class DashboardService:
     """Service for dashboard KPIs and analytics"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
-    async def get_inventory_value(self) -> Dict[str, Any]:
-        """Calculate inventory value bucketed by per-item currency.
 
-        Items declare their own currency on creation. Summing raw cost prices
-        across currencies would be nonsense, so the dashboard receives a
-        per-currency breakdown and applies FX conversion client-side using the
-        rates from SystemSettings.
+    async def get_recent_activity(
+        self, days: int = 7, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
+        """Get recent activity summary.
+
+        location_ids restricts movements/alerts to those tied to a batch at
+        one of those locations - None means unrestricted. Delivery notes
+        stay unscoped: they aren't attributable to a single warehouse
+        location in this schema.
         """
-        result = await self.db.execute(
-            select(Item).options(selectinload(Item.batches))
-        )
-        items = result.scalars().all()
-
-        today = date.today()
-        totals_by_currency: Dict[str, Decimal] = {}
-        total_quantity = Decimal("0")
-        items_count = 0
-
-        for item in items:
-            active_qty = sum(
-                b.quantity_available
-                for b in item.batches
-                if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
-            )
-            if active_qty > 0:
-                items_count += 1
-                total_quantity += active_qty
-                ccy = item.currency or "ILS"
-                totals_by_currency[ccy] = (
-                    totals_by_currency.get(ccy, Decimal("0"))
-                    + active_qty * item.cost_price
-                )
-
-        return {
-            "totals_by_currency": {
-                ccy: float(amount) for ccy, amount in totals_by_currency.items()
-            },
-            "total_quantity": float(total_quantity),
-            "items_with_stock": items_count,
-        }
-    
-    async def get_inventory_distribution(self) -> List[Dict[str, Any]]:
-        """Get inventory distribution by item (for pie chart)"""
-        result = await self.db.execute(
-            select(Item).options(selectinload(Item.batches))
-        )
-        items = result.scalars().all()
-        
-        today = date.today()
-        distribution = []
-        
-        for item in items:
-            active_qty = sum(
-                b.quantity_available 
-                for b in item.batches 
-                if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
-            )
-            if active_qty > 0:
-                value = float(active_qty * item.cost_price)
-                distribution.append({
-                    "item_id": str(item.id),
-                    "sku": item.sku,
-                    "name": item.name,
-                    "quantity": float(active_qty),
-                    "value": value,
-                    "currency": item.currency or "ILS",
-                    "unit": item.unit_of_measure,
-                })
-        
-        # Sort by value descending
-        distribution.sort(key=lambda x: x["value"], reverse=True)
-        return distribution
-    
-    async def get_expiration_risk_map(self) -> Dict[str, Any]:
-        """Get expiration risk breakdown (for gauge/risk map), bucketed by item currency.
-
-        Items declare their own currency — summing raw cost values across
-        currencies would be nonsense (see get_inventory_value). Each risk level's
-        value is kept as a per-currency breakdown; callers convert to their
-        chosen display currency using SystemSettings FX rates.
-        """
-        today = date.today()
-
-        result = await self.db.execute(
-            select(Batch)
-            .options(selectinload(Batch.item))
-            .where(
-                Batch.status == BatchStatus.ACTIVE,
-                Batch.quantity_available > 0,
-            )
-        )
-        batches = result.scalars().all()
-
-        risk_levels: Dict[str, Dict[str, Any]] = {
-            "expired": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},
-            "critical": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},  # 0-30 days
-            "warning": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 31-60 days
-            "caution": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},   # 61-90 days
-            "safe": {"quantity": Decimal("0"), "value_by_currency": {}, "batches": 0},      # 90+ days
-        }
-
-        for batch in batches:
-            days_until = (batch.expiration_date - today).days
-            item = batch.item
-            ccy = (item.currency if item else None) or "ILS"
-            cost = item.cost_price if item else Decimal("0")
-            value = batch.quantity_available * cost
-
-            if days_until < 0:
-                level = "expired"
-            elif days_until <= 30:
-                level = "critical"
-            elif days_until <= 60:
-                level = "warning"
-            elif days_until <= 90:
-                level = "caution"
-            else:
-                level = "safe"
-
-            bucket = risk_levels[level]
-            bucket["quantity"] += batch.quantity_available
-            bucket["value_by_currency"][ccy] = bucket["value_by_currency"].get(ccy, Decimal("0")) + value
-            bucket["batches"] += 1
-
-        # Percentage is a coarse ratio between risk levels, not a displayed
-        # amount, so it's computed on the raw currency-agnostic sum (same basis
-        # as before this fix) rather than pulling in FX conversion.
-        raw_totals = {
-            level: sum(bucket["value_by_currency"].values(), Decimal("0"))
-            for level, bucket in risk_levels.items()
-        }
-        total_raw = sum(raw_totals.values(), Decimal("0"))
-
-        for level, bucket in risk_levels.items():
-            bucket["quantity"] = float(bucket["quantity"])
-            bucket["value_by_currency"] = {
-                ccy: float(v) for ccy, v in bucket["value_by_currency"].items()
-            }
-            bucket["percentage"] = (
-                round(float(raw_totals[level] / total_raw * 100), 1)
-                if total_raw > 0
-                else 0
-            )
-
-        total_value_by_currency: Dict[str, float] = {}
-        for bucket in risk_levels.values():
-            for ccy, v in bucket["value_by_currency"].items():
-                total_value_by_currency[ccy] = total_value_by_currency.get(ccy, 0.0) + v
-
-        return {
-            "risk_levels": risk_levels,
-            "total_value_by_currency": total_value_by_currency,
-            "color_codes": {
-                "expired": "#000000",   # Black
-                "critical": "#DC2626",  # Red
-                "warning": "#F59E0B",   # Yellow/Orange
-                "caution": "#FBBF24",   # Light Yellow
-                "safe": "#10B981",      # Green
-            }
-        }
-    
-    async def get_low_stock_items(self) -> List[Dict[str, Any]]:
-        """Get items below reorder point"""
-        result = await self.db.execute(
-            select(Item).options(selectinload(Item.batches))
-        )
-        items = result.scalars().all()
-        
-        today = date.today()
-        low_stock = []
-        
-        for item in items:
-            available = sum(
-                b.quantity_available 
-                for b in item.batches 
-                if b.status == BatchStatus.ACTIVE and b.expiration_date >= today
-            )
-            
-            if available < item.reorder_point:
-                low_stock.append({
-                    "item_id": str(item.id),
-                    "sku": item.sku,
-                    "name": item.name,
-                    "current_quantity": float(available),
-                    "reorder_point": item.reorder_point,
-                    "min_stock": item.min_stock,
-                    "shortage": float(item.reorder_point - available),
-                    "is_critical": available < item.min_stock,
-                })
-        
-        # Sort by shortage descending
-        low_stock.sort(key=lambda x: x["shortage"], reverse=True)
-        return low_stock
-    
-    async def get_recent_activity(self, days: int = 7) -> Dict[str, Any]:
-        """Get recent activity summary"""
         today = date.today()
         start_date = today - timedelta(days=days)
-        
+
         # Get movements
-        result = await self.db.execute(
-            select(Movement)
-            .where(func.date(Movement.timestamp) >= start_date)
+        movements_query = select(Movement).where(
+            func.date(Movement.timestamp) >= start_date
         )
+        if location_ids is not None:
+            movements_query = movements_query.join(Batch, Movement.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        result = await self.db.execute(movements_query)
         movements = result.scalars().all()
-        
+
         receipts = sum(
             m.quantity for m in movements if m.movement_type == MovementType.RECEIPT
         )
@@ -236,21 +131,27 @@ class DashboardService:
         scraps = sum(
             m.quantity for m in movements if m.movement_type == MovementType.SCRAP
         )
-        
+
         # Get delivery notes
         result = await self.db.execute(
             select(func.count(DeliveryNote.id))
             .where(func.date(DeliveryNote.created_at) >= start_date)
         )
         delivery_notes_count = result.scalar() or 0
-        
-        # Get new alerts
-        result = await self.db.execute(
-            select(func.count(Alert.id))
-            .where(func.date(Alert.created_at) >= start_date)
+
+        # Get new alerts (item-only alerts are excluded when scoped, same
+        # convention as the alerts endpoint - they aren't attributable to
+        # one location)
+        alerts_query = select(func.count(Alert.id)).where(
+            func.date(Alert.created_at) >= start_date
         )
+        if location_ids is not None:
+            alerts_query = alerts_query.join(Batch, Alert.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        result = await self.db.execute(alerts_query)
         alerts_count = result.scalar() or 0
-        
+
         return {
             "period_days": days,
             "start_date": start_date.isoformat(),
@@ -262,61 +163,536 @@ class DashboardService:
             "alerts_generated": alerts_count,
             "movements_count": len(movements),
         }
-    
-    async def _at_risk_value_by_currency(self) -> Dict[str, float]:
-        """Sum cost-value of batches expiring within 60 days, bucketed by item currency."""
+
+    async def get_movement_trend(
+        self, days: int = 7, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
+        """Get daily receipts/dispatches/consumptions/scraps for the trailing
+        period, zero-filled so a trend chart has no gaps on days without
+        movements. Uses the same start_date window as get_recent_activity so
+        both endpoints agree on what "last N days" covers.
+
+        Quantities mix units of measure across items, so each day also
+        carries the cost value of receipts and of outbound usage (dispatch +
+        consumption), bucketed by item currency for client-side conversion.
+
+        location_ids restricts to movements whose batch is at one of those
+        locations - None means unrestricted.
+        """
         today = date.today()
-        result = await self.db.execute(
+        start_date = today - timedelta(days=days)
+
+        query = (
+            select(
+                func.date(Movement.timestamp).label("day"),
+                Movement.movement_type,
+                Item.currency,
+                func.sum(Movement.quantity).label("total"),
+                func.sum(Movement.quantity * Item.cost_price).label("value"),
+            )
+            .join(Batch, Movement.batch_id == Batch.id)
+            .join(Item, Batch.item_id == Item.id)
+            .where(func.date(Movement.timestamp) >= start_date)
+        )
+        if location_ids is not None:
+            query = query.where(Batch.location_id.in_(location_ids))
+        query = query.group_by(func.date(Movement.timestamp), Movement.movement_type, Item.currency)
+
+        result = await self.db.execute(query)
+
+        totals: Dict[date, Dict[MovementType, Decimal]] = {}
+        values: Dict[date, Dict[str, Dict[str, Decimal]]] = {}
+        for day, movement_type, currency, total, value in result.all():
+            day = _as_date(day)
+            day_totals = totals.setdefault(day, {})
+            day_totals[movement_type] = day_totals.get(movement_type, Decimal("0")) + Decimal(str(total))
+            if movement_type == MovementType.RECEIPT:
+                flow = "receipts"
+            elif movement_type in OUTBOUND_USAGE_TYPES:
+                flow = "outbound"
+            else:
+                continue
+            _add(values.setdefault(day, {}).setdefault(flow, {}), currency or "ILS", Decimal(str(value)))
+
+        num_days = (today - start_date).days + 1
+        series = []
+        for offset in range(num_days):
+            day = start_date + timedelta(days=offset)
+            day_totals = totals.get(day, {})
+            day_values = values.get(day, {})
+            series.append({
+                "date": day.isoformat(),
+                "receipts": float(day_totals.get(MovementType.RECEIPT, 0)),
+                "dispatches": float(day_totals.get(MovementType.DISPATCH, 0)),
+                "consumptions": float(day_totals.get(MovementType.CONSUMPTION, 0)),
+                "scraps": float(day_totals.get(MovementType.SCRAP, 0)),
+                "receipts_value_by_currency": _floats(day_values.get("receipts", {})),
+                "outbound_value_by_currency": _floats(day_values.get("outbound", {})),
+            })
+
+        return {
+            "period_days": days,
+            "start_date": start_date.isoformat(),
+            "end_date": today.isoformat(),
+            "series": series,
+        }
+
+    async def get_expiry_timeline(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
+        """Active stock bucketed by how soon it expires (see _expiry_bucket),
+        each bucket's value kept per item currency for client-side FX
+        conversion and its quantity kept per unit of measure (liters and
+        kilograms can't be summed together)."""
+        today = date.today()
+        query = (
             select(Batch)
             .options(selectinload(Batch.item))
+            .where(Batch.status == BatchStatus.ACTIVE, Batch.quantity_available > 0)
+        )
+        if location_ids is not None:
+            query = query.where(Batch.location_id.in_(location_ids))
+        batches = (await self.db.execute(query)).scalars().all()
+
+        buckets: Dict[str, Dict[str, Any]] = {
+            key: {"value_by_currency": {}, "quantity_by_unit": {}, "batches": 0}
+            for key in EXPIRY_BUCKET_KEYS
+        }
+        for batch in batches:
+            item = batch.item
+            bucket = buckets[_expiry_bucket((batch.expiration_date - today).days)]
+            _add(bucket["value_by_currency"], item.currency or "ILS", batch.quantity_available * item.cost_price)
+            _add(bucket["quantity_by_unit"], item.unit_of_measure, batch.quantity_available)
+            bucket["batches"] += 1
+
+        return {
+            "buckets": [
+                {
+                    "key": key,
+                    "value_by_currency": _floats(buckets[key]["value_by_currency"]),
+                    "quantity_by_unit": _floats(buckets[key]["quantity_by_unit"]),
+                    "batches": buckets[key]["batches"],
+                }
+                for key in EXPIRY_BUCKET_KEYS
+            ]
+        }
+
+    async def get_stock_coverage(
+        self,
+        location_ids: Optional[List[UUID]] = None,
+        window_days: int = HISTORY_WINDOW_DAYS,
+    ) -> Dict[str, Any]:
+        """Days of supply per item: usable stock on hand divided by average
+        daily usage (dispatch + consumption) over the trailing window.
+
+        Items with less history than the window average over the days since
+        their first receipt instead, so a new item isn't diluted by days it
+        didn't exist. days_of_supply is None when there was no usage at
+        all. Sorted most urgent first, no-usage items last.
+        """
+        today = date.today()
+        window_start = today - timedelta(days=window_days)
+
+        items = (
+            await self.db.execute(select(Item).options(_items_batches_loader(location_ids)))
+        ).scalars().all()
+
+        usage_query = (
+            select(Batch.item_id, func.sum(Movement.quantity))
+            .join(Batch, Movement.batch_id == Batch.id)
+            .where(
+                Movement.movement_type.in_(OUTBOUND_USAGE_TYPES),
+                func.date(Movement.timestamp) > window_start,
+            )
+            .group_by(Batch.item_id)
+        )
+        if location_ids is not None:
+            usage_query = usage_query.where(Batch.location_id.in_(location_ids))
+        usage = {
+            item_id: Decimal(str(total))
+            for item_id, total in (await self.db.execute(usage_query)).all()
+        }
+
+        rows = []
+        for item in items:
+            quantity = available_quantity(item, today)
+            used = usage.get(item.id, Decimal("0"))
+            if quantity == 0 and used == 0 and item.reorder_point <= 0:
+                continue
+
+            first_receipt = min((b.receipt_date for b in item.batches), default=today)
+            history_days = max(1, min(window_days, (today - first_receipt).days))
+            avg_daily_usage = used / history_days
+
+            if quantity == 0:
+                status = "out"
+            elif quantity < item.min_stock:
+                status = "below_min"
+            elif quantity < item.reorder_point:
+                status = "below_reorder"
+            else:
+                status = "ok"
+
+            rows.append({
+                "item_id": str(item.id),
+                "sku": item.sku,
+                "name": item.name,
+                "color": item.color.value,
+                "unit": item.unit_of_measure,
+                "quantity": float(quantity),
+                "reorder_point": item.reorder_point,
+                "min_stock": item.min_stock,
+                "avg_daily_usage": float(avg_daily_usage),
+                "days_of_supply": float(quantity / avg_daily_usage) if avg_daily_usage > 0 else None,
+                "status": status,
+            })
+
+        rows.sort(key=lambda r: (r["days_of_supply"] is None, r["days_of_supply"] or 0, r["sku"]))
+        return {"window_days": window_days, "items": rows}
+
+    async def get_attention_items(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Exceptions someone should act on today:
+
+        - expired_on_shelf: active lots past their expiration date (the
+          nightly expiry job normally scraps these, so anything here is
+          still waiting on it or on someone)
+        - expiring_soon: lots expiring within the critical window, soonest first
+        - below_min: items whose usable stock is under min_stock
+        - dead_stock: items with stock but no movement for
+          settings.dead_stock_days - same rule as AlertService.check_dead_stock
+        """
+        today = date.today()
+
+        lots_query = (
+            select(Batch)
+            .options(selectinload(Batch.item), selectinload(Batch.location))
             .where(
                 Batch.status == BatchStatus.ACTIVE,
                 Batch.quantity_available > 0,
+                Batch.expiration_date <= today + timedelta(days=CRITICAL_THRESHOLD_DAYS),
             )
+            .order_by(Batch.expiration_date)
         )
-        batches = result.scalars().all()
+        if location_ids is not None:
+            lots_query = lots_query.where(Batch.location_id.in_(location_ids))
+        lots = (await self.db.execute(lots_query)).scalars().all()
 
-        totals: Dict[str, Decimal] = {}
-        for batch in batches:
-            days_until = (batch.expiration_date - today).days
-            if days_until < 0 or days_until > 60:
-                continue
+        def lot_row(batch: Batch) -> Dict[str, Any]:
             item = batch.item
-            if not item:
-                continue
-            ccy = item.currency or "ILS"
-            totals[ccy] = (
-                totals.get(ccy, Decimal("0"))
-                + batch.quantity_available * item.cost_price
-            )
-        return {ccy: float(amount) for ccy, amount in totals.items()}
+            return {
+                "batch_id": str(batch.id),
+                "batch_number": batch.batch_number,
+                "item_id": str(item.id),
+                "sku": item.sku,
+                "name": item.name,
+                "unit": item.unit_of_measure,
+                "quantity": float(batch.quantity_available),
+                "value": float(batch.quantity_available * item.cost_price),
+                "currency": item.currency or "ILS",
+                "expiration_date": batch.expiration_date.isoformat(),
+                "days_until_expiration": (batch.expiration_date - today).days,
+                "location_code": batch.location.location_code if batch.location else None,
+            }
 
-    async def get_kpi_summary(self) -> Dict[str, Any]:
-        """Get all KPIs for dashboard"""
-        inventory = await self.get_inventory_value()
-        risk_map = await self.get_expiration_risk_map()
-        low_stock = await self.get_low_stock_items()
-        activity = await self.get_recent_activity()
-        at_risk_by_ccy = await self._at_risk_value_by_currency()
+        items = (
+            await self.db.execute(select(Item).options(_items_batches_loader(location_ids)))
+        ).scalars().all()
 
-        # Unread alerts count
-        result = await self.db.execute(
-            select(func.count(Alert.id))
-            .where(Alert.is_read == False, Alert.is_dismissed == False)
+        last_movement_query = (
+            select(Batch.item_id, func.max(Movement.timestamp))
+            .join(Batch, Movement.batch_id == Batch.id)
+            .where(Batch.status == BatchStatus.ACTIVE)
+            .group_by(Batch.item_id)
         )
-        unread_alerts = result.scalar() or 0
+        if location_ids is not None:
+            last_movement_query = last_movement_query.where(Batch.location_id.in_(location_ids))
+        # max(timestamp) is an ISO string on SQLite, a datetime on Postgres.
+        last_movement = {
+            item_id: (date.fromisoformat(ts[:10]) if isinstance(ts, str) else ts.date())
+            for item_id, ts in (await self.db.execute(last_movement_query)).all()
+        }
+
+        below_min = []
+        dead_stock = []
+        for item in items:
+            quantity = available_quantity(item, today)
+            if quantity < item.min_stock:
+                below_min.append({
+                    "item_id": str(item.id),
+                    "sku": item.sku,
+                    "name": item.name,
+                    "unit": item.unit_of_measure,
+                    "quantity": float(quantity),
+                    "min_stock": item.min_stock,
+                    "reorder_point": item.reorder_point,
+                })
+
+            if quantity > 0:
+                receipts = [b.receipt_date for b in item.batches if b.status == BatchStatus.ACTIVE]
+                last_activity = max(filter(None, [last_movement.get(item.id), *receipts]))
+                days_inactive = (today - last_activity).days
+                if days_inactive >= settings.dead_stock_days:
+                    dead_stock.append({
+                        "item_id": str(item.id),
+                        "sku": item.sku,
+                        "name": item.name,
+                        "unit": item.unit_of_measure,
+                        "quantity": float(quantity),
+                        "value": float(quantity * item.cost_price),
+                        "currency": item.currency or "ILS",
+                        "last_movement_date": last_activity.isoformat(),
+                        "days_inactive": days_inactive,
+                    })
+
+        below_min.sort(key=lambda r: (r["quantity"] / r["min_stock"], r["sku"]))
+        dead_stock.sort(key=lambda r: -r["days_inactive"])
 
         return {
-            "inventory_value_by_currency": inventory["totals_by_currency"],
-            "items_in_stock": inventory["items_with_stock"],
-            "at_risk_value_by_currency": at_risk_by_ccy,
-            "at_risk_percentage": (
-                risk_map["risk_levels"]["critical"]["percentage"] +
-                risk_map["risk_levels"]["warning"]["percentage"]
-            ),
-            "low_stock_items": len(low_stock),
-            "critical_low_stock": sum(1 for i in low_stock if i["is_critical"]),
+            "expired_on_shelf": [lot_row(b) for b in lots if b.expiration_date < today],
+            "expiring_soon": [lot_row(b) for b in lots if b.expiration_date >= today],
+            "below_min": below_min,
+            "dead_stock": dead_stock,
+        }
+
+    async def _inventory_value_history(
+        self, offsets: tuple[int, ...], location_ids: Optional[List[UUID]] = None
+    ) -> Dict[int, Dict[str, Decimal]]:
+        """Inventory value (per currency) as it stood at the end of the day
+        `offset` days ago, for each offset - rebuilt from today's quantities
+        by undoing every movement after that day (quantity_after -
+        quantity_before is each movement's signed effect, adjustments
+        included). Offset 0 equals get_kpi_summary's inventory_value_by_currency.
+
+        Counts the same stock available_quantity() does: received by then,
+        not yet expired then, and - for scrapped batches - not yet scrapped.
+        """
+        today = date.today()
+        since = today - timedelta(days=max(offsets))
+
+        delta_query = (
+            select(
+                Movement.batch_id,
+                func.date(Movement.timestamp),
+                func.sum(Movement.quantity_after - Movement.quantity_before),
+            )
+            .where(func.date(Movement.timestamp) > since)
+            .group_by(Movement.batch_id, func.date(Movement.timestamp))
+        )
+        if location_ids is not None:
+            delta_query = delta_query.join(Batch, Movement.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        deltas: Dict[UUID, List[tuple[date, Decimal]]] = {}
+        for batch_id, day, delta in (await self.db.execute(delta_query)).all():
+            deltas.setdefault(batch_id, []).append((_as_date(day), Decimal(str(delta))))
+
+        batch_query = (
+            select(Batch)
+            .options(selectinload(Batch.item))
+            .where(or_(Batch.quantity_available > 0, Batch.id.in_(list(deltas))))
+        )
+        if location_ids is not None:
+            batch_query = batch_query.where(Batch.location_id.in_(location_ids))
+        batches = (await self.db.execute(batch_query)).scalars().all()
+
+        values: Dict[int, Dict[str, Decimal]] = {offset: {} for offset in offsets}
+        for batch in batches:
+            scrapped_on = _scrapped_on(batch)
+            for offset in offsets:
+                day = today - timedelta(days=offset)
+                if batch.receipt_date > day or batch.expiration_date < day:
+                    continue
+                if scrapped_on is not None and scrapped_on <= day:
+                    continue
+                quantity = batch.quantity_available - sum(
+                    (delta for moved_on, delta in deltas.get(batch.id, []) if moved_on > day),
+                    Decimal("0"),
+                )
+                if quantity > 0:
+                    _add(values[offset], batch.item.currency or "ILS", quantity * batch.item.cost_price)
+        return values
+
+    async def _movement_cost_by_currency(
+        self,
+        movement_types: tuple[MovementType, ...],
+        since: date,
+        location_ids: Optional[List[UUID]] = None,
+    ) -> Dict[str, Decimal]:
+        """Cost of the given movements after `since`, per item currency."""
+        query = (
+            select(Item.currency, Item.cost_price, func.sum(Movement.quantity))
+            .select_from(Movement)
+            .join(Batch, Movement.batch_id == Batch.id)
+            .join(Item, Batch.item_id == Item.id)
+            .where(
+                Movement.movement_type.in_(movement_types),
+                func.date(Movement.timestamp) > since,
+            )
+            .group_by(Item.id, Item.currency, Item.cost_price)
+        )
+        if location_ids is not None:
+            query = query.where(Batch.location_id.in_(location_ids))
+        totals: Dict[str, Decimal] = {}
+        for currency, cost_price, quantity in (await self.db.execute(query)).all():
+            _add(totals, currency or "ILS", Decimal(str(quantity)) * cost_price)
+        return totals
+
+    async def _write_off_by_currency(
+        self, since: date, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Decimal]:
+        """Value written off after `since`: batches scrapped in that period
+        (which keep the scrapped quantity in quantity_available) plus any
+        SCRAP movements (partial write-offs)."""
+        query = (
+            select(Batch)
+            .options(selectinload(Batch.item))
+            .where(Batch.status == BatchStatus.SCRAP, Batch.quantity_available > 0)
+        )
+        if location_ids is not None:
+            query = query.where(Batch.location_id.in_(location_ids))
+
+        totals = await self._movement_cost_by_currency((MovementType.SCRAP,), since, location_ids)
+        for batch in (await self.db.execute(query)).scalars().all():
+            if _scrapped_on(batch) > since:
+                _add(totals, batch.item.currency or "ILS", batch.quantity_available * batch.item.cost_price)
+        return totals
+
+    async def _get_fx_rates(self) -> tuple[Decimal, Decimal, Decimal]:
+        """Returns (usd_to_ils, eur_to_ils, try_to_ils) from the SystemSettings
+        singleton, falling back to its column defaults if the row is
+        somehow missing (defensive for fresh test databases)."""
+        result = await self.db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+        row = result.scalar_one_or_none()
+        if row is None:
+            return Decimal("3.7"), Decimal("4.0"), Decimal("0.11")
+        return row.usd_to_ils, row.eur_to_ils, row.try_to_ils
+
+    @staticmethod
+    def _sum_in_ils(
+        amounts_by_currency: Dict[str, float],
+        usd_to_ils: Decimal,
+        eur_to_ils: Decimal,
+        try_to_ils: Decimal,
+    ) -> Decimal:
+        rates = {"ILS": Decimal("1"), "USD": usd_to_ils, "EUR": eur_to_ils, "TRY": try_to_ils}
+        return sum(
+            (Decimal(str(amount)) * rates.get(ccy, Decimal("1")) for ccy, amount in amounts_by_currency.items()),
+            Decimal("0"),
+        )
+
+    async def get_kpi_summary(
+        self, location_ids: Optional[List[UUID]] = None
+    ) -> Dict[str, Any]:
+        """Get all KPIs for dashboard.
+
+        Fetches Items+Batches once and derives inventory value, at-risk
+        value, and low-stock counts from that single dataset rather than
+        re-running `select(Item).options(selectinload(...))` per figure.
+
+        location_ids restricts everything below (batches, activity, unread
+        alerts) to those locations - None means unrestricted. Delivery-note
+        counts inside get_recent_activity stay unscoped (not location
+        attributable in this schema).
+        """
+        today = date.today()
+
+        result = await self.db.execute(
+            select(Item).options(_items_batches_loader(location_ids))
+        )
+        items = result.scalars().all()
+
+        totals_by_currency: Dict[str, Decimal] = {}
+        at_risk_by_ccy: Dict[str, Decimal] = {}
+        items_with_stock = 0
+        low_stock_count = 0
+        critical_low_stock_count = 0
+
+        for item in items:
+            ccy = item.currency or "ILS"
+            active_qty = available_quantity(item, today)
+
+            if active_qty > 0:
+                items_with_stock += 1
+                totals_by_currency[ccy] = totals_by_currency.get(ccy, Decimal("0")) + active_qty * item.cost_price
+
+            for batch in item.batches:
+                if is_active_and_unexpired(batch, today) and (batch.expiration_date - today).days <= 60:
+                    at_risk_by_ccy[ccy] = (
+                        at_risk_by_ccy.get(ccy, Decimal("0")) + batch.quantity_available * item.cost_price
+                    )
+
+            if active_qty < item.reorder_point:
+                low_stock_count += 1
+                if active_qty < item.min_stock:
+                    critical_low_stock_count += 1
+
+        inventory_totals = {ccy: float(v) for ccy, v in totals_by_currency.items()}
+        at_risk_totals = {ccy: float(v) for ccy, v in at_risk_by_ccy.items()}
+
+        activity = await self.get_recent_activity(location_ids=location_ids)
+
+        # Unread alerts count (item-only alerts excluded when scoped, same
+        # convention as the alerts endpoint)
+        unread_query = select(func.count(Alert.id)).where(
+            Alert.is_read == False, Alert.is_dismissed == False
+        )
+        if location_ids is not None:
+            unread_query = unread_query.join(Batch, Alert.batch_id == Batch.id).where(
+                Batch.location_id.in_(location_ids)
+            )
+        result = await self.db.execute(unread_query)
+        unread_alerts = result.scalar() or 0
+
+        # at_risk_percentage needs a single ratio, which needs converting
+        # both sides to one currency first - previously this summed
+        # risk_map's per-level "percentage" fields, which were themselves
+        # computed from values mixed across currencies without conversion.
+        usd_to_ils, eur_to_ils, try_to_ils = await self._get_fx_rates()
+        inventory_total_ils = self._sum_in_ils(inventory_totals, usd_to_ils, eur_to_ils, try_to_ils)
+        at_risk_total_ils = self._sum_in_ils(at_risk_totals, usd_to_ils, eur_to_ils, try_to_ils)
+        at_risk_percentage = (
+            round(float(at_risk_total_ils / inventory_total_ils) * 100, 1)
+            if inventory_total_ils > 0
+            else 0
+        )
+
+        # Turnover and write-off rate are ratios over the trailing window,
+        # against the average of the inventory value sampled across it - so
+        # like at_risk_percentage they're computed in ILS here.
+        window_start = today - timedelta(days=HISTORY_WINDOW_DAYS)
+        history = await self._inventory_value_history(AVERAGE_INVENTORY_OFFSETS, location_ids)
+        write_off = await self._write_off_by_currency(window_start, location_ids)
+        outbound_cost = await self._movement_cost_by_currency(OUTBOUND_USAGE_TYPES, window_start, location_ids)
+
+        def in_ils(amounts: Dict[str, Decimal]) -> Decimal:
+            return self._sum_in_ils(amounts, usd_to_ils, eur_to_ils, try_to_ils)
+
+        avg_inventory_ils = sum(
+            (in_ils(history[offset]) for offset in AVERAGE_INVENTORY_OFFSETS), Decimal("0")
+        ) / len(AVERAGE_INVENTORY_OFFSETS)
+        outbound_ils = in_ils(outbound_cost)
+        daily_outbound_ils = outbound_ils / HISTORY_WINDOW_DAYS
+
+        return {
+            "inventory_value_by_currency": inventory_totals,
+            "inventory_value_30d_ago_by_currency": _floats(history[30]),
+            "items_in_stock": items_with_stock,
+            "at_risk_value_by_currency": at_risk_totals,
+            "at_risk_percentage": at_risk_percentage,
+            "low_stock_items": low_stock_count,
+            "critical_low_stock": critical_low_stock_count,
             "unread_alerts": unread_alerts,
             "recent_receipts": activity["receipts_quantity"],
             "recent_dispatches": activity["dispatches_quantity"],
+            "write_off_90d_value_by_currency": _floats(write_off),
+            "write_off_90d_rate": (
+                round(float(in_ils(write_off) / avg_inventory_ils) * 100, 2) if avg_inventory_ils > 0 else 0
+            ),
+            "avg_inventory_value_ils": float(avg_inventory_ils),
+            "turnover_annualized": (
+                float(daily_outbound_ils * 365 / avg_inventory_ils) if avg_inventory_ils > 0 else 0
+            ),
+            "days_on_hand": float(avg_inventory_ils / daily_outbound_ils) if daily_outbound_ils > 0 else None,
         }

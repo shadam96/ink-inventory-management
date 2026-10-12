@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { cn, formatDate, formatCurrency, formatNumber, daysUntilExpiration, getExpirationStatus, convertToDisplayCurrency, convertAmount } from '../utils'
 
 describe('cn utility', () => {
@@ -75,10 +75,70 @@ describe('daysUntilExpiration', () => {
     const days = daysUntilExpiration(pastDate.toISOString())
     expect(days).toBeLessThan(0)
   })
+
+  describe('timezone independence for date-only strings', () => {
+    const originalTZ = process.env.TZ
+
+    afterEach(() => {
+      process.env.TZ = originalTZ
+      vi.useRealTimers()
+    })
+
+    it('treats a "YYYY-MM-DD" string as the same calendar day regardless of the local timezone', () => {
+      // Each zone gets "now" pinned to ITS OWN local noon on 2026-07-21, so
+      // "today" unambiguously lands on that calendar day in that zone -
+      // local noon in one zone can be a different UTC calendar day than
+      // local noon in another (e.g. UTC+14 vs UTC-7), so a single shared
+      // instant can't safely stand in for "midday" in every zone at once.
+      vi.useFakeTimers()
+
+      // A negative UTC offset is what previously exposed the bug: new
+      // Date('2027-01-17') parses as UTC midnight, and re-zeroing it with
+      // setHours() in a UTC-7 zone rolled it back to 2027-01-16. Arizona
+      // (America/Phoenix) is used instead of e.g. Los_Angeles because it
+      // never observes DST, so a fixed -7 offset applies to both "today"
+      // and the expiration date - no unrelated DST-transition skew.
+      process.env.TZ = 'America/Phoenix'
+      vi.setSystemTime(new Date('2026-07-21T19:00:00Z')) // noon in UTC-7
+      const negativeOffsetDays = daysUntilExpiration('2027-01-17')
+
+      process.env.TZ = 'UTC'
+      vi.setSystemTime(new Date('2026-07-21T12:00:00Z')) // noon in UTC
+      const utcDays = daysUntilExpiration('2027-01-17')
+
+      process.env.TZ = 'Pacific/Kiritimati' // fixed UTC+14, no DST
+      vi.setSystemTime(new Date('2026-07-20T22:00:00Z')) // noon in UTC+14
+      const positiveOffsetDays = daysUntilExpiration('2027-01-17')
+
+      expect(negativeOffsetDays).toBe(180)
+      expect(utcDays).toBe(180)
+      expect(positiveOffsetDays).toBe(180)
+    })
+
+    it('counts whole calendar days across a DST transition', () => {
+      // Israel leaves DST on 2026-10-25 and enters it on 2026-03-27, so the
+      // span between two local midnights is a whole number of days plus or
+      // minus one hour - which must not round into an extra/missing day.
+      vi.useFakeTimers()
+      process.env.TZ = 'Asia/Jerusalem'
+
+      // Today in summer time, expiry in winter time (span is 30d + 1h)
+      vi.setSystemTime(new Date('2026-10-09T09:00:00Z'))
+      expect(daysUntilExpiration('2026-11-08')).toBe(30)
+
+      // Today in winter time, expiry in summer time (span is 30d - 1h)
+      vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+      expect(daysUntilExpiration('2026-04-19')).toBe(30)
+
+      // Already expired, today in summer time, expiry in winter time
+      vi.setSystemTime(new Date('2026-04-19T09:00:00Z'))
+      expect(daysUntilExpiration('2026-03-20')).toBe(-30)
+    })
+  })
 })
 
 describe('convertToDisplayCurrency', () => {
-  const rates = { usd_to_ils: 4, eur_to_ils: 5 }
+  const rates = { usd_to_ils: 4, eur_to_ils: 5, try_to_ils: 0.25 }
 
   it('returns ILS bucket unchanged when displaying in ILS', () => {
     expect(convertToDisplayCurrency({ ILS: 100 }, 'ILS', rates)).toBe(100)
@@ -110,10 +170,15 @@ describe('convertToDisplayCurrency', () => {
   it('round-trips a USD bucket back to USD via ILS', () => {
     expect(convertToDisplayCurrency({ USD: 42 }, 'USD', rates)).toBeCloseTo(42)
   })
+
+  it('converts TRY into ILS at the configured rate', () => {
+    // 100 TRY * 0.25 ILS/TRY = 25 ILS
+    expect(convertToDisplayCurrency({ TRY: 100 }, 'ILS', rates)).toBe(25)
+  })
 })
 
 describe('convertAmount', () => {
-  const rates = { usd_to_ils: 4, eur_to_ils: 5 }
+  const rates = { usd_to_ils: 4, eur_to_ils: 5, try_to_ils: 0.25 }
 
   it('returns the amount untouched when from === to', () => {
     expect(convertAmount(100, 'USD', 'USD', rates)).toBe(100)
@@ -131,6 +196,10 @@ describe('convertAmount', () => {
   it('round-trips a cross-currency conversion through ILS', () => {
     // 10 EUR → ILS (50) → USD (12.5)
     expect(convertAmount(10, 'EUR', 'USD', rates)).toBe(12.5)
+  })
+
+  it('converts TRY to ILS via the configured rate', () => {
+    expect(convertAmount(100, 'TRY', 'ILS', rates)).toBe(25)
   })
 })
 

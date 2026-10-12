@@ -85,6 +85,40 @@ describe('ItemDialog', () => {
     })
   })
 
+  it('should not allow dismissal via Escape while a save is in flight', async () => {
+    mockOnOpenChange.mockClear()
+    let resolveSubmit: () => void = () => {}
+    mockOnSubmit.mockImplementation(
+      () => new Promise<void>((resolve) => { resolveSubmit = resolve })
+    )
+    render(<ItemDialog {...defaultProps} />)
+    const user = userEvent.setup()
+
+    await user.type(screen.getByLabelText(/items.sku/), 'INK-003')
+    await user.type(screen.getByLabelText(/items.name/), 'Slow Ink')
+    await user.type(screen.getByLabelText(/items.supplier/), 'Supplier')
+    await user.type(screen.getByLabelText(/items.unit/), 'Liter')
+    await user.type(screen.getByLabelText(/items.costPrice/), '10')
+
+    const submitButton = screen.getByText('common.save')
+    await user.click(submitButton)
+
+    // The save is now in flight (isSubmitting=true) since mockOnSubmit's
+    // promise hasn't resolved yet. Escape must not dismiss the dialog -
+    // previously only the Cancel button was gated by isSubmitting, so
+    // Escape/overlay-click could close it, and a subsequently reopened
+    // dialog (for a different entity) would later be reset/closed by
+    // this stale request's success callback once it resolved.
+    await user.keyboard('{Escape}')
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(mockOnOpenChange).not.toHaveBeenCalledWith(false)
+
+    resolveSubmit()
+    await waitFor(() => {
+      expect(mockOnOpenChange).toHaveBeenCalledWith(false)
+    })
+  })
+
   it('should disable SKU field in edit mode', () => {
     const item = {
       id: '1',

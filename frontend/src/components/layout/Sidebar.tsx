@@ -34,6 +34,7 @@ const allNavItems = [
   { path: '/customers', icon: Users, label: 'nav.customers', staffOnly: true },
   { path: '/items', icon: Package, label: 'nav.items', staffOnly: true },
   { path: '/alerts', icon: Bell, label: 'nav.alerts', staffOnly: true },
+  { path: '/users', icon: Users, label: 'nav.users', staffOnly: true, adminOnly: true },
 ]
 
 const iconMap = {
@@ -50,9 +51,10 @@ export function Sidebar() {
   
   const IconComponent = iconMap[appIcon] || Droplets
   const isCustomer = user?.role === 'customer'
-  const navItems = isCustomer
-    ? allNavItems.filter(item => !item.staffOnly)
-    : allNavItems
+  const isAdmin = user?.role === 'admin'
+  const navItems = allNavItems.filter(
+    (item) => (!item.staffOnly || !isCustomer) && (!item.adminOnly || isAdmin)
+  )
 
   return (
     <aside

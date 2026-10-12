@@ -1,5 +1,6 @@
 """API dependencies for authentication and authorization"""
-from typing import Annotated
+from dataclasses import dataclass
+from typing import Annotated, List, Optional
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -35,9 +36,15 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     
     if user is None:
+        # A structurally valid, unexpired JWT whose subject no longer
+        # exists (e.g. the account was deleted after the token was
+        # issued) is an authentication failure, not a "resource not
+        # found" - 404 here could make frontend error handling treat it
+        # as a missing resource rather than prompting re-login.
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="משתמש לא נמצא",  # User not found
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     if not user.is_active:
@@ -81,6 +88,13 @@ RequireWarehouse = Depends(
 RequirePickingAccess = Depends(
     require_roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_WORKER, UserRole.CUSTOMER)
 )
+# Internal staff (everyone except CUSTOMER) - the role gate for endpoints
+# that expose company-wide warehouse data (batches, movements, locations,
+# dashboard, alerts). CUSTOMER must go through the separately-scoped
+# inventory/delivery-note/picking endpoints instead.
+RequireStaff = Depends(
+    require_roles(UserRole.ADMIN, UserRole.MANAGER, UserRole.WAREHOUSE_WORKER, UserRole.VIEWER)
+)
 
 # Type aliases for cleaner endpoint signatures
 CurrentUser = Annotated[User, Depends(get_current_user)]
@@ -88,6 +102,45 @@ AdminUser = Annotated[User, RequireAdmin]
 ManagerUser = Annotated[User, RequireManager]
 WarehouseUser = Annotated[User, RequireWarehouse]
 PickingUser = Annotated[User, RequirePickingAccess]
+StaffUser = Annotated[User, RequireStaff]
 DbSession = Annotated[AsyncSession, Depends(get_db)]
+
+
+@dataclass
+class AccessScope:
+    """What rows the current user is allowed to see, beyond role gating.
+
+    Both fields are None for an unrestricted (admin, or staff with no
+    location assignments) user - "None means unrestricted" mirrors the
+    existing `current_user.customer_id` convention (None = not scoped),
+    rather than introducing a separate boolean flag.
+    """
+    customer_id: Optional[UUID]
+    location_ids: Optional[List[UUID]]
+
+
+async def get_access_scope(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> AccessScope:
+    """Derive the row-level access scope for the current user.
+
+    - ADMIN: unrestricted.
+    - CUSTOMER: restricted to their own customer_id.
+    - Other staff (MANAGER/WAREHOUSE_WORKER/VIEWER): restricted to their
+      assigned locations if they have any, else unrestricted (opt-in -
+      staff with zero assignments keep today's full-access behavior).
+    """
+    if current_user.role == UserRole.ADMIN:
+        return AccessScope(customer_id=None, location_ids=None)
+    if current_user.role == UserRole.CUSTOMER:
+        return AccessScope(customer_id=current_user.customer_id, location_ids=None)
+    assigned_location_ids = [loc.id for loc in current_user.locations]
+    return AccessScope(
+        customer_id=None,
+        location_ids=assigned_location_ids or None,
+    )
+
+
+Scope = Annotated[AccessScope, Depends(get_access_scope)]
 
 

@@ -82,9 +82,10 @@ async def test_fefo_suggests_earliest_expiring_first(
         quantity_needed=Decimal("50"),
     )
     
-    assert len(suggestions) == 1
-    assert suggestions[0].batch_number == "FEFO-001"  # Earliest expiring
-    assert suggestions[0].suggested_quantity == Decimal("50")
+    # Every batch is returned in FEFO order (so the UI can show them all);
+    # only the earliest-expiring one is drawn from.
+    assert [s.batch_number for s in suggestions] == ["FEFO-001", "FEFO-002", "FEFO-003"]
+    assert [s.suggested_quantity for s in suggestions] == [Decimal("50"), 0, 0]
 
 
 @pytest.mark.asyncio
@@ -102,13 +103,9 @@ async def test_fefo_spans_multiple_batches(
         quantity_needed=Decimal("200"),
     )
     
-    assert len(suggestions) == 2
-    # First batch - earliest expiring, take all 100
-    assert suggestions[0].batch_number == "FEFO-001"
-    assert suggestions[0].suggested_quantity == Decimal("100")
-    # Second batch - take remaining 100
-    assert suggestions[1].batch_number == "FEFO-002"
-    assert suggestions[1].suggested_quantity == Decimal("100")
+    assert [s.batch_number for s in suggestions] == ["FEFO-001", "FEFO-002", "FEFO-003"]
+    # Earliest expiring: take all 100; next: the remaining 100; last: none
+    assert [s.suggested_quantity for s in suggestions] == [Decimal("100"), Decimal("100"), 0]
 
 
 @pytest.mark.asyncio

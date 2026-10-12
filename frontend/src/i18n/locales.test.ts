@@ -21,8 +21,27 @@ function collectKeys(obj: Record<string, unknown>, prefix = ''): string[] {
   return keys.sort()
 }
 
+// i18next plural key suffixes (CLDR plural categories). Which categories a
+// language needs is a property of that language's own grammar, not
+// something every locale file has to mirror - Hebrew has a distinct "two"
+// category (e.g. listTitle_two) that English/Greek/Turkish simply don't
+// use, since their CLDR rules never resolve to "two". Normalizing these
+// away before comparing keeps the test's real purpose (catch missing or
+// mistyped translations) without demanding identical plural forms across
+// languages that don't grammatically have them.
+const PLURAL_SUFFIXES = ['_zero', '_one', '_two', '_few', '_many', '_other']
+
+function normalizePluralKey(key: string): string {
+  const suffix = PLURAL_SUFFIXES.find((s) => key.endsWith(s))
+  return suffix ? key.slice(0, -suffix.length) : key
+}
+
+function collectNormalizedKeys(obj: Record<string, unknown>): string[] {
+  return [...new Set(collectKeys(obj).map(normalizePluralKey))].sort()
+}
+
 describe('Locale file structural parity', () => {
-  const heKeys = collectKeys(he)
+  const heKeys = collectNormalizedKeys(he)
 
   it('he.json has keys (sanity check)', () => {
     expect(heKeys.length).toBeGreaterThan(100)
@@ -34,7 +53,7 @@ describe('Locale file structural parity', () => {
     ['tr', tr],
   ] as const) {
     describe(`${name}.json`, () => {
-      const localeKeys = collectKeys(locale as Record<string, unknown>)
+      const localeKeys = collectNormalizedKeys(locale as Record<string, unknown>)
 
       it('has the same number of keys as he.json', () => {
         expect(localeKeys.length).toBe(heKeys.length)

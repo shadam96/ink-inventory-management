@@ -2,6 +2,7 @@
 import pytest
 from datetime import date, timedelta
 from decimal import Decimal
+from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -68,9 +69,10 @@ class TestAlertService:
             severity=AlertSeverity.CRITICAL,
             title="Alert 2",
             message="Message 2",
+            item_id=sample_item.id,
         )
         await db_session.flush()
-        
+
         # Mark one as read
         alert2.is_read = True
         await db_session.flush()
@@ -80,10 +82,10 @@ class TestAlertService:
         assert len(unread) == 1
         assert unread[0].title == "Alert 1"
     
-    async def test_get_unread_count(self, db_session):
+    async def test_get_unread_count(self, db_session, sample_item):
         """Test counting unread alerts"""
         service = AlertService(db_session)
-        
+
         # Create alerts
         for i in range(5):
             await service.create_alert(
@@ -91,33 +93,35 @@ class TestAlertService:
                 severity=AlertSeverity.INFO,
                 title=f"Alert {i}",
                 message=f"Message {i}",
+                item_id=sample_item.id,
             )
         await db_session.flush()
-        
+
         count = await service.get_unread_count()
         assert count == 5
-    
-    async def test_mark_as_read(self, db_session):
+
+    async def test_mark_as_read(self, db_session, sample_item):
         """Test marking alert as read"""
         service = AlertService(db_session)
-        
+
         alert = await service.create_alert(
             alert_type=AlertType.LOW_STOCK,
             severity=AlertSeverity.INFO,
             title="Test Alert",
             message="Test message",
+            item_id=sample_item.id,
         )
         await db_session.flush()
-        
+
         await service.mark_as_read(alert.id)
         await db_session.refresh(alert)
-        
+
         assert alert.is_read is True
-    
-    async def test_mark_all_as_read(self, db_session):
+
+    async def test_mark_all_as_read(self, db_session, sample_item):
         """Test marking all alerts as read"""
         service = AlertService(db_session)
-        
+
         # Create unread alerts
         for i in range(3):
             await service.create_alert(
@@ -125,32 +129,34 @@ class TestAlertService:
                 severity=AlertSeverity.INFO,
                 title=f"Alert {i}",
                 message=f"Message {i}",
+                item_id=sample_item.id,
             )
         await db_session.flush()
-        
+
         count = await service.mark_all_as_read()
-        
+
         assert count == 3
-        
+
         # Verify all are read
         unread = await service.get_unread_count()
         assert unread == 0
-    
-    async def test_dismiss_alert(self, db_session):
+
+    async def test_dismiss_alert(self, db_session, sample_item):
         """Test dismissing an alert"""
         service = AlertService(db_session)
-        
+
         alert = await service.create_alert(
             alert_type=AlertType.LOW_STOCK,
             severity=AlertSeverity.INFO,
             title="Test Alert",
             message="Test message",
+            item_id=sample_item.id,
         )
         await db_session.flush()
-        
+
         await service.dismiss_alert(alert.id)
         await db_session.refresh(alert)
-        
+
         assert alert.is_dismissed is True
     
     async def test_check_expiring_batches(self, db_session, sample_item):
@@ -178,7 +184,71 @@ class TestAlertService:
         # Verify alert details
         critical_alerts = [a for a in alerts if a.severity == AlertSeverity.CRITICAL]
         assert len(critical_alerts) >= 1
-    
+
+    async def test_check_expiring_batches_creates_exactly_one_alert_per_batch(
+        self, db_session, sample_item
+    ):
+        """A batch expiring in 25 days falls under all four threshold bands
+        (<=30, <=60, <=90, <=120) simultaneously, since the bands previously
+        weren't mutually exclusive. This is the fix: bands must partition by
+        days-until-expiration, so exactly one alert is created, not one per
+        threshold the batch happens to satisfy."""
+        service = AlertService(db_session)
+
+        batch = Batch(
+            batch_number="EXP-BATCH-002",
+            item_id=sample_item.id,
+            expiration_date=date.today() + timedelta(days=25),
+            receipt_date=date.today(),
+            quantity_received=Decimal("50.00"),
+            quantity_available=Decimal("50.00"),
+            status=BatchStatus.ACTIVE,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+
+        alerts = await service.check_expiring_batches()
+
+        batch_alerts = [a for a in alerts if a.batch_id == batch.id]
+        assert len(batch_alerts) == 1
+        assert batch_alerts[0].severity == AlertSeverity.CRITICAL
+        assert batch_alerts[0].alert_type == AlertType.EXPIRATION_CRITICAL
+
+    async def test_check_expiring_batches_does_not_duplicate_on_rerun(
+        self, db_session, sample_item
+    ):
+        """Running check_expiring_batches twice in the same day must not
+        create a second alert for the same batch/severity - the dedup
+        guard previously always checked
+        alert_type == EXPIRATION_WARNING even for the branch that creates
+        EXPIRATION_CRITICAL alerts, so it never matched and duplicates
+        were created on every run."""
+        service = AlertService(db_session)
+
+        batch = Batch(
+            batch_number="EXP-BATCH-003",
+            item_id=sample_item.id,
+            expiration_date=date.today() + timedelta(days=10),
+            receipt_date=date.today(),
+            quantity_received=Decimal("50.00"),
+            quantity_available=Decimal("50.00"),
+            status=BatchStatus.ACTIVE,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+
+        first_run = await service.check_expiring_batches()
+        await db_session.flush()
+        second_run = await service.check_expiring_batches()
+
+        assert len([a for a in first_run if a.batch_id == batch.id]) == 1
+        assert len([a for a in second_run if a.batch_id == batch.id]) == 0
+
+        result = await db_session.execute(
+            select(Alert).where(Alert.batch_id == batch.id)
+        )
+        assert len(result.scalars().all()) == 1
+
     async def test_check_expired_batches(self, db_session, sample_item):
         """Test checking and marking expired batches"""
         service = AlertService(db_session)
@@ -248,7 +318,83 @@ class TestAlertService:
         )
         assert low_stock_alert is not None
         assert low_stock_alert.alert_type == AlertType.LOW_STOCK
-    
+
+    async def test_check_low_stock_does_not_duplicate_on_rerun(self, db_session):
+        """Regression test: the dedup guard previously checked
+        func.date(created_at) == today, which depends on the DB dialect
+        parsing the stored timestamp string (works on Postgres, not
+        reliably on SQLite) - switched to "no matching alert that isn't
+        yet dismissed", matching the fix already applied to
+        check_expiring_batches."""
+        item = Item(
+            sku="LOW-STOCK-RERUN-001",
+            name="Low Stock Rerun Item",
+            supplier="Test Supplier",
+            unit_of_measure="kg",
+            cost_price=Decimal("100.00"),
+            min_stock=10,
+            reorder_point=50,
+        )
+        db_session.add(item)
+        await db_session.flush()
+
+        db_session.add(Batch(
+            batch_number="LOW-BT-RERUN-001",
+            item_id=item.id,
+            expiration_date=date.today() + timedelta(days=180),
+            receipt_date=date.today(),
+            quantity_received=Decimal("20.00"),
+            quantity_available=Decimal("20.00"),
+            status=BatchStatus.ACTIVE,
+        ))
+        await db_session.commit()
+
+        service = AlertService(db_session)
+        first_run = await service.check_low_stock()
+        await db_session.flush()
+        second_run = await service.check_low_stock()
+
+        assert len([a for a in first_run if a.item_id == item.id]) == 1
+        assert len([a for a in second_run if a.item_id == item.id]) == 0
+
+    async def test_send_email_isolates_per_recipient_failures(self, db_session, sample_item):
+        """Regression test: _send_expiration_email / _send_low_stock_email
+        previously had no per-recipient try/except (unlike
+        _send_expired_batch_email / _send_dead_stock_email), so one
+        recipient's failure would silently stop every recipient after it
+        from being notified. All four now share _notify_recipients, which
+        isolates failures consistently."""
+        service = AlertService(db_session)
+        service._email_enabled = True
+
+        batch = Batch(
+            batch_number="EMAIL-BATCH-001",
+            item_id=sample_item.id,
+            expiration_date=date.today() + timedelta(days=10),
+            receipt_date=date.today(),
+            quantity_received=Decimal("10"),
+            quantity_available=Decimal("10"),
+            status=BatchStatus.ACTIVE,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+        batch.item = sample_item
+
+        with patch.object(
+            service, "_get_notification_recipients",
+            new=AsyncMock(return_value=["bad@example.com", "good@example.com"]),
+        ):
+            with patch("app.services.email_service.email_service.send_expiration_alert") as mock_send:
+                mock_send.side_effect = [Exception("SMTP failure"), None]
+
+                # Must not raise, and must still attempt the second
+                # recipient despite the first one failing.
+                await service._send_expiration_email(batch, days_left=10, severity=AlertSeverity.CRITICAL)
+
+                assert mock_send.call_count == 2
+                assert mock_send.call_args_list[0].kwargs["to"] == "bad@example.com"
+                assert mock_send.call_args_list[1].kwargs["to"] == "good@example.com"
+
     async def test_run_all_checks(self, db_session, sample_item):
         """Test running all alert checks"""
         service = AlertService(db_session)
@@ -278,7 +424,21 @@ class TestAlertService:
 
 class TestAlertsAPI:
     """Test alerts API endpoints"""
-    
+
+    @pytest.fixture
+    async def sample_item(self, db_session):
+        """Create a sample item"""
+        item = Item(
+            sku="ALERT-API-INK-001",
+            name="Alert API Test Ink",
+            supplier="Test Supplier",
+            unit_of_measure="L",
+            cost_price=Decimal("75.00"),
+        )
+        db_session.add(item)
+        await db_session.flush()
+        return item
+
     @pytest.fixture
     async def auth_token(self, client, db_session):
         """Get auth token for manager user"""
@@ -312,7 +472,7 @@ class TestAlertsAPI:
         data = response.json()
         assert data["total_unread"] == 0
     
-    async def test_list_alerts(self, client, auth_token, db_session):
+    async def test_list_alerts(self, client, auth_token, db_session, sample_item):
         """Test listing alerts"""
         # Create some alerts
         service = AlertService(db_session)
@@ -322,6 +482,7 @@ class TestAlertsAPI:
                 severity=AlertSeverity.WARNING,
                 title=f"Test Alert {i}",
                 message=f"Test message {i}",
+                item_id=sample_item.id,
             )
         await db_session.commit()
         
@@ -334,7 +495,7 @@ class TestAlertsAPI:
         data = response.json()
         assert data["total"] == 3
     
-    async def test_mark_alert_read_api(self, client, auth_token, db_session):
+    async def test_mark_alert_read_api(self, client, auth_token, db_session, sample_item):
         """Test marking alert as read via API"""
         service = AlertService(db_session)
         alert = await service.create_alert(
@@ -342,6 +503,7 @@ class TestAlertsAPI:
             severity=AlertSeverity.INFO,
             title="Test Alert",
             message="Test message",
+            item_id=sample_item.id,
         )
         await db_session.commit()
         
@@ -353,7 +515,7 @@ class TestAlertsAPI:
         assert response.status_code == 200
         assert response.json()["success"] is True
     
-    async def test_mark_all_read_api(self, client, auth_token, db_session):
+    async def test_mark_all_read_api(self, client, auth_token, db_session, sample_item):
         """Test marking all alerts as read via API"""
         service = AlertService(db_session)
         for i in range(5):
@@ -362,6 +524,7 @@ class TestAlertsAPI:
                 severity=AlertSeverity.INFO,
                 title=f"Alert {i}",
                 message=f"Message {i}",
+                item_id=sample_item.id,
             )
         await db_session.commit()
         

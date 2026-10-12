@@ -42,13 +42,14 @@ async def websocket_endpoint(
     - {"type": "ping"} - Keep-alive
     - {"type": "subscribe", "channel": "alerts"}
     """
-    # Extract user ID from token
+    # Extract user ID from token; reject connections without a valid token
+    # instead of allowing anonymous access to live inventory/alert broadcasts.
     user_id = await get_user_id_from_token(token)
-    
+
     if not user_id:
-        # If no valid token, use anonymous connection
-        user_id = f"anonymous_{id(websocket)}"
-    
+        await websocket.close(code=4401)
+        return
+
     # Connect
     await manager.connect(websocket, user_id)
     

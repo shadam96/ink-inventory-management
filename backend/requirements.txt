@@ -20,6 +20,7 @@ bcrypt==4.2.0
 
 # PDF Generation
 reportlab==4.2.2
+python-bidi==0.6.11
 
 # Excel Export
 openpyxl==3.1.5
@@ -40,6 +41,7 @@ pytest-asyncio==0.24.0
 httpx==0.27.0
 pytest-cov==5.0.0
 aiosqlite==0.20.0
+pypdf==6.11.0  # asserts on generated PDF text in test_picking.py
 
 # Development
 python-dotenv==1.0.1

@@ -10,12 +10,48 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import CurrentUser, DbSession, WarehouseUser, ManagerUser
+from app.api.deps import AccessScope, CurrentUser, DbSession, Scope, WarehouseUser, ManagerUser
+from app.api.error_handling import translate_value_error
 from app.models.delivery_note import DeliveryNote, DeliveryNoteStatus
+from app.models.user import User, UserRole
 from app.services.document_service import DocumentService
+from app.services.scoping import delivery_note_location_filter
 from app.schemas.common import PaginatedResponse
 
 router = APIRouter()
+
+
+def _assert_customer_can_view(dn: DeliveryNote, current_user: User) -> None:
+    """Raise 404 if a CUSTOMER-role user is trying to access another
+    customer's delivery note. Staff roles (admin/manager/warehouse) are
+    unrestricted. Returns 404 rather than 403 so a customer probing IDs
+    can't distinguish "not yours" from "doesn't exist"."""
+    if current_user.role != UserRole.CUSTOMER:
+        return
+    if not current_user.customer_id or dn.customer_id != current_user.customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="תעודת משלוח לא נמצאה",
+        )
+
+
+async def _assert_in_location_scope(
+    db: DbSession, delivery_note_id: UUID, scope: AccessScope
+) -> None:
+    """404 if a location-scoped staff user has no line on this delivery
+    note from one of their locations (same not-found convention as
+    _assert_customer_can_view)."""
+    location_clause = delivery_note_location_filter(scope)
+    if location_clause is None:
+        return
+    result = await db.execute(
+        select(DeliveryNote.id).where(DeliveryNote.id == delivery_note_id, location_clause)
+    )
+    if result.first() is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="תעודת משלוח לא נמצאה",
+        )
 
 
 class DeliveryNoteItemInput(BaseModel):
@@ -59,6 +95,7 @@ class UpdateStatusRequest(BaseModel):
 async def list_delivery_notes(
     db: DbSession,
     current_user: CurrentUser,
+    scope: Scope,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     customer_id: Optional[UUID] = None,
@@ -85,9 +122,17 @@ async def list_delivery_notes(
     else:
         query = query.order_by(DeliveryNote.created_at.desc())
     
-    if customer_id:
+    if current_user.role == UserRole.CUSTOMER:
+        # A customer can only ever see their own delivery notes, regardless
+        # of what customer_id they pass in.
+        query = query.where(DeliveryNote.customer_id == current_user.customer_id)
+    elif customer_id:
         query = query.where(DeliveryNote.customer_id == customer_id)
-    
+
+    location_clause = delivery_note_location_filter(scope)
+    if location_clause is not None:
+        query = query.where(location_clause)
+
     if status_filter:
         query = query.where(DeliveryNote.status == status_filter)
     
@@ -137,43 +182,39 @@ async def list_delivery_notes(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
+@translate_value_error()
 async def create_delivery_note(
     request: CreateDeliveryNoteRequest,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
 ) -> dict:
     """Create a new delivery note"""
     service = DocumentService(db)
-    
-    try:
-        items_data = [
-            {"batch_id": item.batch_id, "quantity": item.quantity}
-            for item in request.items
-        ]
-        
-        dn = await service.create_delivery_note(
-            customer_id=request.customer_id,
-            items=items_data,
-            user_id=current_user.id,
-            is_consignment=request.is_consignment,
-            notes=request.notes,
-            issue_date=request.issue_date,
-        )
-        
-        await db.commit()
-        
-        return {
-            "id": str(dn.id),
-            "delivery_note_number": dn.delivery_note_number,
-            "status": dn.status.value,
-            "items_count": len(request.items),
-        }
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+    items_data = [
+        {"batch_id": item.batch_id, "quantity": item.quantity}
+        for item in request.items
+    ]
+
+    dn = await service.create_delivery_note(
+        customer_id=request.customer_id,
+        items=items_data,
+        user_id=current_user.id,
+        is_consignment=request.is_consignment,
+        notes=request.notes,
+        issue_date=request.issue_date,
+        location_ids=scope.location_ids,
+    )
+
+    await db.commit()
+
+    return {
+        "id": str(dn.id),
+        "delivery_note_number": dn.delivery_note_number,
+        "status": dn.status.value,
+        "items_count": len(request.items),
+    }
 
 
 @router.get("/{delivery_note_id}")
@@ -181,17 +222,21 @@ async def get_delivery_note(
     delivery_note_id: UUID,
     db: DbSession,
     current_user: CurrentUser,
+    scope: Scope,
 ) -> dict:
     """Get delivery note details"""
     service = DocumentService(db)
     dn = await service.get_delivery_note_with_details(delivery_note_id)
-    
+
     if not dn:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="תעודת משלוח לא נמצאה",
         )
-    
+
+    _assert_customer_can_view(dn, current_user)
+    await _assert_in_location_scope(db, delivery_note_id, scope)
+
     items = []
     for item in dn.items:
         items.append({
@@ -226,63 +271,60 @@ async def get_delivery_note(
 
 
 @router.put("/{delivery_note_id}/status")
+@translate_value_error()
 async def update_delivery_note_status(
     delivery_note_id: UUID,
     request: UpdateStatusRequest,
     db: DbSession,
     current_user: WarehouseUser,
+    scope: Scope,
 ) -> dict:
     """Update delivery note status"""
     service = DocumentService(db)
-    
-    try:
-        dn = await service.update_delivery_note_status(
-            delivery_note_id=delivery_note_id,
-            new_status=request.status,
-        )
-        await db.commit()
-        
-        return {
-            "id": str(dn.id),
-            "delivery_note_number": dn.delivery_note_number,
-            "status": dn.status.value,
-            "issue_date": dn.issue_date.isoformat() if dn.issue_date else None,
-            "delivery_date": dn.delivery_date.isoformat() if dn.delivery_date else None,
-        }
-        
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+
+    await _assert_in_location_scope(db, delivery_note_id, scope)
+    dn = await service.update_delivery_note_status(
+        delivery_note_id=delivery_note_id,
+        new_status=request.status,
+    )
+    await db.commit()
+
+    return {
+        "id": str(dn.id),
+        "delivery_note_number": dn.delivery_note_number,
+        "status": dn.status.value,
+        "issue_date": dn.issue_date.isoformat() if dn.issue_date else None,
+        "delivery_date": dn.delivery_date.isoformat() if dn.delivery_date else None,
+    }
 
 
 @router.get("/{delivery_note_id}/pdf")
+@translate_value_error(status.HTTP_404_NOT_FOUND)
 async def get_delivery_note_pdf(
     delivery_note_id: UUID,
     db: DbSession,
     current_user: CurrentUser,
+    scope: Scope,
 ) -> Response:
     """Generate and download delivery note PDF"""
     service = DocumentService(db)
-    
-    try:
-        pdf_bytes = await service.generate_delivery_note_pdf(delivery_note_id)
-        
-        # Get DN number for filename
-        dn = await service.get_delivery_note_with_details(delivery_note_id)
-        filename = f"{dn.delivery_note_number}.pdf" if dn else "delivery_note.pdf"
-        
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f"attachment; filename={filename}"
-            }
-        )
-        
-    except ValueError as e:
+
+    dn = await service.get_delivery_note_with_details(delivery_note_id)
+    if not dn:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e),
+            detail="תעודת משלוח לא נמצאה",
         )
+    _assert_customer_can_view(dn, current_user)
+    await _assert_in_location_scope(db, delivery_note_id, scope)
+
+    pdf_bytes = await service.generate_delivery_note_pdf(delivery_note_id)
+    filename = f"{dn.delivery_note_number}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )

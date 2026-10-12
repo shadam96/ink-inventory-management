@@ -29,11 +29,35 @@ export function formatNumber(value: number, decimals = 0): string {
  */
 export function formatCurrency(
   value: number,
-  currency: 'ILS' | 'USD' | 'EUR' = 'ILS',
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY' = 'ILS',
 ): string {
   return new Intl.NumberFormat(currentIntlLocale(), {
     style: 'currency',
     currency,
+    // 'symbol' (the default) falls back to the ISO code ("TRY") for
+    // currencies most locales lack a dedicated glyph for; narrowSymbol
+    // renders the actual ₺ character everywhere while leaving other
+    // currencies (₪, $, €) unchanged.
+    currencyDisplay: 'narrowSymbol',
+  }).format(value)
+}
+
+/**
+ * Currency amount without cents, for headline figures and chart labels.
+ * `compact` abbreviates large amounts (₪78.5K) where space is tight.
+ */
+export function formatCurrencyShort(
+  value: number,
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY' = 'ILS',
+  { compact = false }: { compact?: boolean } = {},
+): string {
+  return new Intl.NumberFormat(currentIntlLocale(), {
+    style: 'currency',
+    currency,
+    currencyDisplay: 'narrowSymbol',
+    notation: compact ? 'compact' : 'standard',
+    maximumFractionDigits: compact && Math.abs(value) >= 1000 ? 1 : 0,
+    minimumFractionDigits: 0,
   }).format(value)
 }
 
@@ -42,6 +66,8 @@ export interface FxRates {
   usd_to_ils: number
   /** Price of 1 EUR in ILS. */
   eur_to_ils: number
+  /** Price of 1 Turkish Lira in ILS. */
+  try_to_ils: number
 }
 
 /**
@@ -50,14 +76,15 @@ export interface FxRates {
  * the chosen display currency. Missing buckets are treated as zero.
  */
 export function convertToDisplayCurrency(
-  amounts: Partial<Record<'ILS' | 'USD' | 'EUR', number>>,
-  displayCurrency: 'ILS' | 'USD' | 'EUR',
+  amounts: Partial<Record<'ILS' | 'USD' | 'EUR' | 'TRY', number>>,
+  displayCurrency: 'ILS' | 'USD' | 'EUR' | 'TRY',
   rates: FxRates,
 ): number {
   const inIls =
     (amounts.ILS ?? 0) +
     (amounts.USD ?? 0) * rates.usd_to_ils +
-    (amounts.EUR ?? 0) * rates.eur_to_ils
+    (amounts.EUR ?? 0) * rates.eur_to_ils +
+    (amounts.TRY ?? 0) * rates.try_to_ils
 
   switch (displayCurrency) {
     case 'ILS':
@@ -66,14 +93,16 @@ export function convertToDisplayCurrency(
       return inIls / rates.usd_to_ils
     case 'EUR':
       return inIls / rates.eur_to_ils
+    case 'TRY':
+      return inIls / rates.try_to_ils
   }
 }
 
 /** Convert a single amount from one currency to another via ILS-anchored rates. */
 export function convertAmount(
   amount: number,
-  from: 'ILS' | 'USD' | 'EUR',
-  to: 'ILS' | 'USD' | 'EUR',
+  from: 'ILS' | 'USD' | 'EUR' | 'TRY',
+  to: 'ILS' | 'USD' | 'EUR' | 'TRY',
   rates: FxRates,
 ): number {
   if (from === to) return amount
@@ -85,6 +114,7 @@ export function convertAmount(
  */
 export function formatDate(date: Date | string): string {
   const d = typeof date === 'string' ? new Date(date) : date
+  if (Number.isNaN(d.getTime())) return '-'
   return new Intl.DateTimeFormat(currentIntlLocale(), {
     day: '2-digit',
     month: '2-digit',
@@ -96,12 +126,26 @@ export function formatDate(date: Date | string): string {
  * Calculate days until expiration
  */
 export function daysUntilExpiration(expirationDate: Date | string): number {
-  const exp = typeof expirationDate === 'string' ? new Date(expirationDate) : expirationDate
+  // A bare "YYYY-MM-DD" string (what date-only inputs and the backend's
+  // `date` fields produce) is parsed by `new Date(string)` as UTC midnight,
+  // then setHours below would re-zero it in the browser's LOCAL timezone -
+  // shifting the calendar day back by one for any negative UTC offset.
+  // Parsing the components directly constructs a local-midnight Date
+  // instead, so the day never shifts regardless of timezone.
+  const dateOnlyMatch =
+    typeof expirationDate === 'string' ? expirationDate.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null
+  const exp = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : typeof expirationDate === 'string'
+      ? new Date(expirationDate)
+      : expirationDate
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   exp.setHours(0, 0, 0, 0)
   const diff = exp.getTime() - today.getTime()
-  return Math.ceil(diff / (1000 * 60 * 60 * 24))
+  // Round, not ceil: across a DST transition the span between two local
+  // midnights is a whole number of days +/- one hour.
+  return Math.round(diff / (1000 * 60 * 60 * 24))
 }
 
 /**
@@ -119,5 +163,72 @@ export function getExpirationStatus(days: number): 'safe' | 'warning' | 'critica
  */
 export function generateId(): string {
   return Math.random().toString(36).substring(2, 15)
+}
+
+/**
+ * Decode a base64-encoded PDF into a Blob URL - avoids a bare `window.open`
+ * on an authenticated API response, and doesn't require a second
+ * round-trip to a download endpoint.
+ */
+function pdfBlobUrl(base64: string): string {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
+}
+
+/**
+ * Decode a base64-encoded PDF and open it in a new tab.
+ */
+export function openPdfInNewTab(base64: string): void {
+  const url = pdfBlobUrl(base64)
+  window.open(url, '_blank')
+  // Revoke after a delay rather than immediately - the new tab needs time
+  // to actually load the blob URL before it's invalidated.
+  setTimeout(() => URL.revokeObjectURL(url), 30_000)
+}
+
+let printFrame: { element: HTMLIFrameElement; url: string } | null = null
+
+/**
+ * Decode a base64-encoded PDF and open the browser's print dialog for it.
+ *
+ * Desktop Chromium (Chrome, Edge) prints a PDF loaded into a hidden iframe.
+ * Phones and Safari print a blank page or the host page that way, so they
+ * get the PDF in a tab of its own instead, where the system print/share
+ * sheet takes over.
+ */
+export function printPdf(base64: string): void {
+  const userAgent = navigator.userAgent
+  if (!/Chrome\//.test(userAgent) || /Android|Mobile/.test(userAgent)) {
+    openPdfInNewTab(base64)
+    return
+  }
+
+  // The previous frame is only dropped now, not after printing: removing
+  // it while its print dialog is still open cancels the print.
+  if (printFrame) {
+    printFrame.element.remove()
+    URL.revokeObjectURL(printFrame.url)
+  }
+
+  const url = pdfBlobUrl(base64)
+  const frame = document.createElement('iframe')
+  // Hidden but not display:none - Chrome doesn't load the PDF into an
+  // undisplayed frame, leaving nothing to print.
+  frame.style.cssText = 'position:fixed;width:0;height:0;border:0;visibility:hidden'
+  frame.onload = () => {
+    try {
+      frame.contentWindow?.focus()
+      frame.contentWindow?.print()
+    } catch {
+      window.open(url, '_blank')
+    }
+  }
+  frame.src = url
+  document.body.appendChild(frame)
+  printFrame = { element: frame, url }
 }
 

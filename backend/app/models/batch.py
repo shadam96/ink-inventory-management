@@ -15,6 +15,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -48,8 +49,15 @@ class Batch(BaseModel):
             "quantity_available >= 0",
             name="check_quantity_non_negative"
         ),
+        CheckConstraint(
+            "quantity_received >= 0",
+            name="check_quantity_received_non_negative"
+        ),
         Index("ix_batches_expiration_status", "expiration_date", "status"),
         Index("ix_batches_item_status", "item_id", "status"),
+        # One batch per lot per receipt day - a later delivery of the same
+        # lot is a batch (row) of its own.
+        UniqueConstraint("batch_number", "receipt_date", name="uq_batches_batch_number_receipt_date"),
     )
     
     # Foreign keys
@@ -69,7 +77,6 @@ class Batch(BaseModel):
     # Batch identification
     batch_number: Mapped[str] = mapped_column(
         String(50),
-        unique=True,
         index=True,
         nullable=False
     )

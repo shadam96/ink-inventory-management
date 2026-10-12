@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { QuantityInput } from '@/components/ui/quantity-input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
@@ -41,8 +42,9 @@ const itemSchema = z.object({
   description: z.string().optional(),
   supplier: z.string().min(1, 'items.supplierRequired'),
   unit_of_measure: z.string().min(1, 'items.unitRequired'),
+  color: z.enum(['cyan', 'magenta', 'yellow', 'black', 'white', 'other']),
   cost_price: z.number().min(0, 'items.costPriceInvalid'),
-  currency: z.enum(['ILS', 'USD', 'EUR']),
+  currency: z.enum(['ILS', 'USD', 'EUR', 'TRY']),
   reorder_point: z.number().int('items.reorderPointInvalid').min(0).optional(),
   min_stock: z.number().int('items.minStockInvalid').min(0).optional(),
   max_stock: z.number().int('items.maxStockInvalid').min(0).optional(),
@@ -74,7 +76,9 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
       ? {
           ...item,
           barcode: item.barcode || '',
+          cost_price: item.cost_price ?? 0,
           currency: item.currency || defaultCurrency,
+          color: item.color || 'other',
         }
       : {
           sku: '',
@@ -82,7 +86,8 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           name: '',
           description: '',
           supplier: '',
-          unit_of_measure: t('items.unitDefault'),
+          unit_of_measure: '',
+          color: 'other',
           cost_price: 0,
           currency: defaultCurrency,
           reorder_point: 10,
@@ -96,7 +101,9 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
       reset({
         ...item,
         barcode: item.barcode || '',
+        cost_price: item.cost_price ?? 0,
         currency: item.currency || defaultCurrency,
+        color: item.color || 'other',
       })
     } else {
       reset({
@@ -105,7 +112,8 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         name: '',
         description: '',
         supplier: '',
-        unit_of_measure: t('items.unitDefault'),
+        unit_of_measure: '',
+        color: 'other',
         cost_price: 0,
         currency: defaultCurrency,
         reorder_point: 10,
@@ -126,6 +134,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
         description: data.description,
         supplier: data.supplier,
         unit_of_measure: data.unit_of_measure,
+        color: data.color,
         cost_price: data.cost_price,
         currency: data.currency,
         reorder_point: data.reorder_point,
@@ -141,9 +150,18 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
     }
   }
 
+  // Block Escape/overlay-click dismissal while a save is in flight -
+  // without this, closing mid-submit and reopening for a different item
+  // could let this request's success callback (above) reset/close the
+  // new, unrelated dialog instance once it eventually resolves.
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (isSubmitting) return
+    onOpenChange(nextOpen)
+  }
+
   return (
     <TooltipProvider>
-      <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
@@ -225,16 +243,38 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
             </div>
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="color">{t('items.color')}</Label>
+            <Controller
+              name="color"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger id="color">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cyan">{t('items.colorCyan')}</SelectItem>
+                    <SelectItem value="magenta">{t('items.colorMagenta')}</SelectItem>
+                    <SelectItem value="yellow">{t('items.colorYellow')}</SelectItem>
+                    <SelectItem value="black">{t('items.colorBlack')}</SelectItem>
+                    <SelectItem value="white">{t('items.colorWhite')}</SelectItem>
+                    <SelectItem value="other">{t('items.colorOther')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="cost_price">{t('items.costPrice')} *</Label>
               <div className="flex gap-2">
-                <Input
+                <QuantityInput
                   id="cost_price"
-                  type="number"
-                  step="0.01"
-                  min={0}
                   {...register('cost_price', { valueAsNumber: true })}
+                  step={0.01}
+                  min={0}
                   placeholder="0.00"
                   className="flex-1"
                 />
@@ -253,6 +293,7 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                         <SelectItem value="ILS">{t('currency.ils')}</SelectItem>
                         <SelectItem value="USD">{t('currency.usd')}</SelectItem>
                         <SelectItem value="EUR">{t('currency.eur')}</SelectItem>
+                        <SelectItem value="TRY">{t('currency.try')}</SelectItem>
                       </SelectContent>
                     </Select>
                   )}
@@ -277,13 +318,13 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <Input
+              <QuantityInput
                 id="reorder_point"
-                type="number"
-                step="1"
-                min={0}
-                inputMode="numeric"
                 {...register('reorder_point', { valueAsNumber: true })}
+                step={1}
+                min={0}
+                unit={t('common.liter')}
+                inputMode="numeric"
                 placeholder="10"
               />
             </div>
@@ -292,26 +333,26 @@ export function ItemDialog({ open, onOpenChange, item, onSubmit }: ItemDialogPro
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="min_stock">{t('items.minStock')}</Label>
-              <Input
+              <QuantityInput
                 id="min_stock"
-                type="number"
-                step="1"
-                min={0}
-                inputMode="numeric"
                 {...register('min_stock', { valueAsNumber: true })}
+                step={1}
+                min={0}
+                unit={t('common.liter')}
+                inputMode="numeric"
                 placeholder="5"
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="max_stock">{t('items.maxStock')}</Label>
-              <Input
+              <QuantityInput
                 id="max_stock"
-                type="number"
-                step="1"
-                min={0}
-                inputMode="numeric"
                 {...register('max_stock', { valueAsNumber: true })}
+                step={1}
+                min={0}
+                unit={t('common.liter')}
+                inputMode="numeric"
                 placeholder="100"
               />
             </div>

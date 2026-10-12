@@ -1,11 +1,11 @@
 """Authentication endpoints"""
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import CurrentUser, DbSession
+from app.api.deps import AdminUser, CurrentUser, DbSession
 from app.core.config import settings
 from app.core.security import (
     create_access_token,
@@ -25,6 +25,13 @@ from app.schemas.user import (
 
 router = APIRouter()
 
+# /auth/login lockout: after this many consecutive failed attempts, the
+# account is locked for this many minutes. Defends against unlimited
+# online password guessing (the endpoint previously had no throttling
+# at all).
+LOGIN_MAX_FAILED_ATTEMPTS = 5
+LOGIN_LOCKOUT_MINUTES = 15
+
 
 @router.post("/login", response_model=Token)
 async def login(
@@ -37,20 +44,37 @@ async def login(
         select(User).where(User.username == credentials.username)
     )
     user = result.scalar_one_or_none()
-    
+
+    now = datetime.now(timezone.utc)
+    if user is not None and user.locked_until is not None and user.locked_until > now:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="יותר מדי ניסיונות התחברות כושלים. נסה שוב מאוחר יותר",  # Too many failed login attempts, try again later
+        )
+
     if user is None or not verify_password(credentials.password, user.hashed_password):
+        if user is not None:
+            user.failed_login_attempts += 1
+            if user.failed_login_attempts >= LOGIN_MAX_FAILED_ATTEMPTS:
+                user.locked_until = now + timedelta(minutes=LOGIN_LOCKOUT_MINUTES)
+            await db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="שם משתמש או סיסמה שגויים",  # Invalid username or password
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="משתמש לא פעיל",  # User is inactive
         )
-    
+
+    # Successful login - clear any prior lockout state.
+    user.failed_login_attempts = 0
+    user.locked_until = None
+    await db.commit()
+
     # Create tokens
     access_token = create_access_token(
         subject=user.id,
@@ -111,15 +135,19 @@ async def get_current_user_info(
     current_user: CurrentUser,
 ) -> UserResponse:
     """Get current authenticated user information"""
-    return UserResponse.model_validate(current_user)
+    response = UserResponse.model_validate(current_user)
+    response.location_ids = [loc.id for loc in current_user.locations]
+    return response
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: UserCreate,
     db: DbSession,
+    admin: AdminUser,
 ) -> UserResponse:
-    """Register a new user (for initial setup - should be protected in production)"""
+    """Create a new user. Admin-only: the initial admin account is created via
+    create_admin.py, not this endpoint."""
     # Check if username exists
     result = await db.execute(
         select(User).where(User.username == user_data.username)

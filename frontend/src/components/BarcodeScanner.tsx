@@ -19,6 +19,35 @@ interface BarcodeScannerProps {
 
 const SCANNER_ID = 'barcode-scanner-viewport'
 
+// A fixed 280x180 qrbox can be wider than the actual camera viewfinder on
+// narrow phones (html5-qrcode reports the *rendered* viewfinder size here,
+// which is already letterboxed to the container) - scale down to fit while
+// keeping the same ~280:180 (wide, good for 1D barcodes) proportions, and
+// cap the size so it doesn't balloon on a large desktop webcam preview.
+function responsiveQrbox(viewfinderWidth: number, viewfinderHeight: number) {
+  const minEdge = Math.min(viewfinderWidth, viewfinderHeight)
+  const width = Math.round(Math.min(320, minEdge * 0.85))
+  const height = Math.round(width * (180 / 280))
+  return { width, height }
+}
+
+/** Distinguish getUserMedia failure modes so the on-screen message is
+ * actually actionable instead of one generic "can't access camera" for
+ * every case - "permission denied" needs different instructions (re-enable
+ * in browser/site settings) than "no camera found" or "camera in use by
+ * another app," and iOS/Android surface these differently enough that a
+ * single message left users guessing. */
+function classifyCameraError(err: unknown): 'denied' | 'notfound' | 'inuse' | 'unknown' {
+  const name = (err as { name?: string })?.name ?? ''
+  const message = String((err as { message?: string })?.message ?? err ?? '')
+  const haystack = `${name} ${message}`
+
+  if (/NotAllowedError|PermissionDenied|Permission denied/i.test(haystack)) return 'denied'
+  if (/NotFoundError|DevicesNotFound|no camera/i.test(haystack)) return 'notfound'
+  if (/NotReadableError|TrackStartError|in use/i.test(haystack)) return 'inuse'
+  return 'unknown'
+}
+
 export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerProps) {
   const { t } = useTranslation()
   const scannerRef = useRef<Html5Qrcode | null>(null)
@@ -29,6 +58,20 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
   const processingRef = useRef(false)
   const audioCtxRef = useRef<AudioContext | null>(null)
   const mountedRef = useRef(true)
+
+  // Callers (PickingPage/ReceivingPage) pass fresh inline onScan/onClose
+  // functions on every render. Keeping the latest callback in a ref - and
+  // depending only on facingMode below - means an unrelated parent
+  // re-render while the scanner is open no longer tears down and
+  // restarts the camera.
+  const onScanRef = useRef(onScan)
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onScanRef.current = onScan
+  }, [onScan])
+  useEffect(() => {
+    onCloseRef.current = onClose
+  }, [onClose])
 
   // Prepare AudioContext
   useEffect(() => {
@@ -55,8 +98,11 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
           { facingMode },
           {
             fps: 10,
-            qrbox: { width: 280, height: 180 },
-            aspectRatio: 1.0,
+            qrbox: responsiveQrbox,
+            // No forced aspectRatio: phone rear cameras stream at their own
+            // native ratio (typically 4:3 or 16:9), and forcing 1:1 here
+            // made the library crop/zoom the feed aggressively on mobile,
+            // making it harder to fit a wide 1D barcode in frame.
             disableFlip: false,
           },
           (decodedText, decodedResult) => {
@@ -98,12 +144,12 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
 
             setStatusMessage({ text: t('scanner.scanning', { code }), type: 'success' })
 
-            Promise.resolve(onScan({ code, format }))
+            Promise.resolve(onScanRef.current({ code, format }))
               .then((shouldClose) => {
                 if (!mountedRef.current) return
                 if (shouldClose) {
                   setStatusMessage({ text: `✓ ${code}`, type: 'success' })
-                  setTimeout(() => { if (mountedRef.current) onClose() }, 600)
+                  setTimeout(() => { if (mountedRef.current) onCloseRef.current() }, 600)
                 } else {
                   setStatusMessage({ text: t('scanner.notFound', { code }), type: 'error' })
                   setTimeout(() => {
@@ -128,10 +174,32 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
             // QR/barcode not detected in this frame — ignore
           }
         )
+
+        // scanner.start() resolves much slower on real mobile camera
+        // hardware than on a desktop webcam, so an unmount (closing the
+        // scanner, or the user backing out) frequently lands while this
+        // promise is still pending. The cleanup below already ran by then
+        // and saw isScanning === false, so it skipped stop() - without
+        // this check the camera stream leaks and keeps running in the
+        // background, blocking every future scanner.start() (including a
+        // fresh instance) from acquiring the camera until the page is
+        // fully reloaded.
+        if (!mountedRef.current) {
+          scanner.stop().catch(() => {})
+        }
       } catch (err) {
         console.error('Scanner start error:', err)
         if (mountedRef.current) {
-          setError(t('scanner.cameraError'))
+          const kind = classifyCameraError(err)
+          setError(
+            kind === 'denied'
+              ? t('scanner.cameraDenied')
+              : kind === 'notfound'
+                ? t('scanner.cameraNotFound')
+                : kind === 'inuse'
+                  ? t('scanner.cameraInUse')
+                  : t('scanner.cameraError')
+          )
         }
       }
     }
@@ -144,10 +212,12 @@ export function BarcodeScanner({ onScan, onClose, className }: BarcodeScannerPro
         scanner.stop().catch(() => {})
       }
     }
-    // Intentional: re-run only on facing mode change. Adding `t` would
-    // restart the camera on every language change.
+    // Intentional: re-run only on facing mode change. onScan/onClose are
+    // read from refs (see above) so an unmemoized callback from the
+    // parent doesn't restart the camera, and adding `t` would restart it
+    // on every language change too.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [facingMode, onScan, onClose])
+  }, [facingMode])
 
   const switchCamera = async () => {
     try {

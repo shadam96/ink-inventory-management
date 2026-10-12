@@ -12,6 +12,7 @@ from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.user import User
+from app.services.expiration_classifier import classify_expiration
 
 
 class InventoryService:
@@ -37,25 +38,18 @@ class InventoryService:
         total_quantity = sum(b.quantity_available for b in active_batches)
         total_value = total_quantity * item.cost_price
         
-        # Categorize by expiration
+        # Categorize by expiration, using the same 30/60/90-day boundaries
+        # as fefo_engine.py and dashboard_service.py. Already-expired
+        # batches (classify_expiration -> "expired") are intentionally
+        # excluded from all four buckets here, matching this method's
+        # existing (pre-refactor) behavior.
         today = date.today()
-        expiring_30 = sum(
-            b.quantity_available for b in active_batches
-            if 0 <= (b.expiration_date - today).days <= 30
-        )
-        expiring_60 = sum(
-            b.quantity_available for b in active_batches
-            if 30 < (b.expiration_date - today).days <= 60
-        )
-        expiring_90 = sum(
-            b.quantity_available for b in active_batches
-            if 60 < (b.expiration_date - today).days <= 90
-        )
-        safe = sum(
-            b.quantity_available for b in active_batches
-            if (b.expiration_date - today).days > 90
-        )
-        
+        breakdown = {"critical": Decimal("0"), "warning": Decimal("0"), "caution": Decimal("0"), "safe": Decimal("0")}
+        for b in active_batches:
+            level = classify_expiration((b.expiration_date - today).days)
+            if level in breakdown:
+                breakdown[level] += b.quantity_available
+
         return {
             "item_id": item.id,
             "sku": item.sku,
@@ -66,10 +60,10 @@ class InventoryService:
             "batches_count": len(active_batches),
             "is_below_reorder": total_quantity < item.reorder_point,
             "expiration_breakdown": {
-                "critical_30_days": expiring_30,
-                "warning_60_days": expiring_60,
-                "caution_90_days": expiring_90,
-                "safe": safe,
+                "critical_30_days": breakdown["critical"],
+                "warning_60_days": breakdown["warning"],
+                "caution_90_days": breakdown["caution"],
+                "safe": breakdown["safe"],
             }
         }
     
@@ -91,9 +85,23 @@ class InventoryService:
         
         if not batch:
             raise ValueError(f"אצווה {batch_id} לא נמצאה")  # Batch not found
-        
+
+        # ADJUSTMENT is the only movement type allowed to carry a negative
+        # (or zero) quantity - it represents a signed delta from a physical
+        # count. Every other type represents a physical quantity of stock
+        # moving in one direction, so a non-positive value here is always
+        # invalid: a negative DISPATCH/CONSUMPTION/SCRAP would otherwise
+        # *increase* quantity_available (quantity_before - negative), while
+        # the stored Movement.quantity uses abs(quantity), masking the sign
+        # inversion from the audit trail. This is a defense-in-depth check;
+        # the HTTP layer (Pydantic Field(gt=0)) already guards this for
+        # requests that go through the picking/receiving endpoints, but
+        # this service function can also be called directly.
+        if movement_type != MovementType.ADJUSTMENT and quantity <= 0:
+            raise ValueError("כמות חייבת להיות חיובית")  # Quantity must be positive
+
         quantity_before = batch.quantity_available
-        
+
         # Calculate new quantity based on movement type
         if movement_type in (MovementType.RECEIPT,):
             quantity_after = quantity_before + quantity
@@ -145,14 +153,21 @@ class InventoryService:
         reason: str,
     ) -> Movement:
         """Adjust batch quantity (e.g., after physical count)"""
+        # Lock the row here (not just inside record_movement) so the delta
+        # below is computed from the same value record_movement will see.
+        # Without this lock, a concurrent movement on this batch between
+        # this read and record_movement's own locked re-read could change
+        # quantity_available in between, and record_movement would apply
+        # this stale delta on top of the *new* value - producing a final
+        # quantity that doesn't match the caller's intended new_quantity.
         result = await self.db.execute(
-            select(Batch).where(Batch.id == batch_id)
+            select(Batch).where(Batch.id == batch_id).with_for_update()
         )
         batch = result.scalar_one_or_none()
-        
+
         if not batch:
             raise ValueError(f"אצווה {batch_id} לא נמצאה")
-        
+
         adjustment = new_quantity - batch.quantity_available
         
         return await self.record_movement(
@@ -171,8 +186,14 @@ class InventoryService:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         limit: int = 100,
+        location_ids: Optional[List[UUID]] = None,
     ) -> List[Movement]:
-        """Get movement history with filters"""
+        """Get movement history with filters.
+
+        location_ids restricts to movements whose batch currently sits at
+        one of those locations (used for staff location-scoping) - None
+        means unrestricted.
+        """
         query = (
             select(Movement)
             .options(
@@ -181,24 +202,32 @@ class InventoryService:
             )
             .order_by(Movement.timestamp.desc())
         )
-        
+
+        joined_batch = False
+
         if batch_id:
             query = query.where(Movement.batch_id == batch_id)
-        
+
         if item_id:
             query = query.join(Batch).where(Batch.item_id == item_id)
-        
+            joined_batch = True
+
+        if location_ids is not None:
+            if not joined_batch:
+                query = query.join(Batch)
+            query = query.where(Batch.location_id.in_(location_ids))
+
         if movement_type:
             query = query.where(Movement.movement_type == movement_type)
-        
+
         if start_date:
             query = query.where(func.date(Movement.timestamp) >= start_date)
-        
+
         if end_date:
             query = query.where(func.date(Movement.timestamp) <= end_date)
-        
+
         query = query.limit(limit)
-        
+
         result = await self.db.execute(query)
         return list(result.scalars().all())
     

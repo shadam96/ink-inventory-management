@@ -1,18 +1,21 @@
 """User model for authentication and authorization"""
 import enum
+from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+from app.models.user_location import user_locations
 
 if TYPE_CHECKING:
     from app.models.customer import Customer
     from app.models.movement import Movement
     from app.models.delivery_note import DeliveryNote
+    from app.models.location import Location
 
 
 class UserRole(str, enum.Enum):
@@ -77,6 +80,20 @@ class User(BaseModel):
         default=None,
         index=True
     )
+    # Login lockout - defends /auth/login against unlimited password
+    # guessing. failed_login_attempts resets to 0 on any successful login;
+    # locked_until is set once the threshold is hit and cleared on success.
+    failed_login_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    locked_until: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        default=None,
+    )
 
     # Relationships
     customer: Mapped[Optional["Customer"]] = relationship(
@@ -91,6 +108,12 @@ class User(BaseModel):
     delivery_notes: Mapped[List["DeliveryNote"]] = relationship(
         "DeliveryNote",
         back_populates="created_by_user",
+        lazy="selectin"
+    )
+    locations: Mapped[List["Location"]] = relationship(
+        "Location",
+        secondary=user_locations,
+        back_populates="assigned_users",
         lazy="selectin"
     )
 
@@ -108,6 +131,17 @@ class User(BaseModel):
     @property
     def is_customer(self) -> bool:
         return self.role == UserRole.CUSTOMER
+
+    @property
+    def notification_recipients(self) -> List[str]:
+        """Addresses to email this user at: the comma-separated
+        notification_email list, or the login email when none is set."""
+        addresses = [
+            address.strip()
+            for address in (self.notification_email or "").split(",")
+            if address.strip()
+        ]
+        return addresses or [self.email]
 
     @property
     def can_modify_inventory(self) -> bool:

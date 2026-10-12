@@ -4,7 +4,6 @@ import { useUIStore } from '@/store/ui'
 import { cn } from '@/lib/utils'
 import { MobileNav } from '@/components/MobileNav'
 import { OfflineIndicator } from '@/components/OfflineIndicator'
-import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
 
 export function AppLayout() {
   const { sidebarOpen } = useUIStore()
@@ -39,9 +38,6 @@ export function AppLayout() {
 
       {/* Mobile bottom navigation */}
       <MobileNav />
-
-      {/* PWA Install Prompt */}
-      <PWAInstallPrompt />
 
       {/* Mobile offline indicator */}
       <div className="md:hidden">

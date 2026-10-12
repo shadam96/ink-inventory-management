@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,6 +16,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { QuantityInput } from '@/components/ui/quantity-input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,7 +25,9 @@ import { Header } from '@/components/layout/Header'
 import { BarcodeScanner, type ScanResult } from '@/components/BarcodeScanner'
 import { PostPickDialog } from '@/components/PostPickDialog'
 import { formatDate, daysUntilExpiration, getExpirationStatus, cn } from '@/lib/utils'
-import { itemsApi, customersApi, pickingApi, receivingApi, type Item } from '@/lib/api'
+import { customersApi, pickingApi, receivingApi, type Item } from '@/lib/api'
+import { fetchAllItems } from '@/lib/fetchAllItems'
+import { getApiErrorMessage } from '@/lib/apiError'
 import { addPendingOperation, isOnline } from '@/lib/offline'
 import { useAuthStore } from '@/store/auth'
 
@@ -134,12 +137,12 @@ function AdminPickingView() {
 
   async function fetchItems() {
     try {
-      const response = await itemsApi.list({ page_size: 100 })
       // Surface every item so the operator can see what exists; out-of-stock
       // ones are rendered as disabled options below to make the reason visible.
-      setItems(response.items)
+      setItems(await fetchAllItems())
     } catch (error) {
       console.error('Failed to fetch items:', error)
+      toast.error(t('picking.fetchItemsError'))
     }
   }
 
@@ -149,27 +152,41 @@ function AdminPickingView() {
       setCustomers(response.items || [])
     } catch (error) {
       console.error('Failed to fetch customers:', error)
+      toast.error(t('picking.fetchCustomersError'))
     }
   }
 
+  // Sequence guard: fetchSuggestions fires on every keystroke of
+  // requestedQuantity with no request cancellation, so a slower response
+  // for an earlier-typed quantity could otherwise arrive after and
+  // overwrite state set by a faster response to a later-typed quantity.
+  // Only the response matching the most recently issued request is
+  // applied.
+  const suggestionsRequestIdRef = useRef(0)
+
   async function fetchSuggestions() {
     if (!selectedItemId) return
+    const requestId = ++suggestionsRequestIdRef.current
     setLoading(true)
     try {
       const qty = requestedQuantity || 0
       const response = await pickingApi.suggestBatches(selectedItemId, qty)
+      if (requestId !== suggestionsRequestIdRef.current) return
       setSuggestions(response.suggestions || [])
       setFifoSuggestions(response.fifo_suggestions || [])
       setLifoSuggestions(response.lifo_suggestions || [])
       setTotalAvailable(response.total_available ?? 0)
       setCanFulfill(response.can_fulfill ?? true)
     } catch (error) {
+      if (requestId !== suggestionsRequestIdRef.current) return
       console.error('Failed to fetch suggestions:', error)
       setSuggestions([])
       setFifoSuggestions([])
       setLifoSuggestions([])
     } finally {
-      setLoading(false)
+      if (requestId === suggestionsRequestIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 
@@ -236,7 +253,10 @@ function AdminPickingView() {
       }
 
       if (!isOnline()) {
-        await addPendingOperation('pick', '/api/v1/picking/dispatch', 'POST', payload)
+        // Relative to api's baseURL (which already includes /api/v1) - see
+        // pickingApi.dispatch in lib/api.ts. Prefixing /api/v1 here would
+        // double it and 404 every replay attempt.
+        await addPendingOperation('pick', '/picking/dispatch', 'POST', payload)
         toast.info(t('picking.offlineQueued'))
         reset()
         setSuggestions([])
@@ -251,7 +271,7 @@ function AdminPickingView() {
       setSelectedBatchId(null)
       setPostPickRef(response.reference_number)
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || t('picking.dispatchError'))
+      toast.error(getApiErrorMessage(error, t('picking.dispatchError')))
     } finally {
       setSubmitting(false)
     }
@@ -262,6 +282,9 @@ function AdminPickingView() {
     activeStrategy === 'lifo' ? lifoSuggestions :
     suggestions
 
+  const dispatchDisabled =
+    !canFulfill || submitting || activeSuggestions.length === 0 || !canSelectCustomer
+
   return (
     <>
       {showScanner && (
@@ -271,7 +294,7 @@ function AdminPickingView() {
         />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pb-20 md:pb-0">
         <Card>
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2">
@@ -280,7 +303,7 @@ function AdminPickingView() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit(handleDispatch)} className="space-y-4">
+            <form id="admin-pick-form" onSubmit={handleSubmit(handleDispatch)} className="space-y-4">
               <Button
                 type="button"
                 variant="outline"
@@ -300,7 +323,7 @@ function AdminPickingView() {
                 >
                   <option value="">{t('picking.selectItemPlaceholder')}</option>
                   {items.map((item) => {
-                    const isOOS = (item.total_quantity_available ?? 0) <= 0
+                    const isOOS = (item.total_quantity_available ?? 0) <= (item.min_stock ?? 0)
                     return (
                       <option key={item.id} value={item.id} disabled={isOOS}>
                         {item.sku} - {item.name}
@@ -328,14 +351,14 @@ function AdminPickingView() {
 
               <div className="space-y-2">
                 <Label htmlFor="quantity">{t('picking.quantity')} *</Label>
-                <Input
+                <QuantityInput
                   id="quantity"
-                  type="number"
-                  step="1"
+                  {...register('quantity', { valueAsNumber: true })}
+                  step={1}
                   min={1}
+                  unit={t('common.liter')}
                   inputMode="numeric"
                   disabled={!itemInStock}
-                  {...register('quantity', { valueAsNumber: true })}
                   placeholder="0"
                 />
                 {errors.quantity && (
@@ -387,15 +410,13 @@ function AdminPickingView() {
                 />
               </div>
 
+              {/* Desktop only here - the mobile equivalent is the sticky
+                  bar below, reachable without scrolling past the
+                  suggestions panel that follows this form. */}
               <Button
                 type="submit"
-                className="w-full touch-manipulation"
-                disabled={
-                  !canFulfill ||
-                  submitting ||
-                  activeSuggestions.length === 0 ||
-                  !canSelectCustomer
-                }
+                className="hidden md:inline-flex w-full touch-manipulation"
+                disabled={dispatchDisabled}
               >
                 {submitting ? (
                   <>
@@ -466,6 +487,31 @@ function AdminPickingView() {
         </Card>
       </div>
 
+      {/* Mobile sticky action bar: reachable without scrolling past the
+          suggestions panel, sitting just above the bottom tab bar (which
+          AppLayout reserves pb-20 of space for on <main>). Submits the
+          form above via the form= attribute rather than nesting. */}
+      <div className="md:hidden fixed inset-x-0 bottom-20 z-30 px-4 py-3 bg-background/95 backdrop-blur-sm border-t safe-area-bottom">
+        <Button
+          type="submit"
+          form="admin-pick-form"
+          className="w-full touch-manipulation"
+          disabled={dispatchDisabled}
+        >
+          {submitting ? (
+            <>
+              <Loader2 className="w-4 h-4 me-2 animate-spin" />
+              {t('picking.picking')}
+            </>
+          ) : (
+            <>
+              <PackageMinus className="w-4 h-4 me-2" />
+              {t('picking.pick')}
+            </>
+          )}
+        </Button>
+      </div>
+
       <PostPickDialog
         open={postPickRef !== null}
         onOpenChange={(open) => {
@@ -518,25 +564,34 @@ function CustomerPickingView() {
 
   async function fetchItems() {
     try {
-      const response = await itemsApi.list({ page_size: 100 })
-      setItems(response.items)
+      setItems(await fetchAllItems())
     } catch (error) {
       console.error('Failed to fetch items:', error)
+      toast.error(t('picking.fetchItemsError'))
     }
   }
 
+  // Sequence guard - see the matching comment in AdminPickingView's
+  // fetchSuggestions above.
+  const suggestionsRequestIdRef = useRef(0)
+
   async function fetchSuggestions() {
     if (!selectedItemId) return
+    const requestId = ++suggestionsRequestIdRef.current
     setLoading(true)
     try {
       const qty = requestedQuantity || 0
       const response = await pickingApi.suggestBatches(selectedItemId, qty)
+      if (requestId !== suggestionsRequestIdRef.current) return
       setSuggestions(response.suggestions || [])
     } catch (error: any) {
+      if (requestId !== suggestionsRequestIdRef.current) return
       console.error('Failed to fetch suggestions:', error)
       setSuggestions([])
     } finally {
-      setLoading(false)
+      if (requestId === suggestionsRequestIdRef.current) {
+        setLoading(false)
+      }
     }
   }
 
@@ -569,7 +624,7 @@ function CustomerPickingView() {
       setRecommendationIndex(0)
       setShowAllBatches(false)
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || t('picking.consumptionError'))
+      toast.error(getApiErrorMessage(error, t('picking.consumptionError')))
     } finally {
       setSubmitting(false)
     }
@@ -625,6 +680,8 @@ function CustomerPickingView() {
               >
                 <option value="">{t('picking.selectItemPlaceholder')}</option>
                 {items.map((item) => {
+                  // A customer's count is only their own delivered stock, so the
+                  // warehouse's min_stock floor doesn't apply here.
                   const isOOS = (item.total_quantity_available ?? 0) <= 0
                   return (
                     <option key={item.id} value={item.id} disabled={isOOS}>
@@ -647,13 +704,13 @@ function CustomerPickingView() {
 
             <div className="space-y-2">
               <Label htmlFor="c_quantity">{t('picking.quantity')} *</Label>
-              <Input
+              <QuantityInput
                 id="c_quantity"
-                type="number"
-                step="1"
-                min={1}
-                inputMode="numeric"
                 {...register('quantity', { valueAsNumber: true })}
+                step={1}
+                min={1}
+                unit={t('common.liter')}
+                inputMode="numeric"
                 placeholder="0"
               />
               {errors.quantity && (

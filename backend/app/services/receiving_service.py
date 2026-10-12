@@ -4,7 +4,8 @@ from decimal import Decimal
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, func
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.batch import Batch, BatchStatus
@@ -12,41 +13,105 @@ from app.models.item import Item
 from app.models.location import Location
 from app.models.movement import Movement, MovementType
 from app.schemas.batch import BatchCreate
+from app.services.sequence_service import generate_sequential_number
+from app.services.system_settings_service import get_or_create_system_settings
 
 
 class ReceivingService:
     """Service for goods receipt operations"""
-    
+
     def __init__(self, db: AsyncSession):
         self.db = db
-    
+
+    async def _min_shelf_life_days(self) -> int:
+        """Goods with less shelf life remaining than this cannot be received
+        at all (hard block) - see validate_expiration_warning below for the
+        separate, non-blocking "heads up" tiers. Backed by the SystemSettings
+        singleton (editable via PUT /settings/system) rather than a hardcoded
+        constant, so the frontend's pre-submit check (which reads the same
+        row via systemSettingsApi.get()) can't silently drift out of sync."""
+        row = await get_or_create_system_settings(self.db)
+        return row.min_shelf_life_days
+
     async def generate_batch_number(self, prefix: str = "GR") -> str:
         """Generate unique batch number: GR-YYMMDD-XXX"""
-        date_str = datetime.now().strftime("%y%m%d")
-        prefix_pattern = f"{prefix}-{date_str}-%"
-        
-        # Find highest sequence for today
-        result = await self.db.execute(
-            select(func.max(Batch.batch_number))
-            .where(Batch.batch_number.like(prefix_pattern))
+        return await generate_sequential_number(self.db, Batch.batch_number, prefix, pad_width=3)
+
+    async def generate_reference_number(self, prefix: str) -> str:
+        """Generate a movement reference number (GRN/DSP/CON-YYMMDD-XXX).
+        Sequenced against Movement.reference_number, where these numbers
+        live - not Batch.batch_number, which would restart at 001 every
+        time since no batch ever carries one."""
+        return await generate_sequential_number(
+            self.db, Movement.reference_number, prefix, pad_width=3
         )
-        last_batch = result.scalar()
-        
-        if last_batch:
-            try:
-                last_seq = int(last_batch.split("-")[-1])
-                next_seq = last_seq + 1
-            except (ValueError, IndexError):
-                next_seq = 1
-        else:
-            next_seq = 1
-        
-        return f"{prefix}-{date_str}-{next_seq:03d}"
-    
+
     async def generate_grn_number(self) -> str:
         """Generate Goods Receipt Note number"""
-        return await self.generate_batch_number(prefix="GRN")
-    
+        return await self.generate_reference_number(prefix="GRN")
+
+    async def _create_batch_with_generated_number(
+        self,
+        prefix: str = "GR",
+        max_attempts: int = 5,
+        **batch_kwargs,
+    ) -> Batch:
+        """Create and flush a Batch whose batch_number is auto-generated,
+        retrying with a freshly generated number if a concurrent request
+        already claimed the one we picked (batch_number is unique). Uses a
+        SAVEPOINT so only this insert is rolled back on conflict, not the
+        whole transaction - receive_multiple may have already flushed
+        earlier items in the same session."""
+        last_error: Optional[IntegrityError] = None
+        for _ in range(max_attempts):
+            batch_number = await self.generate_batch_number(prefix)
+            batch = Batch(batch_number=batch_number, **batch_kwargs)
+            try:
+                async with self.db.begin_nested():
+                    self.db.add(batch)
+                    await self.db.flush()
+                return batch
+            except IntegrityError as exc:
+                last_error = exc
+                self.db.expunge(batch)
+        raise ValueError(
+            "לא ניתן ליצור מספר אצווה ייחודי, נסה שוב"  # Could not generate a unique batch number, please retry
+        ) from last_error
+
+    async def _stock_into_batch(self, batch_number: str, **batch_kwargs) -> tuple[Batch, Decimal]:
+        """One batch per lot per receipt day: more of a lot already received
+        that day tops up its batch, a later day's delivery gets a new one.
+        Returns the batch and its available quantity before this receipt."""
+        result = await self.db.execute(
+            select(Batch).where(
+                Batch.batch_number == batch_number,
+                Batch.receipt_date == batch_kwargs["receipt_date"],
+            )
+        )
+        batch = result.scalar_one_or_none()
+        if batch is None:
+            batch = Batch(batch_number=batch_number, **batch_kwargs)
+            self.db.add(batch)
+            await self.db.flush()
+            return batch, Decimal("0")
+
+        if (
+            batch.item_id != batch_kwargs["item_id"]
+            or batch.expiration_date != batch_kwargs["expiration_date"]
+        ):
+            raise ValueError(
+                f"אצווה {batch_number} כבר נקלטה היום עם פריט או תאריך תפוגה אחר"
+            )  # Batch already received today with a different item or expiration date
+
+        quantity_before = batch.quantity_available
+        batch.quantity_received += batch_kwargs["quantity_received"]
+        batch.quantity_available += batch_kwargs["quantity_received"]
+        if batch.status == BatchStatus.DEPLETED:
+            batch.status = BatchStatus.ACTIVE
+        batch.version += 1
+        await self.db.flush()
+        return batch, quantity_before
+
     async def validate_item(self, item_id: UUID) -> Item:
         """Validate item exists"""
         result = await self.db.execute(
@@ -103,29 +168,21 @@ class ReceivingService:
         today = date.today()
         if expiration_date < today:
             raise ValueError("תאריך תפוגה לא יכול להיות בעבר")  # Expiration date cannot be in the past
-        
+        min_shelf_life_days = await self._min_shelf_life_days()
+        if (expiration_date - today).days < min_shelf_life_days:
+            raise ValueError(
+                f"לא ניתן לקלוט - נותרו פחות מ-{min_shelf_life_days} ימים עד לתפוגה"
+            )  # Cannot receive - less than {N} days remain until expiration
+
         # Validate quantity
         if quantity <= 0:
             raise ValueError("כמות חייבת להיות חיובית")  # Quantity must be positive
         
-        # Generate batch number if not provided
-        if not batch_number:
-            batch_number = await self.generate_batch_number()
-        else:
-            # Check uniqueness
-            result = await self.db.execute(
-                select(Batch).where(Batch.batch_number == batch_number)
-            )
-            if result.scalar_one_or_none():
-                raise ValueError(f"מספר אצווה {batch_number} כבר קיים")  # Batch number already exists
-        
         # Generate GRN number
         grn_number = await self.generate_grn_number()
-        
-        # Create batch
-        batch = Batch(
+
+        batch_kwargs = dict(
             item_id=item_id,
-            batch_number=batch_number,
             supplier_batch_number=supplier_batch_number,
             quantity_received=quantity,
             quantity_available=quantity,
@@ -136,18 +193,25 @@ class ReceivingService:
             status=BatchStatus.ACTIVE,
             notes=notes,
         )
-        
-        self.db.add(batch)
-        await self.db.flush()
-        
+
+        if not batch_number:
+            # Auto-generated numbers retry on a concurrent collision
+            # instead of raising an unhandled IntegrityError.
+            batch = await self._create_batch_with_generated_number(
+                prefix="GR", **batch_kwargs
+            )
+            quantity_before = Decimal("0")
+        else:
+            batch, quantity_before = await self._stock_into_batch(batch_number, **batch_kwargs)
+
         # Create receipt movement
         movement = Movement(
             batch_id=batch.id,
             user_id=user_id,
             movement_type=MovementType.RECEIPT,
             quantity=quantity,
-            quantity_before=Decimal("0"),
-            quantity_after=quantity,
+            quantity_before=quantity_before,
+            quantity_after=quantity_before + quantity,
             reference_number=grn_number,
             notes=f"קבלת סחורה: {item.sku} - {item.name}",
             timestamp=datetime.now(timezone.utc),
@@ -174,54 +238,68 @@ class ReceivingService:
             - supplier_batch_number (optional)
             - location_id (optional)
             - notes (optional)
+            - manufacturing_date (optional)
         """
         grn_number = await self.generate_grn_number()
+        min_shelf_life_days = await self._min_shelf_life_days()
         batches = []
         movements = []
-        
+
         for receipt in receipts:
             item = await self.validate_item(receipt["item_id"])
-            
+
             if receipt.get("location_id"):
                 await self.validate_location(receipt["location_id"])
-            
+
             # Validate expiration
             expiration_date = receipt["expiration_date"]
-            if expiration_date < date.today():
+            today = date.today()
+            if expiration_date < today:
                 raise ValueError(
                     f"תאריך תפוגה לא תקין עבור פריט {item.sku}"
                 )
-            
-            # Generate batch number if needed
-            batch_number = receipt.get("batch_number")
-            if not batch_number:
-                batch_number = await self.generate_batch_number()
-            
+            if (expiration_date - today).days < min_shelf_life_days:
+                raise ValueError(
+                    f"לא ניתן לקלוט את פריט {item.sku} - נותרו פחות מ-{min_shelf_life_days} ימים עד לתפוגה"
+                )  # Cannot receive item {sku} - less than {N} days remain until expiration
+
             quantity = Decimal(str(receipt["quantity"]))
-            
-            batch = Batch(
+            if quantity <= 0:
+                raise ValueError(
+                    f"כמות חייבת להיות חיובית עבור פריט {item.sku}"
+                )  # Quantity must be positive for item {sku}
+
+            batch_kwargs = dict(
                 item_id=receipt["item_id"],
-                batch_number=batch_number,
                 supplier_batch_number=receipt.get("supplier_batch_number"),
                 quantity_received=quantity,
                 quantity_available=quantity,
                 receipt_date=date.today(),
                 expiration_date=expiration_date,
+                manufacturing_date=receipt.get("manufacturing_date"),
                 location_id=receipt.get("location_id"),
                 status=BatchStatus.ACTIVE,
                 notes=receipt.get("notes"),
             )
-            
-            self.db.add(batch)
-            await self.db.flush()
-            
+
+            batch_number = receipt.get("batch_number")
+            if not batch_number:
+                # Auto-generated numbers retry on a concurrent collision
+                # instead of raising an unhandled IntegrityError.
+                batch = await self._create_batch_with_generated_number(
+                    prefix="GR", **batch_kwargs
+                )
+                quantity_before = Decimal("0")
+            else:
+                batch, quantity_before = await self._stock_into_batch(batch_number, **batch_kwargs)
+
             movement = Movement(
                 batch_id=batch.id,
                 user_id=user_id,
                 movement_type=MovementType.RECEIPT,
                 quantity=quantity,
-                quantity_before=Decimal("0"),
-                quantity_after=quantity,
+                quantity_before=quantity_before,
+                quantity_after=quantity_before + quantity,
                 reference_number=grn_number,
                 notes=f"קבלת סחורה: {item.sku}",
                 timestamp=datetime.now(timezone.utc),

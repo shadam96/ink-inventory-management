@@ -44,11 +44,17 @@ class BatchCreate(BatchBase):
 
 class BatchUpdate(BaseSchema):
     """Schema for updating a batch"""
-    
+
     location_id: Optional[UUID] = None
     supplier_batch_number: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = None
     status: Optional[BatchStatus] = None
+    # Optimistic-lock token: pass back the `version` last read from
+    # BatchResponse. If it doesn't match the row's current version, the
+    # update is rejected as a conflict instead of silently overwriting a
+    # concurrent edit. Optional for backward compatibility with callers
+    # that don't (yet) round-trip the version.
+    version: Optional[int] = None
 
 
 class BatchResponse(BatchBase, TimestampSchema):

@@ -3,7 +3,7 @@ import enum
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Enum, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -81,7 +81,14 @@ class Alert(BaseModel):
         default=False,
         nullable=False
     )
-    
+
+    __table_args__ = (
+        CheckConstraint(
+            "batch_id IS NOT NULL OR item_id IS NOT NULL",
+            name="check_alert_has_batch_or_item",
+        ),
+    )
+
     def __repr__(self) -> str:
         return f"<Alert {self.alert_type.value}: {self.title}>"
     

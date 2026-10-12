@@ -11,25 +11,30 @@ import { ReceivingPage } from '@/pages/ReceivingPage'
 import { PickingPage } from '@/pages/PickingPage'
 import { DeliveryNotesPage } from '@/pages/DeliveryNotesPage'
 import { CustomersPage } from '@/pages/CustomersPage'
+import { UsersPage } from '@/pages/UsersPage'
 import { AlertsPage } from '@/pages/AlertsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { useAuthStore } from '@/store/auth'
 import { useUIStore } from '@/store/ui'
-import { PWAInstallPrompt } from '@/components/PWAInstallPrompt'
 import { initDB } from '@/lib/offline'
 
 // Initialize IndexedDB on app load
 initDB().catch(console.error)
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, fetchUser } = useAuthStore()
+  const { user, fetchUser } = useAuthStore()
   const token = localStorage.getItem('access_token')
 
+  // isAuthenticated is persisted across reloads, but `user` is not (see
+  // partialize in store/auth.ts) - so isAuthenticated alone can be stale
+  // true while `user` is still null in memory. Gate on `user` instead, or
+  // fetchUser() never fires and StaffRoute's "loading" null-render below
+  // becomes permanent.
   useEffect(() => {
-    if (token && !isAuthenticated) {
+    if (token && !user) {
       fetchUser()
     }
-  }, [token, isAuthenticated, fetchUser])
+  }, [token, user, fetchUser])
 
   if (!token) {
     return <Navigate to="/login" replace />
@@ -38,11 +43,37 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function StaffRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuthStore()
+export function StaffRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+  const token = localStorage.getItem('access_token')
+
+  // The persisted auth store only rehydrates isAuthenticated, not `user` -
+  // on a page reload, user starts null until ProtectedRoute's fetchUser()
+  // resolves. Rendering nothing during that window (instead of assuming
+  // "not a customer" and rendering/fetching staff-only data) avoids a
+  // customer-role user briefly seeing/fetching staff-only routes.
+  if (token && isAuthenticated && user === null) {
+    return null
+  }
 
   if (user?.role === 'customer') {
     return <Navigate to="/picking" replace />
+  }
+
+  return <>{children}</>
+}
+
+export function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user, isAuthenticated } = useAuthStore()
+  const token = localStorage.getItem('access_token')
+
+  // Same loading-guard as StaffRoute - see the comment there.
+  if (token && isAuthenticated && user === null) {
+    return null
+  }
+
+  if (user?.role !== 'admin') {
+    return <Navigate to="/" replace />
   }
 
   return <>{children}</>
@@ -102,15 +133,13 @@ function App() {
           <Route path="picking" element={<PickingPage />} />
           <Route path="delivery-notes" element={<StaffRoute><DeliveryNotesPage /></StaffRoute>} />
           <Route path="customers" element={<StaffRoute><CustomersPage /></StaffRoute>} />
+          <Route path="users" element={<AdminRoute><UsersPage /></AdminRoute>} />
           <Route path="alerts" element={<StaffRoute><AlertsPage /></StaffRoute>} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-
-      {/* PWA Install Prompt */}
-      <PWAInstallPrompt />
     </BrowserRouter>
   )
 }

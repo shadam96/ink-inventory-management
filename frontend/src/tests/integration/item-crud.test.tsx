@@ -7,6 +7,12 @@ import * as api from '@/lib/api'
 
 // Mock the API
 vi.mock('@/lib/api', () => ({
+  // NotificationBell (rendered inside <Header>, part of this page tree)
+  // imports the default axios instance directly for its own alert fetch -
+  // stub it too so that unrelated fetch doesn't error.
+  default: {
+    get: vi.fn().mockResolvedValue({ data: { items: [] } }),
+  },
   itemsApi: {
     list: vi.fn(),
     create: vi.fn(),

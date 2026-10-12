@@ -22,40 +22,58 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 )
 
+// Single-flight lock for token refresh: concurrent 401s (e.g. several
+// requests firing around the same time) share one in-flight refresh call
+// instead of each independently POSTing /auth/refresh. Without this, if
+// the backend rotates/invalidates the refresh token on use, the first
+// concurrent refresh succeeds but the second fails (using the
+// already-consumed token) and logs the user out even though a valid
+// refreshed session exists from the first call.
+let refreshPromise: Promise<string> | null = null
+
+async function refreshAccessToken(): Promise<string> {
+  const refreshToken = localStorage.getItem('refresh_token')
+  if (!refreshToken) {
+    throw new Error('No refresh token available')
+  }
+
+  const response = await axios.post(`${API_URL}/auth/refresh`, {
+    refresh_token: refreshToken,
+  })
+
+  const { access_token, refresh_token: newRefreshToken } = response.data
+  localStorage.setItem('access_token', access_token)
+  localStorage.setItem('refresh_token', newRefreshToken)
+  return access_token
+}
+
 // Response interceptor - handle errors and token refresh
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const originalRequest = error.config
-    
+
     // Handle 401 - try token refresh
     if (error.response?.status === 401 && originalRequest) {
-      const refreshToken = localStorage.getItem('refresh_token')
-      
-      if (refreshToken) {
-        try {
-          const response = await axios.post(`${API_URL}/auth/refresh`, {
-            refresh_token: refreshToken,
+      try {
+        if (!refreshPromise) {
+          refreshPromise = refreshAccessToken().finally(() => {
+            refreshPromise = null
           })
-          
-          const { access_token, refresh_token: newRefreshToken } = response.data
-          localStorage.setItem('access_token', access_token)
-          localStorage.setItem('refresh_token', newRefreshToken)
-          
-          // Retry original request
-          originalRequest.headers.Authorization = `Bearer ${access_token}`
-          return api(originalRequest)
-        } catch {
-          // Refresh failed - clear tokens and redirect to login
-          localStorage.removeItem('access_token')
-          localStorage.removeItem('refresh_token')
-          window.location.href = '/login'
         }
-      } else {
+        const accessToken = await refreshPromise
+
+        // Retry original request
+        originalRequest.headers.Authorization = `Bearer ${accessToken}`
+        return api(originalRequest)
+      } catch {
+        // Refresh failed - clear tokens and redirect to login
+        localStorage.removeItem('access_token')
+        localStorage.removeItem('refresh_token')
         window.location.href = '/login'
       }
     }
-    
+
     return Promise.reject(error)
   }
 )
@@ -88,6 +106,11 @@ export const authApi = {
   me: async () => {
     const response = await api.get('/auth/me')
     return response.data
+  },
+
+  register: async (data: CreateUserData) => {
+    const response = await api.post('/auth/register', data)
+    return response.data as ManagedUser
   },
 }
 
@@ -209,36 +232,37 @@ export const dashboardApi = {
     return response.data as DashboardKPIs
   },
   
-  getInventoryValue: async () => {
-    const response = await api.get('/dashboard/inventory-value')
-    return response.data
+  getMovementTrend: async (days = 7) => {
+    const response = await api.get('/dashboard/movement-trend', { params: { days } })
+    return response.data as MovementTrend
   },
-  
-  getInventoryDistribution: async () => {
-    const response = await api.get('/dashboard/inventory-distribution')
-    return response.data
+
+  getExpiryTimeline: async () => {
+    const response = await api.get('/dashboard/expiry-timeline')
+    return response.data as ExpiryTimeline
   },
-  
-  getExpirationRisk: async () => {
-    const response = await api.get('/dashboard/expiration-risk')
-    return response.data
+
+  getStockCoverage: async () => {
+    const response = await api.get('/dashboard/stock-coverage')
+    return response.data as StockCoverage
   },
-  
-  getLowStock: async () => {
-    const response = await api.get('/dashboard/low-stock')
-    return response.data
-  },
-  
-  getRecentActivity: async (days = 7) => {
-    const response = await api.get('/dashboard/recent-activity', { params: { days } })
-    return response.data
+
+  getAttention: async () => {
+    const response = await api.get('/dashboard/attention')
+    return response.data as AttentionItems
   },
 }
 
-// System settings API (FX rates — read-only; the daily scheduler is the writer).
+// System settings API (FX rates are read-only - the daily scheduler is the
+// writer; min_shelf_life_days is editable via update()).
 export const systemSettingsApi = {
   get: async () => {
     const response = await api.get('/settings/system')
+    return response.data as SystemSettings
+  },
+
+  update: async (data: { min_shelf_life_days: number }) => {
+    const response = await api.put('/settings/system', data)
     return response.data as SystemSettings
   },
 }
@@ -319,7 +343,40 @@ export const customersApi = {
   },
 }
 
+// Users API (admin-only management)
+export const usersApi = {
+  list: async (params?: { page?: number; page_size?: number; role?: string; search?: string; is_active?: boolean }) => {
+    const response = await api.get('/users', { params })
+    return response.data as PaginatedResponse<ManagedUser>
+  },
+
+  get: async (id: string) => {
+    const response = await api.get(`/users/${id}`)
+    return response.data as ManagedUser
+  },
+
+  update: async (id: string, data: UpdateUserData) => {
+    const response = await api.put(`/users/${id}`, data)
+    return response.data as ManagedUser
+  },
+
+  updateLocations: async (id: string, locationIds: string[]) => {
+    const response = await api.put(`/users/${id}/locations`, { location_ids: locationIds })
+    return response.data as ManagedUser
+  },
+}
+
+// Locations API
+export const locationsApi = {
+  list: async (params?: { page?: number; page_size?: number; warehouse?: string; is_active?: boolean }) => {
+    const response = await api.get('/locations', { params })
+    return response.data as PaginatedResponse<Location>
+  },
+}
+
 // Types
+export type ItemColor = 'cyan' | 'magenta' | 'yellow' | 'black' | 'white' | 'other'
+
 export interface Item {
   id: string
   sku: string
@@ -328,8 +385,9 @@ export interface Item {
   description?: string
   supplier: string
   unit_of_measure: string
-  cost_price: number
-  currency: 'ILS' | 'USD' | 'EUR'
+  color: ItemColor
+  cost_price: number | null // null when the viewer is a customer
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
   reorder_point: number
   min_stock: number
   max_stock: number
@@ -345,8 +403,9 @@ export interface CreateItemData {
   description?: string
   supplier: string
   unit_of_measure: string
+  color?: ItemColor
   cost_price: number
-  currency: 'ILS' | 'USD' | 'EUR'
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
   reorder_point?: number
   min_stock?: number
   max_stock?: number
@@ -406,10 +465,12 @@ export interface DispatchDocumentResponse {
   action: 'print' | 'email'
   reference_number: string
   message: string
+  /** Only set for a successful action="print" - base64-encoded PDF bytes. */
+  pdf_base64?: string | null
 }
 
 /** Cost values keyed by the per-item currency they were entered in. */
-export type CurrencyTotals = Partial<Record<'ILS' | 'USD' | 'EUR', number>>
+export type CurrencyTotals = Partial<Record<'ILS' | 'USD' | 'EUR' | 'TRY', number>>
 
 export interface DashboardKPIs {
   inventory_value_by_currency: CurrencyTotals
@@ -421,6 +482,114 @@ export interface DashboardKPIs {
   unread_alerts: number
   recent_receipts: number
   recent_dispatches: number
+  inventory_value_30d_ago_by_currency: CurrencyTotals
+  /** Value of stock scrapped in the trailing 90 days. */
+  write_off_90d_value_by_currency: CurrencyTotals
+  /** Write-off as a % of average inventory value over the same 90 days. */
+  write_off_90d_rate: number
+  /** Annualized: trailing-90-day outbound cost / average inventory value. */
+  turnover_annualized: number
+  /** Average inventory / daily outbound cost; null when nothing went out. */
+  days_on_hand: number | null
+}
+
+export interface MovementTrendPoint {
+  date: string
+  receipts: number
+  dispatches: number
+  consumptions: number
+  scraps: number
+  receipts_value_by_currency: CurrencyTotals
+  /** Dispatch + consumption, at cost. */
+  outbound_value_by_currency: CurrencyTotals
+}
+
+export type ExpiryBucketKey = 'expired' | 'd0_30' | 'd31_60' | 'd61_90' | 'd91_180' | 'd181_plus'
+
+export interface ExpiryBucket {
+  key: ExpiryBucketKey
+  value_by_currency: CurrencyTotals
+  /** Keyed by unit of measure - liters and kilograms are never summed. */
+  quantity_by_unit: Record<string, number>
+  batches: number
+}
+
+export interface ExpiryTimeline {
+  buckets: ExpiryBucket[]
+}
+
+export type CoverageStatus = 'out' | 'below_min' | 'below_reorder' | 'ok'
+
+export interface StockCoverageItem {
+  item_id: string
+  sku: string
+  name: string
+  color: string
+  unit: string
+  quantity: number
+  reorder_point: number
+  min_stock: number
+  avg_daily_usage: number
+  /** null when the item had no usage in the window. */
+  days_of_supply: number | null
+  status: CoverageStatus
+}
+
+export interface StockCoverage {
+  window_days: number
+  /** Most urgent first; items with no usage last. */
+  items: StockCoverageItem[]
+}
+
+export interface AttentionLot {
+  batch_id: string
+  batch_number: string
+  item_id: string
+  sku: string
+  name: string
+  unit: string
+  quantity: number
+  value: number
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
+  expiration_date: string
+  days_until_expiration: number
+  location_code: string | null
+}
+
+export interface AttentionBelowMin {
+  item_id: string
+  sku: string
+  name: string
+  unit: string
+  quantity: number
+  min_stock: number
+  reorder_point: number
+}
+
+export interface AttentionDeadStock {
+  item_id: string
+  sku: string
+  name: string
+  unit: string
+  quantity: number
+  value: number
+  currency: 'ILS' | 'USD' | 'EUR' | 'TRY'
+  last_movement_date: string
+  days_inactive: number
+}
+
+export interface AttentionItems {
+  expired_on_shelf: AttentionLot[]
+  expiring_soon: AttentionLot[]
+  below_min: AttentionBelowMin[]
+  dead_stock: AttentionDeadStock[]
+}
+
+export interface MovementTrend {
+  period_days: number
+  start_date: string
+  end_date: string
+  series: MovementTrendPoint[]
 }
 
 export interface SystemSettings {
@@ -428,6 +597,10 @@ export interface SystemSettings {
   usd_to_ils: number
   /** Price of 1 EUR in ILS. */
   eur_to_ils: number
+  /** Price of 1 Turkish Lira in ILS. */
+  try_to_ils: number
+  /** Minimum days of shelf life required to receive a batch (hard block below this). */
+  min_shelf_life_days: number
   /** ISO-8601 timestamp of the last Frankfurter refresh. */
   updated_at: string
 }
@@ -479,7 +652,7 @@ export interface InventoryRow {
   batch_number: string
   quantity_available: number
   unit_of_measure: string
-  cost_price: number
+  cost_price: number | null // null when the viewer is a customer
   currency: string
   supplier: string
   expiration_date: string
@@ -489,6 +662,8 @@ export interface InventoryRow {
 
 export interface InventoryTotalCost {
   totals: Record<string, number>
+  product_count: number
+  total_quantity: number
 }
 
 export interface CreateCustomerData {
@@ -501,6 +676,51 @@ export interface CreateCustomerData {
   is_vmi_customer?: boolean
   notes?: string
   machines?: CustomerMachineInput[]
+}
+
+export type ManagedUserRole = 'admin' | 'manager' | 'warehouse_worker' | 'viewer' | 'customer'
+
+export interface ManagedUser {
+  id: string
+  username: string
+  email: string
+  full_name: string
+  role: ManagedUserRole
+  is_active: boolean
+  customer_id?: string
+  location_ids: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface CreateUserData {
+  username: string
+  email: string
+  full_name: string
+  password: string
+  role: ManagedUserRole
+  customer_id?: string
+}
+
+export interface UpdateUserData {
+  username?: string
+  email?: string
+  full_name?: string
+  role?: ManagedUserRole
+  is_active?: boolean
+  password?: string
+}
+
+export interface Location {
+  id: string
+  warehouse: string
+  shelf: string
+  position: string
+  location_code: string
+  description?: string
+  is_active: boolean
+  batches_count: number
+  active_batches_count: number
 }
 
 export default api
