@@ -55,6 +55,7 @@
     "noOutbound": "Son 90 günde çıkış yok",
     "attention": "İlgi gerektiriyor",
     "nothingNeedsAttention": "Şu anda ilgi gerektiren bir şey yok",
+    "loadError": "Panonun bazı verileri yüklenemedi",
     "attentionExpired": "Süresi dolmuş, hâlâ stokta",
     "attentionExpiring": "30 gün içinde süresi doluyor",
     "attentionBelowMin": "Minimum stoğun altında",

@@ -171,14 +171,10 @@ export const handlers = [
   http.get(`${API_BASE_URL}/dashboard/kpis`, () => {
     return HttpResponse.json({
       inventory_value_by_currency: { ILS: 10000 },
-      at_risk_value_by_currency: { ILS: 1550 },
-      at_risk_percentage: 15.5,
       low_stock_items: 3,
       critical_low_stock: 1,
       items_in_stock: 50,
       unread_alerts: 5,
-      recent_receipts: 10,
-      recent_dispatches: 4,
     })
   }),
 

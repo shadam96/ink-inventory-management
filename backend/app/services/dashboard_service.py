@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Dict, List, Any, Optional
 from uuid import UUID
 
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,14 +13,13 @@ from app.models.batch import Batch, BatchStatus
 from app.models.item import Item
 from app.models.movement import Movement, MovementType
 from app.models.alert import Alert
-from app.models.delivery_note import DeliveryNote, DeliveryNoteStatus
 from app.models.system_settings import SystemSettings
 from app.services.expiration_classifier import (
     CAUTION_THRESHOLD_DAYS,
     CRITICAL_THRESHOLD_DAYS,
     WARNING_THRESHOLD_DAYS,
 )
-from app.services.stock_helpers import available_quantity, is_active_and_unexpired
+from app.services.stock_helpers import available_quantity
 
 
 # Movement types that represent stock actually used by customers - the
@@ -75,18 +74,17 @@ def _as_date(day: Any) -> date:
 
 def _scrapped_on(batch: Batch) -> Optional[date]:
     """Scrapping (manually or by the expiry job) only flips the status and
-    keeps quantity_available, with no Movement - updated_at is the only
-    record of when it happened."""
+    keeps quantity_available, with no Movement - scrapped_at records when.
+    A scrapped batch without it is treated as scrapped long ago."""
     if batch.status != BatchStatus.SCRAP:
         return None
-    return batch.updated_at.date()
+    return batch.scrapped_at.date() if batch.scrapped_at else date.min
 
 
 def _items_batches_loader(location_ids: Optional[List[UUID]]):
     """selectinload(Item.batches), optionally filtered to only load batches
-    at the given locations - so available_quantity()/is_active_and_unexpired()
-    downstream operate on an already-scoped collection with no other
-    changes needed."""
+    at the given locations - so available_quantity() downstream operates
+    on an already-scoped collection with no other changes needed."""
     if location_ids is None:
         return selectinload(Item.batches)
     return selectinload(Item.batches.and_(Batch.location_id.in_(location_ids)))
@@ -98,79 +96,12 @@ class DashboardService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_recent_activity(
-        self, days: int = 7, location_ids: Optional[List[UUID]] = None
-    ) -> Dict[str, Any]:
-        """Get recent activity summary.
-
-        location_ids restricts movements/alerts to those tied to a batch at
-        one of those locations - None means unrestricted. Delivery notes
-        stay unscoped: they aren't attributable to a single warehouse
-        location in this schema.
-        """
-        today = date.today()
-        start_date = today - timedelta(days=days)
-
-        # Get movements
-        movements_query = select(Movement).where(
-            func.date(Movement.timestamp) >= start_date
-        )
-        if location_ids is not None:
-            movements_query = movements_query.join(Batch, Movement.batch_id == Batch.id).where(
-                Batch.location_id.in_(location_ids)
-            )
-        result = await self.db.execute(movements_query)
-        movements = result.scalars().all()
-
-        receipts = sum(
-            m.quantity for m in movements if m.movement_type == MovementType.RECEIPT
-        )
-        dispatches = sum(
-            m.quantity for m in movements if m.movement_type == MovementType.DISPATCH
-        )
-        scraps = sum(
-            m.quantity for m in movements if m.movement_type == MovementType.SCRAP
-        )
-
-        # Get delivery notes
-        result = await self.db.execute(
-            select(func.count(DeliveryNote.id))
-            .where(func.date(DeliveryNote.created_at) >= start_date)
-        )
-        delivery_notes_count = result.scalar() or 0
-
-        # Get new alerts (item-only alerts are excluded when scoped, same
-        # convention as the alerts endpoint - they aren't attributable to
-        # one location)
-        alerts_query = select(func.count(Alert.id)).where(
-            func.date(Alert.created_at) >= start_date
-        )
-        if location_ids is not None:
-            alerts_query = alerts_query.join(Batch, Alert.batch_id == Batch.id).where(
-                Batch.location_id.in_(location_ids)
-            )
-        result = await self.db.execute(alerts_query)
-        alerts_count = result.scalar() or 0
-
-        return {
-            "period_days": days,
-            "start_date": start_date.isoformat(),
-            "end_date": today.isoformat(),
-            "receipts_quantity": float(receipts),
-            "dispatches_quantity": float(dispatches),
-            "scraps_quantity": float(scraps),
-            "delivery_notes_created": delivery_notes_count,
-            "alerts_generated": alerts_count,
-            "movements_count": len(movements),
-        }
-
     async def get_movement_trend(
         self, days: int = 7, location_ids: Optional[List[UUID]] = None
     ) -> Dict[str, Any]:
-        """Get daily receipts/dispatches/consumptions/scraps for the trailing
-        period, zero-filled so a trend chart has no gaps on days without
-        movements. Uses the same start_date window as get_recent_activity so
-        both endpoints agree on what "last N days" covers.
+        """Get daily receipts/dispatches/consumptions/scraps for the last
+        `days` days (today included), zero-filled so a trend chart has no
+        gaps on days without movements.
 
         Quantities mix units of measure across items, so each day also
         carries the cost value of receipts and of outbound usage (dispatch +
@@ -180,7 +111,7 @@ class DashboardService:
         locations - None means unrestricted.
         """
         today = date.today()
-        start_date = today - timedelta(days=days)
+        start_date = today - timedelta(days=days - 1)
 
         query = (
             select(
@@ -287,8 +218,9 @@ class DashboardService:
 
         Items with less history than the window average over the days since
         their first receipt instead, so a new item isn't diluted by days it
-        didn't exist. days_of_supply is None when there was no usage at
-        all. Sorted most urgent first, no-usage items last.
+        didn't exist. days_of_supply is 0 when out of stock and None when
+        there is stock but no usage at all. Sorted most urgent first,
+        no-usage items last.
         """
         today = date.today()
         window_start = today - timedelta(days=window_days)
@@ -321,8 +253,16 @@ class DashboardService:
                 continue
 
             first_receipt = min((b.receipt_date for b in item.batches), default=today)
-            history_days = max(1, min(window_days, (today - first_receipt).days))
+            # Usage covers the window's days up to and including today, so
+            # the receipt day itself counts as a day of history.
+            history_days = min(window_days, (today - first_receipt).days + 1)
             avg_daily_usage = used / history_days
+            if quantity == 0:
+                days_of_supply = 0.0
+            elif avg_daily_usage > 0:
+                days_of_supply = float(quantity / avg_daily_usage)
+            else:
+                days_of_supply = None
 
             if quantity == 0:
                 status = "out"
@@ -343,7 +283,7 @@ class DashboardService:
                 "reorder_point": item.reorder_point,
                 "min_stock": item.min_stock,
                 "avg_daily_usage": float(avg_daily_usage),
-                "days_of_supply": float(quantity / avg_daily_usage) if avg_daily_usage > 0 else None,
+                "days_of_supply": days_of_supply,
                 "status": status,
             })
 
@@ -360,8 +300,9 @@ class DashboardService:
           still waiting on it or on someone)
         - expiring_soon: lots expiring within the critical window, soonest first
         - below_min: items whose usable stock is under min_stock
-        - dead_stock: items with stock but no movement for
-          settings.dead_stock_days - same rule as AlertService.check_dead_stock
+        - dead_stock: items with stock whose last movement is more than
+          settings.dead_stock_days ago - same rule as
+          AlertService.check_dead_stock
         """
         today = date.today()
 
@@ -429,11 +370,10 @@ class DashboardService:
                     "reorder_point": item.reorder_point,
                 })
 
-            if quantity > 0:
-                receipts = [b.receipt_date for b in item.batches if b.status == BatchStatus.ACTIVE]
-                last_activity = max(filter(None, [last_movement.get(item.id), *receipts]))
+            last_activity = last_movement.get(item.id)
+            if quantity > 0 and last_activity is not None:
                 days_inactive = (today - last_activity).days
-                if days_inactive >= settings.dead_stock_days:
+                if days_inactive > settings.dead_stock_days:
                     dead_stock.append({
                         "item_id": str(item.id),
                         "sku": item.sku,
@@ -571,14 +511,14 @@ class DashboardService:
 
     @staticmethod
     def _sum_in_ils(
-        amounts_by_currency: Dict[str, float],
+        amounts_by_currency: Dict[str, Decimal],
         usd_to_ils: Decimal,
         eur_to_ils: Decimal,
         try_to_ils: Decimal,
     ) -> Decimal:
         rates = {"ILS": Decimal("1"), "USD": usd_to_ils, "EUR": eur_to_ils, "TRY": try_to_ils}
         return sum(
-            (Decimal(str(amount)) * rates.get(ccy, Decimal("1")) for ccy, amount in amounts_by_currency.items()),
+            (amount * rates.get(ccy, Decimal("1")) for ccy, amount in amounts_by_currency.items()),
             Decimal("0"),
         )
 
@@ -587,14 +527,12 @@ class DashboardService:
     ) -> Dict[str, Any]:
         """Get all KPIs for dashboard.
 
-        Fetches Items+Batches once and derives inventory value, at-risk
-        value, and low-stock counts from that single dataset rather than
-        re-running `select(Item).options(selectinload(...))` per figure.
+        Fetches Items+Batches once and derives inventory value and low-stock
+        counts from that single dataset rather than re-running
+        `select(Item).options(selectinload(...))` per figure.
 
-        location_ids restricts everything below (batches, activity, unread
-        alerts) to those locations - None means unrestricted. Delivery-note
-        counts inside get_recent_activity stay unscoped (not location
-        attributable in this schema).
+        location_ids restricts everything below (batches, movements, unread
+        alerts) to those locations - None means unrestricted.
         """
         today = date.today()
 
@@ -603,35 +541,22 @@ class DashboardService:
         )
         items = result.scalars().all()
 
-        totals_by_currency: Dict[str, Decimal] = {}
-        at_risk_by_ccy: Dict[str, Decimal] = {}
+        inventory_by_currency: Dict[str, Decimal] = {}
         items_with_stock = 0
         low_stock_count = 0
         critical_low_stock_count = 0
 
         for item in items:
-            ccy = item.currency or "ILS"
             active_qty = available_quantity(item, today)
 
             if active_qty > 0:
                 items_with_stock += 1
-                totals_by_currency[ccy] = totals_by_currency.get(ccy, Decimal("0")) + active_qty * item.cost_price
-
-            for batch in item.batches:
-                if is_active_and_unexpired(batch, today) and (batch.expiration_date - today).days <= 60:
-                    at_risk_by_ccy[ccy] = (
-                        at_risk_by_ccy.get(ccy, Decimal("0")) + batch.quantity_available * item.cost_price
-                    )
+                _add(inventory_by_currency, item.currency or "ILS", active_qty * item.cost_price)
 
             if active_qty < item.reorder_point:
                 low_stock_count += 1
                 if active_qty < item.min_stock:
                     critical_low_stock_count += 1
-
-        inventory_totals = {ccy: float(v) for ccy, v in totals_by_currency.items()}
-        at_risk_totals = {ccy: float(v) for ccy, v in at_risk_by_ccy.items()}
-
-        activity = await self.get_recent_activity(location_ids=location_ids)
 
         # Unread alerts count (item-only alerts excluded when scoped, same
         # convention as the alerts endpoint)
@@ -645,47 +570,40 @@ class DashboardService:
         result = await self.db.execute(unread_query)
         unread_alerts = result.scalar() or 0
 
-        # at_risk_percentage needs a single ratio, which needs converting
-        # both sides to one currency first - previously this summed
-        # risk_map's per-level "percentage" fields, which were themselves
-        # computed from values mixed across currencies without conversion.
-        usd_to_ils, eur_to_ils, try_to_ils = await self._get_fx_rates()
-        inventory_total_ils = self._sum_in_ils(inventory_totals, usd_to_ils, eur_to_ils, try_to_ils)
-        at_risk_total_ils = self._sum_in_ils(at_risk_totals, usd_to_ils, eur_to_ils, try_to_ils)
-        at_risk_percentage = (
-            round(float(at_risk_total_ils / inventory_total_ils) * 100, 1)
-            if inventory_total_ils > 0
-            else 0
-        )
-
         # Turnover and write-off rate are ratios over the trailing window,
         # against the average of the inventory value sampled across it - so
-        # like at_risk_percentage they're computed in ILS here.
+        # they're computed in ILS. With less history than the window (just
+        # after go-live), usage per day and the average only cover the days
+        # since the first receipt, rather than being diluted by days before
+        # there was any stock.
+        usd_to_ils, eur_to_ils, try_to_ils = await self._get_fx_rates()
         window_start = today - timedelta(days=HISTORY_WINDOW_DAYS)
-        history = await self._inventory_value_history(AVERAGE_INVENTORY_OFFSETS, location_ids)
+        past_offsets = tuple(offset for offset in AVERAGE_INVENTORY_OFFSETS if offset > 0)
+        history = await self._inventory_value_history(past_offsets, location_ids)
+        history[0] = inventory_by_currency
         write_off = await self._write_off_by_currency(window_start, location_ids)
         outbound_cost = await self._movement_cost_by_currency(OUTBOUND_USAGE_TYPES, window_start, location_ids)
+
+        first_receipt = min((b.receipt_date for item in items for b in item.batches), default=today)
+        days_since_first_receipt = max(0, (today - first_receipt).days)
+        history_days = min(HISTORY_WINDOW_DAYS, days_since_first_receipt + 1)
+        sampled_offsets = [offset for offset in AVERAGE_INVENTORY_OFFSETS if offset <= days_since_first_receipt]
 
         def in_ils(amounts: Dict[str, Decimal]) -> Decimal:
             return self._sum_in_ils(amounts, usd_to_ils, eur_to_ils, try_to_ils)
 
         avg_inventory_ils = sum(
-            (in_ils(history[offset]) for offset in AVERAGE_INVENTORY_OFFSETS), Decimal("0")
-        ) / len(AVERAGE_INVENTORY_OFFSETS)
-        outbound_ils = in_ils(outbound_cost)
-        daily_outbound_ils = outbound_ils / HISTORY_WINDOW_DAYS
+            (in_ils(history[offset]) for offset in sampled_offsets), Decimal("0")
+        ) / len(sampled_offsets)
+        daily_outbound_ils = in_ils(outbound_cost) / history_days
 
         return {
-            "inventory_value_by_currency": inventory_totals,
+            "inventory_value_by_currency": _floats(inventory_by_currency),
             "inventory_value_30d_ago_by_currency": _floats(history[30]),
             "items_in_stock": items_with_stock,
-            "at_risk_value_by_currency": at_risk_totals,
-            "at_risk_percentage": at_risk_percentage,
             "low_stock_items": low_stock_count,
             "critical_low_stock": critical_low_stock_count,
             "unread_alerts": unread_alerts,
-            "recent_receipts": activity["receipts_quantity"],
-            "recent_dispatches": activity["dispatches_quantity"],
             "write_off_90d_value_by_currency": _floats(write_off),
             "write_off_90d_rate": (
                 round(float(in_ils(write_off) / avg_inventory_ils) * 100, 2) if avg_inventory_ils > 0 else 0

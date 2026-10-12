@@ -1,6 +1,6 @@
 """Batch model for tracking ink batches with expiration dates"""
 import enum
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import TYPE_CHECKING, List, Optional
 from uuid import UUID
@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import (
     CheckConstraint,
     Date,
+    DateTime,
     Enum,
     ForeignKey,
     Index,
@@ -18,7 +19,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.models.base import BaseModel
 
@@ -118,6 +119,15 @@ class Batch(BaseModel):
         index=True
     )
     
+    # When the batch was scrapped. Scrapping keeps quantity_available and
+    # records no Movement, so this is the only record of when it happened
+    # (updated_at moves on any later edit). Kept in step with status by
+    # _track_scrapped_at.
+    scrapped_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True
+    )
+
     # Optional notes
     notes: Mapped[Optional[str]] = mapped_column(
         Text,
@@ -152,6 +162,16 @@ class Batch(BaseModel):
         lazy="selectin"
     )
     
+    @validates("status")
+    def _track_scrapped_at(self, _key: str, status: BatchStatus) -> BatchStatus:
+        """Stamps scrapped_at on every path that scraps a batch (manual
+        scrap, the expiry jobs, PUT /batches) and clears it on restore."""
+        if status != BatchStatus.SCRAP:
+            self.scrapped_at = None
+        elif self.status != BatchStatus.SCRAP:
+            self.scrapped_at = datetime.now(timezone.utc)
+        return status
+
     def __repr__(self) -> str:
         return f"<Batch {self.batch_number}>"
     

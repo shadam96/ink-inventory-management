@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import i18n from '@/i18n'
 import {
   dashboardApi,
   systemSettingsApi,
@@ -38,26 +40,21 @@ export function useDashboardData(): DashboardData {
 
   useEffect(() => {
     async function fetchData() {
-      try {
-        const [kpisRes, fxRes, timelineRes, coverageRes, attentionRes, trendRes] = await Promise.all([
-          dashboardApi.getKpis(),
-          systemSettingsApi.get(),
-          dashboardApi.getExpiryTimeline(),
-          dashboardApi.getStockCoverage(),
-          dashboardApi.getAttention(),
-          dashboardApi.getMovementTrend(90),
-        ])
-        setKpis(kpisRes)
-        setFxRates(fxRes)
-        setExpiryTimeline(timelineRes)
-        setStockCoverage(coverageRes)
-        setAttention(attentionRes)
-        setMovementTrend(trendRes)
-      } catch (error) {
-        console.error('Failed to fetch dashboard data:', error)
-      } finally {
-        setLoading(false)
+      // Settled one by one, so a failing endpoint only empties its own card.
+      const results = await Promise.allSettled([
+        dashboardApi.getKpis().then(setKpis),
+        systemSettingsApi.get().then(setFxRates),
+        dashboardApi.getExpiryTimeline().then(setExpiryTimeline),
+        dashboardApi.getStockCoverage().then(setStockCoverage),
+        dashboardApi.getAttention().then(setAttention),
+        dashboardApi.getMovementTrend(90).then(setMovementTrend),
+      ])
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+      if (failures.length > 0) {
+        console.error('Failed to fetch dashboard data:', failures.map((failure) => failure.reason))
+        toast.error(i18n.t('dashboard.loadError'))
       }
+      setLoading(false)
     }
     fetchData()
   }, [])

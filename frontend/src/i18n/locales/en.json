@@ -55,6 +55,7 @@
     "noOutbound": "No outbound in the last 90 days",
     "attention": "Needs attention",
     "nothingNeedsAttention": "Nothing needs attention right now",
+    "loadError": "Some dashboard data couldn't be loaded",
     "attentionExpired": "Expired, still in stock",
     "attentionExpiring": "Expiring within 30 days",
     "attentionBelowMin": "Below minimum stock",

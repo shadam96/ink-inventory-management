@@ -129,7 +129,10 @@ export function AttentionCard({ attention }: { attention: AttentionItems | null 
         )}
       </CardHeader>
       <CardContent>
-        {groups.length === 0 ? (
+        {!attention ? (
+          // Failed to load - not the same as "all clear".
+          <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">{t('common.noData')}</div>
+        ) : groups.length === 0 ? (
           <div className="flex h-48 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
             <CheckCircle2 className="h-8 w-8 text-status-safe" />
             {t('dashboard.nothingNeedsAttention')}

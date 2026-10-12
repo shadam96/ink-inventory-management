@@ -55,7 +55,7 @@ def make(db_session, user):
             return it
 
         async def batch(self, item, qty, expires_in, received_ago=100, status=BatchStatus.ACTIVE,
-                        location=None, updated_ago=None, number=None):
+                        location=None, scrapped_ago=None, number=None):
             b = Batch(
                 batch_number=number or f"{item.sku}-{expires_in}-{received_ago}-{qty}",
                 item_id=item.id,
@@ -66,8 +66,8 @@ def make(db_session, user):
                 quantity_available=Decimal(str(qty)),
                 status=status,
             )
-            if updated_ago is not None:
-                b.updated_at = days_ago(updated_ago)
+            if scrapped_ago is not None:
+                b.scrapped_at = days_ago(scrapped_ago)
             db_session.add(b)
             await db_session.flush()
             return b
@@ -155,7 +155,8 @@ class TestStockCoverage:
         await make.move(a_batch, MovementType.SCRAP, 4, ago=3)
         await make.batch(a, 50, expires_in=-2)  # expired stock is not "on hand"
 
-        # B: only 10 days of history -> usage averages over 10 days, not 90.
+        # B: received 10 days ago -> usage averages over those 11 days
+        # (today included), not 90.
         b = await make.item("CV-B", reorder_point=10)
         b_batch = await make.batch(b, 30, expires_in=200, received_ago=10)
         await make.move(b_batch, MovementType.DISPATCH, 20, ago=2)
@@ -180,8 +181,8 @@ class TestStockCoverage:
         assert rows["CV-A"]["days_of_supply"] == pytest.approx(16 / 0.6)
         assert rows["CV-A"]["status"] == "below_reorder"
 
-        assert rows["CV-B"]["avg_daily_usage"] == pytest.approx(2.0)
-        assert rows["CV-B"]["days_of_supply"] == pytest.approx(15.0)
+        assert rows["CV-B"]["avg_daily_usage"] == pytest.approx(20 / 11)
+        assert rows["CV-B"]["days_of_supply"] == pytest.approx(16.5)
         assert rows["CV-B"]["status"] == "ok"
 
         assert rows["CV-C"]["avg_daily_usage"] == 0
@@ -190,6 +191,17 @@ class TestStockCoverage:
         assert rows["CV-D"]["quantity"] == 0
         assert rows["CV-D"]["days_of_supply"] == 0
         assert rows["CV-D"]["status"] == "out"
+
+    async def test_out_of_stock_without_demand_has_zero_days(self, db_session, make):
+        """Out of stock is urgent even with no recent usage - it must not
+        read as "no demand"."""
+        it = await make.item("CV-OUT", reorder_point=20)
+        await make.batch(it, 0, expires_in=100, received_ago=200, status=BatchStatus.DEPLETED)
+
+        result = await DashboardService(db_session).get_stock_coverage()
+
+        assert result["items"][0]["days_of_supply"] == 0
+        assert result["items"][0]["status"] == "out"
 
     async def test_item_with_nothing_to_report_is_omitted(self, db_session, make):
         await make.item("CV-IDLE")  # no stock, no demand, no reorder point
@@ -217,6 +229,10 @@ class TestAttentionItems:
         dead = await make.item("AT-DEAD")
         dead_batch = await make.batch(dead, 10, expires_in=300, received_ago=250)
         await make.move(dead_batch, MovementType.RECEIPT, 10, ago=250, before=0)
+        # Never moved at all: the dead-stock alert skips these, so the
+        # dashboard does too.
+        unmoved = await make.item("AT-UNMOVED")
+        await make.batch(unmoved, 10, expires_in=300, received_ago=250)
         alive = await make.item("AT-ALIVE")
         alive_batch = await make.batch(alive, 10, expires_in=300, received_ago=250)
         await make.move(alive_batch, MovementType.DISPATCH, 1, ago=10)
@@ -264,7 +280,7 @@ class TestHistoryKpis:
     async def test_scrapped_batch_counts_until_it_was_scrapped(self, db_session, make):
         it = await make.item("HK-SCRAP", cost="10")
         # Scrapping only flips status - quantity_available keeps what was written off.
-        await make.batch(it, 6, expires_in=100, received_ago=60, status=BatchStatus.SCRAP, updated_ago=20)
+        await make.batch(it, 6, expires_in=100, received_ago=60, status=BatchStatus.SCRAP, scrapped_ago=20)
 
         kpis = await DashboardService(db_session).get_kpi_summary()
 
@@ -274,9 +290,10 @@ class TestHistoryKpis:
     async def test_write_off_counts_scrapped_batches_in_last_90_days(self, db_session, make):
         ils = await make.item("HK-WO", cost="10")
         usd = await make.item("HK-WO-USD", cost="5", currency="USD")
-        await make.batch(ils, 6, expires_in=-21, received_ago=200, status=BatchStatus.SCRAP, updated_ago=20)
-        await make.batch(ils, 99, expires_in=-130, received_ago=300, status=BatchStatus.SCRAP, updated_ago=120)
-        await make.batch(usd, 2, expires_in=-5, received_ago=200, status=BatchStatus.SCRAP, updated_ago=4)
+        await make.batch(ils, 6, expires_in=-21, received_ago=200, status=BatchStatus.SCRAP, scrapped_ago=20)
+        # Scrapped 120 days ago, edited since - updated_at is today.
+        await make.batch(ils, 99, expires_in=-130, received_ago=300, status=BatchStatus.SCRAP, scrapped_ago=120)
+        await make.batch(usd, 2, expires_in=-5, received_ago=200, status=BatchStatus.SCRAP, scrapped_ago=4)
         # A SCRAP movement (partial write-off) counts too.
         partial = await make.batch(ils, 10, expires_in=200, received_ago=200)
         await make.move(partial, MovementType.SCRAP, 1, ago=7, before=11)
@@ -299,6 +316,23 @@ class TestHistoryKpis:
         assert kpis["days_on_hand"] == pytest.approx(avg_inventory / (90 / 90), rel=1e-3)
         assert kpis["write_off_90d_rate"] == 0
 
+    async def test_turnover_with_less_history_than_the_window(self, db_session, make):
+        """40 days after the first receipt, outbound per day and average
+        inventory cover those 41 days - not 90, half of them before any stock."""
+        it = await make.item("HK-NEW", cost="10")
+        b = await make.batch(it, 80, expires_in=300, received_ago=40)
+        await make.move(b, MovementType.RECEIPT, 100, ago=40, before=0)
+        await make.move(b, MovementType.DISPATCH, 20, ago=10, before=100)
+
+        kpis = await DashboardService(db_session).get_kpi_summary()
+
+        # Inventory now 800 and 30 days ago 1000; 60/90 days ago predate it.
+        avg_inventory = 900
+        daily_outbound = 200 / 41
+        assert kpis["avg_inventory_value_ils"] == pytest.approx(avg_inventory)
+        assert kpis["turnover_annualized"] == pytest.approx(daily_outbound * 365 / avg_inventory, rel=1e-3)
+        assert kpis["days_on_hand"] == pytest.approx(avg_inventory / daily_outbound, rel=1e-3)
+
     async def test_no_outbound_means_zero_turnover_and_no_days_on_hand(self, db_session, make):
         it = await make.item("HK-IDLE", cost="10")
         await make.batch(it, 5, expires_in=300)
@@ -307,6 +341,24 @@ class TestHistoryKpis:
 
         assert kpis["turnover_annualized"] == 0
         assert kpis["days_on_hand"] is None
+
+
+class TestScrappedAt:
+    async def test_set_when_scrapped_and_kept_through_later_edits(self, db_session, make):
+        it = await make.item("SA-1")
+        b = await make.batch(it, 5, expires_in=100)
+        assert b.scrapped_at is None
+
+        b.status = BatchStatus.SCRAP
+        scrapped_at = b.scrapped_at
+        assert scrapped_at is not None
+
+        b.status = BatchStatus.SCRAP  # e.g. a PUT echoing the current status
+        b.notes = "edited later"
+        assert b.scrapped_at == scrapped_at
+
+        b.status = BatchStatus.ACTIVE
+        assert b.scrapped_at is None
 
 
 class TestMovementTrendConsumption:
