@@ -120,6 +120,17 @@ tracks `main` (production). Each has its own Neon branch. Migrations run on boot
 (`alembic upgrade head` in the Procfile) — never run them from a local machine against
 a deployed database.
 
+### Clearing stock data
+
+To start from an empty warehouse, `backend/reset_inventory_data.py` deletes all batches,
+movements, delivery notes and alerts, and keeps the ink types (items), users, locations,
+customers and settings. It runs against the database in `DATABASE_URL`, prints the host and
+row counts, and asks you to type `DELETE` before deleting anything:
+
+```bash
+cd backend && python reset_inventory_data.py
+```
+
 ## Tech Stack
 
 **Backend:** FastAPI, SQLAlchemy 2.0 async, PostgreSQL, Alembic, JWT, APScheduler, Resend (email), ReportLab (PDF)
