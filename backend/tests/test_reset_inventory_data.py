@@ -19,14 +19,25 @@ from app.models import (
 )
 from app.models.alert import AlertType
 from app.models.movement import MovementType
-from reset_inventory_data import count_rows, reset_inventory_data
+from app.models.user import UserRole
+from reset_inventory_data import count_customer_logins, count_rows, reset_inventory_data
 
 
-async def test_reset_deletes_stock_data_and_keeps_setup(db_session, test_user):
+async def test_reset_deletes_stock_data_and_customers_and_keeps_setup(db_session, test_user):
     item = Item(sku="INK-RESET-001", name="Reset Black", supplier="Supplier")
     location = Location(warehouse="WH1", shelf="A", position="1", location_code="WH1-A-1")
     customer = Customer(name="Customer", machines=[CustomerMachine(machine_type="Press")])
     db_session.add_all([item, location, customer, SystemSettings(id=1)])
+    await db_session.flush()
+    customer_login = User(
+        username="customer",
+        email="customer@example.com",
+        hashed_password="x",
+        full_name="Customer Login",
+        role=UserRole.CUSTOMER,
+        customer_id=customer.id,
+    )
+    db_session.add(customer_login)
     await db_session.flush()
 
     batch = Batch(
@@ -68,15 +79,21 @@ async def test_reset_deletes_stock_data_and_keeps_setup(db_session, test_user):
         "delivery_notes": 1,
         "movements": 1,
         "batches": 1,
+        "customer_machines": 1,
+        "customers": 1,
         "items": 1,
     }
+    assert await count_customer_logins(db_session) == 1
 
     await reset_inventory_data(db_session)
 
     async def count(model):
         return await db_session.scalar(select(func.count()).select_from(model))
 
-    for model in (Alert, DeliveryNoteItem, DeliveryNote, Movement, Batch):
+    for model in (Alert, DeliveryNoteItem, DeliveryNote, Movement, Batch, CustomerMachine, Customer):
         assert await count(model) == 0, model.__tablename__
-    for model in (Item, Location, Customer, CustomerMachine, SystemSettings, User):
+    for model in (Item, Location, SystemSettings):
         assert await count(model) == 1, model.__tablename__
+    assert await count(User) == 2
+    await db_session.refresh(customer_login)
+    assert customer_login.customer_id is None
